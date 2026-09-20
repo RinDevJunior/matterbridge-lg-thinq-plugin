@@ -201,7 +201,6 @@ describe('AirConditionerCapabilities', () => {
 				supportsHumiditySensor: false,
 				supportsAirQualitySensor: false,
 				supportsEnergyMonitoring: false,
-				energyMonitoringPlacement: 'child',
 			});
 		});
 
@@ -659,7 +658,6 @@ describe('AirConditionerCapabilities', () => {
 				supportsHumiditySensor: false,
 				supportsAirQualitySensor: false,
 				supportsEnergyMonitoring: false,
-				energyMonitoringPlacement: 'child',
 			});
 		});
 
@@ -796,170 +794,6 @@ describe('AirConditionerCapabilities', () => {
 				supportsHumiditySensor: false,
 				supportsAirQualitySensor: false,
 				supportsEnergyMonitoring: false,
-				energyMonitoringPlacement: 'child',
-			});
-		});
-
-		describe('energyMonitoringPlacement field', () => {
-			it('should default energyMonitoringPlacement to "child" when undefined', () => {
-				// Arrange
-				const devices: ThinqDeviceConfigEntry[] = [{ deviceId: 'device-123', capabilities: {} }];
-
-				// Act
-				const result = resolveAirConditionerCapabilities(devices, 'device-123');
-
-				// Assert
-				expect(result.energyMonitoringPlacement).toBe('child');
-			});
-
-			it('should return "child" when devices array is undefined', () => {
-				// Arrange & Act
-				const result = resolveAirConditionerCapabilities(undefined, 'device-123');
-
-				// Assert
-				expect(result.energyMonitoringPlacement).toBe('child');
-			});
-
-			it('should return "child" when devices array is empty', () => {
-				// Arrange & Act
-				const result = resolveAirConditionerCapabilities([], 'device-123');
-
-				// Assert
-				expect(result.energyMonitoringPlacement).toBe('child');
-			});
-
-			it('should return "child" when device is not found in array', () => {
-				// Arrange
-				const devices: ThinqDeviceConfigEntry[] = [{ deviceId: 'device-999', capabilities: { supportsHeat: false } }];
-
-				// Act
-				const result = resolveAirConditionerCapabilities(devices, 'device-123');
-
-				// Assert
-				expect(result.energyMonitoringPlacement).toBe('child');
-			});
-
-			it('should return "child" when device is found but has no capabilities key', () => {
-				// Arrange
-				const devices: ThinqDeviceConfigEntry[] = [{ deviceId: 'device-123' }];
-
-				// Act
-				const result = resolveAirConditionerCapabilities(devices, 'device-123');
-
-				// Assert
-				expect(result.energyMonitoringPlacement).toBe('child');
-			});
-
-			it('should return "child" when device has capabilities but placement key is absent', () => {
-				// Arrange
-				const devices: ThinqDeviceConfigEntry[] = [
-					{
-						deviceId: 'device-123',
-						capabilities: { supportsEnergyMonitoring: true },
-					},
-				];
-
-				// Act
-				const result = resolveAirConditionerCapabilities(devices, 'device-123');
-
-				// Assert
-				expect(result.energyMonitoringPlacement).toBe('child');
-			});
-
-			it('should return "endpoint" when placement is "endpoint"', () => {
-				// Arrange
-				const devices: ThinqDeviceConfigEntry[] = [
-					{
-						deviceId: 'device-123',
-						capabilities: { energyMonitoringPlacement: 'endpoint' },
-					},
-				];
-
-				// Act
-				const result = resolveAirConditionerCapabilities(devices, 'device-123');
-
-				// Assert
-				expect(result.energyMonitoringPlacement).toBe('endpoint');
-			});
-
-			it('should return "child" when placement is "child"', () => {
-				// Arrange
-				const devices: ThinqDeviceConfigEntry[] = [
-					{
-						deviceId: 'device-123',
-						capabilities: { energyMonitoringPlacement: 'child' },
-					},
-				];
-
-				// Act
-				const result = resolveAirConditionerCapabilities(devices, 'device-123');
-
-				// Assert
-				expect(result.energyMonitoringPlacement).toBe('child');
-			});
-
-			it('should fall back to "child" when placement is an invalid value', () => {
-				// Arrange
-				const devices: ThinqDeviceConfigEntry[] = [
-					{
-						deviceId: 'device-123',
-						capabilities: { energyMonitoringPlacement: 'bogus' as never },
-					},
-				];
-
-				// Act
-				const result = resolveAirConditionerCapabilities(devices, 'device-123');
-
-				// Assert
-				expect(result.energyMonitoringPlacement).toBe('child');
-			});
-
-			it('should return "endpoint" even when supportsEnergyMonitoring is false', () => {
-				// Arrange
-				const devices: ThinqDeviceConfigEntry[] = [
-					{
-						deviceId: 'device-123',
-						capabilities: {
-							supportsEnergyMonitoring: false,
-							energyMonitoringPlacement: 'endpoint',
-						},
-					},
-				];
-
-				// Act
-				const result = resolveAirConditionerCapabilities(devices, 'device-123');
-
-				// Assert
-				expect(result.energyMonitoringPlacement).toBe('endpoint');
-				expect(result.supportsEnergyMonitoring).toBe(false);
-			});
-
-			it('should isolate energyMonitoringPlacement across multiple devices', () => {
-				// Arrange
-				const devices: ThinqDeviceConfigEntry[] = [
-					{
-						deviceId: 'device-001',
-						capabilities: { energyMonitoringPlacement: 'endpoint' },
-					},
-					{
-						deviceId: 'device-002',
-						capabilities: {},
-					},
-					{
-						deviceId: 'device-003',
-						capabilities: { energyMonitoringPlacement: 'child' },
-					},
-				];
-
-				// Act
-				const result001 = resolveAirConditionerCapabilities(devices, 'device-001');
-				const result002 = resolveAirConditionerCapabilities(devices, 'device-002');
-				const result003 = resolveAirConditionerCapabilities(devices, 'device-003');
-
-				// Assert
-				expect(result001.energyMonitoringPlacement).toBe('endpoint');
-				expect(result002.energyMonitoringPlacement).toBe('child');
-				expect(result003.energyMonitoringPlacement).toBe('child');
 			});
 		});
 	});

@@ -89,9 +89,6 @@ export class ThinqDeviceConfigurator {
 			.createDefaultTemperatureMeasurementClusterServer(currentTemperature * 100)
 			.addRequiredClusterServers();
 
-		// TODO: quick manual test only — replace with config-driven `enableServerMode` flag.
-		airConditioner.mode = 'server';
-
 		registerAirConditionerCommandHandlers(airConditioner, device, this.apiClient, this.logger, capabilities);
 		registerAuxiliaryToggleCommandHandlers(airConditioner, device, this.apiClient, this.logger, capabilities);
 		registerSceneButtonCommandHandlers(airConditioner, sceneButtons, device, this.apiClient, this.logger);

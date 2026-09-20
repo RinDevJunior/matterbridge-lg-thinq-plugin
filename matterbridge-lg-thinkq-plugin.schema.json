@@ -132,13 +132,6 @@
 										"description": "Whether this device reports instantaneous power consumption data.",
 										"type": "boolean",
 										"default": false
-									},
-									"energyMonitoringPlacement": {
-										"title": "Energy Monitoring Placement (experimental)",
-										"description": "Where the power reading lives. 'child' (default) = separate EnergyMonitor sub-device. 'endpoint' = on the AC itself (experimental, Apple Home may not show it). Only used when Supports Energy Monitoring is on. Restart Matterbridge after changing; you may need to remove and re-add the AC in Apple Home (also after upgrading, when Energy Monitoring is on).",
-										"type": "string",
-										"enum": ["child", "endpoint"],
-										"default": "child"
 									}
 								}
 							},

@@ -687,238 +687,13 @@ describe('buildAirConditionerEndpoint', () => {
 		});
 	});
 
-	describe('energy monitor child endpoint (Phase D)', () => {
-		it('should create EnergyMonitor child endpoint when supportsEnergyMonitoring is true', () => {
+	describe('energy monitoring on AC endpoint (Phase D)', () => {
+		it('should add electricalSensor device type when supportsEnergyMonitoring is true', () => {
 			// Arrange
 			const capabilities = asPartial<AirConditionerCapabilities>({
 				supportsHeat: true,
 				supportsFanSpeedControl: true,
 				supportsEnergyMonitoring: true,
-			});
-
-			// Act
-			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
-
-			// Assert
-			expect(mockEndpoint.addChildDeviceType).toHaveBeenCalledWith('EnergyMonitor', expect.any(Array));
-		});
-
-		it('should create ElectricalPowerMeasurementClusterServer on EnergyMonitor child', () => {
-			// Arrange
-			const capabilities = asPartial<AirConditionerCapabilities>({
-				supportsHeat: true,
-				supportsFanSpeedControl: true,
-				supportsEnergyMonitoring: true,
-			});
-
-			// Act
-			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
-
-			// Assert
-			expect(mockEndpoint.createDefaultElectricalPowerMeasurementClusterServer).toHaveBeenCalled();
-		});
-
-		it('should not create EnergyMonitor endpoint when supportsEnergyMonitoring is false (default)', () => {
-			// Arrange
-			const capabilities = asPartial<AirConditionerCapabilities>({
-				supportsHeat: true,
-				supportsFanSpeedControl: true,
-				supportsEnergyMonitoring: false,
-			});
-
-			// Act
-			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
-
-			// Assert
-			const calls = (mockEndpoint.addChildDeviceType as any).mock.calls;
-			const hasEnergyMonitor = calls.some((call: any[]) => call[0] === 'EnergyMonitor');
-			expect(hasEnergyMonitor).toBe(false);
-			expect(mockEndpoint.createDefaultElectricalPowerMeasurementClusterServer).not.toHaveBeenCalled();
-		});
-
-		it('should not create EnergyMonitor endpoint when supportsEnergyMonitoring is undefined (default)', () => {
-			// Arrange
-			const capabilities = asPartial<AirConditionerCapabilities>({
-				supportsHeat: true,
-				supportsFanSpeedControl: true,
-				// supportsEnergyMonitoring deliberately omitted
-			});
-
-			// Act
-			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
-
-			// Assert
-			const calls = (mockEndpoint.addChildDeviceType as any).mock.calls;
-			const hasEnergyMonitor = calls.some((call: any[]) => call[0] === 'EnergyMonitor');
-			expect(hasEnergyMonitor).toBe(false);
-		});
-
-		it('should maintain regression parity when energy monitoring capability is false (default)', () => {
-			// Arrange
-			const capabilities = { ...DEFAULT_AIR_CONDITIONER_CAPABILITIES };
-
-			// Act
-			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
-
-			// Assert
-			const calls = (mockEndpoint.addChildDeviceType as any).mock.calls;
-			const hasEnergyMonitor = calls.some((call: any[]) => call[0] === 'EnergyMonitor');
-			expect(hasEnergyMonitor).toBe(false);
-		});
-
-		it('should create EnergyMonitor with other Phase D sensors enabled simultaneously', () => {
-			// Arrange
-			const capabilities = asPartial<AirConditionerCapabilities>({
-				supportsHeat: true,
-				supportsFanSpeedControl: true,
-				supportsHumiditySensor: true,
-				supportsAirQualitySensor: true,
-				supportsEnergyMonitoring: true,
-			});
-
-			// Act
-			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
-
-			// Assert
-			const calls = (mockEndpoint.addChildDeviceType as any).mock.calls;
-			expect(calls.some((call: any[]) => call[0] === 'HumiditySensor')).toBe(true);
-			expect(calls.some((call: any[]) => call[0] === 'AirQualitySensor')).toBe(true);
-			expect(calls.some((call: any[]) => call[0] === 'EnergyMonitor')).toBe(true);
-		});
-	});
-
-	describe('energy on child endpoint (PowerTopology fix)', () => {
-		it('should create PowerTopology cluster on child when supportsEnergyMonitoring is true with child placement', () => {
-			// Arrange
-			const childMock = createChainableMock();
-			const capabilities = asPartial<AirConditionerCapabilities>({
-				supportsHeat: true,
-				supportsFanSpeedControl: true,
-				supportsEnergyMonitoring: true,
-				energyMonitoringPlacement: 'child',
-			});
-
-			mockEndpoint.addChildDeviceType = vi.fn().mockReturnValue(childMock);
-
-			// Act
-			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
-
-			// Assert
-			expect(childMock.createDefaultPowerTopologyClusterServer).toHaveBeenCalledWith();
-			expect(childMock.createDefaultElectricalPowerMeasurementClusterServer).toHaveBeenCalledWith(null, null, 0, null);
-		});
-
-		it('should call child cluster servers in correct order: Identify, PowerTopology, ElectricalPowerMeasurement', () => {
-			// Arrange
-			const childMock = createChainableMock();
-			const capabilities = asPartial<AirConditionerCapabilities>({
-				supportsHeat: true,
-				supportsFanSpeedControl: true,
-				supportsEnergyMonitoring: true,
-				energyMonitoringPlacement: 'child',
-			});
-
-			mockEndpoint.addChildDeviceType = vi.fn().mockReturnValue(childMock);
-
-			// Act
-			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
-
-			// Assert
-			const identifyCallOrder = (childMock.createDefaultIdentifyClusterServer as any).mock.invocationCallOrder[0];
-			const powerTopologyCallOrder = (childMock.createDefaultPowerTopologyClusterServer as any).mock
-				.invocationCallOrder[0];
-			const powerMeasurementCallOrder = (childMock.createDefaultElectricalPowerMeasurementClusterServer as any).mock
-				.invocationCallOrder[0];
-
-			expect(identifyCallOrder).toBeLessThan(powerTopologyCallOrder);
-			expect(powerTopologyCallOrder).toBeLessThan(powerMeasurementCallOrder);
-		});
-
-		it('should create child with only EnergyMonitor name and electricalSensor device type in child mode', () => {
-			// Arrange
-			const childMock = createChainableMock();
-			const capabilities = asPartial<AirConditionerCapabilities>({
-				supportsHeat: true,
-				supportsFanSpeedControl: true,
-				supportsEnergyMonitoring: true,
-				energyMonitoringPlacement: 'child',
-			});
-
-			mockEndpoint.addChildDeviceType = vi.fn().mockReturnValue(childMock);
-
-			// Act
-			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
-
-			// Assert
-			expect(mockEndpoint.addChildDeviceType).toHaveBeenCalledWith('EnergyMonitor', [{ id: 'electricalSensor' }]);
-		});
-
-		it('should not call AC endpoint PowerTopology when child mode is active', () => {
-			// Arrange
-			const childMock = createChainableMock();
-			const capabilities = asPartial<AirConditionerCapabilities>({
-				supportsHeat: true,
-				supportsFanSpeedControl: true,
-				supportsEnergyMonitoring: true,
-				energyMonitoringPlacement: 'child',
-			});
-
-			mockEndpoint.addChildDeviceType = vi.fn().mockReturnValue(childMock);
-
-			// Act
-			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
-
-			// Assert
-			expect(mockEndpoint.createDefaultPowerTopologyClusterServer).not.toHaveBeenCalled();
-		});
-
-		it('should use default child placement when energyMonitoringPlacement is omitted', () => {
-			// Arrange
-			const childMock = createChainableMock();
-			const capabilities = asPartial<AirConditionerCapabilities>({
-				supportsHeat: true,
-				supportsFanSpeedControl: true,
-				supportsEnergyMonitoring: true,
-				// energyMonitoringPlacement deliberately omitted
-			});
-
-			mockEndpoint.addChildDeviceType = vi.fn().mockReturnValue(childMock);
-
-			// Act
-			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
-
-			// Assert
-			expect(mockEndpoint.addChildDeviceType).toHaveBeenCalledWith('EnergyMonitor', expect.any(Array));
-			expect(childMock.createDefaultPowerTopologyClusterServer).toHaveBeenCalled();
-		});
-
-		it('should not create EnergyMonitor child when supportsEnergyMonitoring is false', () => {
-			// Arrange
-			const capabilities = asPartial<AirConditionerCapabilities>({
-				supportsHeat: true,
-				supportsFanSpeedControl: true,
-				supportsEnergyMonitoring: false,
-				energyMonitoringPlacement: 'child',
-			});
-
-			// Act
-			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
-
-			// Assert
-			const calls = (mockEndpoint.addChildDeviceType as any).mock.calls;
-			const hasEnergyMonitor = calls.some((call: any[]) => call[0] === 'EnergyMonitor');
-			expect(hasEnergyMonitor).toBe(false);
-		});
-	});
-
-	describe('energy on AC endpoint (experiment)', () => {
-		it('should add electricalSensor device type when energyMonitoringPlacement is "endpoint"', () => {
-			// Arrange
-			const capabilities = asPartial<AirConditionerCapabilities>({
-				supportsHeat: true,
-				supportsFanSpeedControl: true,
-				supportsEnergyMonitoring: true,
-				energyMonitoringPlacement: 'endpoint',
 			});
 
 			// Act
@@ -931,13 +706,12 @@ describe('buildAirConditionerEndpoint', () => {
 			expect(firstArg).toContainEqual({ id: 'electricalSensor' });
 		});
 
-		it('should have roomAirConditioner as first device type in endpoint mode', () => {
+		it('should have roomAirConditioner as first device type', () => {
 			// Arrange
 			const capabilities = asPartial<AirConditionerCapabilities>({
 				supportsHeat: true,
 				supportsFanSpeedControl: true,
 				supportsEnergyMonitoring: true,
-				energyMonitoringPlacement: 'endpoint',
 			});
 
 			// Act
@@ -948,13 +722,12 @@ describe('buildAirConditionerEndpoint', () => {
 			expect(firstArg[0]).toEqual({ id: 'roomAirConditioner' });
 		});
 
-		it('should create PowerTopology and ElectricalPowerMeasurement on AC endpoint in endpoint mode', () => {
+		it('should create PowerTopology and ElectricalPowerMeasurement on AC endpoint when supportsEnergyMonitoring is true', () => {
 			// Arrange
 			const capabilities = asPartial<AirConditionerCapabilities>({
 				supportsHeat: true,
 				supportsFanSpeedControl: true,
 				supportsEnergyMonitoring: true,
-				energyMonitoringPlacement: 'endpoint',
 			});
 
 			// Act
@@ -970,13 +743,12 @@ describe('buildAirConditionerEndpoint', () => {
 			);
 		});
 
-		it('should not create EnergyMonitor child in endpoint mode', () => {
+		it('should not create EnergyMonitor child endpoint', () => {
 			// Arrange
 			const capabilities = asPartial<AirConditionerCapabilities>({
 				supportsHeat: true,
 				supportsFanSpeedControl: true,
 				supportsEnergyMonitoring: true,
-				energyMonitoringPlacement: 'endpoint',
 			});
 
 			// Act
@@ -988,13 +760,44 @@ describe('buildAirConditionerEndpoint', () => {
 			expect(hasEnergyMonitor).toBe(false);
 		});
 
-		it('should not add electricalSensor when energyMonitoringPlacement is "endpoint" but supportsEnergyMonitoring is false', () => {
+		it('should not add electricalSensor or create energy clusters when supportsEnergyMonitoring is false', () => {
 			// Arrange
 			const capabilities = asPartial<AirConditionerCapabilities>({
 				supportsHeat: true,
 				supportsFanSpeedControl: true,
 				supportsEnergyMonitoring: false,
-				energyMonitoringPlacement: 'endpoint',
+			});
+
+			// Act
+			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
+
+			// Assert
+			const firstArg = (MatterbridgeEndpointMockFn as any).mock.calls[0][0];
+			const hasSensor = firstArg.some((dt: any) => dt.id === 'electricalSensor');
+			expect(hasSensor).toBe(false);
+			expect(mockEndpoint.createDefaultPowerTopologyClusterServer).not.toHaveBeenCalled();
+			expect(mockEndpoint.createDefaultElectricalPowerMeasurementClusterServer).not.toHaveBeenCalled();
+		});
+
+		it('should maintain regression parity when energy monitoring capability is false (default)', () => {
+			// Arrange
+			const capabilities = { ...DEFAULT_AIR_CONDITIONER_CAPABILITIES };
+
+			// Act
+			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
+
+			// Assert
+			const firstArg = (MatterbridgeEndpointMockFn as any).mock.calls[0][0];
+			const hasSensor = firstArg.some((dt: any) => dt.id === 'electricalSensor');
+			expect(hasSensor).toBe(false);
+		});
+
+		it('should not add electricalSensor when supportsEnergyMonitoring is false', () => {
+			// Arrange
+			const capabilities = asPartial<AirConditionerCapabilities>({
+				supportsHeat: true,
+				supportsFanSpeedControl: true,
+				supportsEnergyMonitoring: false,
 			});
 
 			// Act
@@ -1007,27 +810,6 @@ describe('buildAirConditionerEndpoint', () => {
 			expect(firstArg).not.toContainEqual({ id: 'electricalSensor' });
 		});
 
-		it('should use child placement when energyMonitoringPlacement is omitted', () => {
-			// Arrange
-			const childMock = createChainableMock();
-			const capabilities = asPartial<AirConditionerCapabilities>({
-				supportsHeat: true,
-				supportsFanSpeedControl: true,
-				supportsEnergyMonitoring: true,
-				// energyMonitoringPlacement deliberately omitted
-			});
-
-			mockEndpoint.addChildDeviceType = vi.fn().mockReturnValue(childMock);
-
-			// Act
-			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
-
-			// Assert
-			const firstArg = (MatterbridgeEndpointMockFn as any).mock.calls[0][0];
-			expect(firstArg).not.toContainEqual({ id: 'electricalSensor' });
-			expect(mockEndpoint.addChildDeviceType).toHaveBeenCalledWith('EnergyMonitor', expect.any(Array));
-		});
-
 		it('should coexist with humidity sensor and air quality sensor when energy is on endpoint', () => {
 			// Arrange
 			const childHumidityMock = createChainableMock();
@@ -1038,7 +820,6 @@ describe('buildAirConditionerEndpoint', () => {
 				supportsEnergyMonitoring: true,
 				supportsHumiditySensor: true,
 				supportsAirQualitySensor: true,
-				energyMonitoringPlacement: 'endpoint',
 			});
 
 			let callCount = 0;
@@ -1066,7 +847,6 @@ describe('buildAirConditionerEndpoint', () => {
 				supportsHeat: true,
 				supportsFanSpeedControl: true,
 				supportsEnergyMonitoring: true,
-				energyMonitoringPlacement: 'endpoint',
 			});
 
 			// Act
@@ -1229,7 +1009,7 @@ describe('buildAirConditionerEndpoint', () => {
 			expect(childEndpoint?.createDefaultMomentarySwitchClusterServer).toHaveBeenCalled();
 		});
 
-		it('should coexist with other child endpoints (sensors, energy) when all enabled', () => {
+		it('should coexist with sensor and scene button child endpoints when all enabled', () => {
 			// Arrange
 			const capabilities = asPartial<AirConditionerCapabilities>({
 				supportsHeat: true,
@@ -1249,8 +1029,9 @@ describe('buildAirConditionerEndpoint', () => {
 			const childEndpointNames = calls.map((call: any[]) => call[0]);
 			expect(childEndpointNames).toContain('HumiditySensor');
 			expect(childEndpointNames).toContain('AirQualitySensor');
-			expect(childEndpointNames).toContain('EnergyMonitor');
 			expect(childEndpointNames).toContain('PowerOff');
+			// Energy monitoring is on the AC endpoint itself, not a child
+			expect(childEndpointNames).not.toContain('EnergyMonitor');
 		});
 	});
 

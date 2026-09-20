@@ -111,6 +111,17 @@ function resolveSystemModeUpdate(
 	return mapOperationModeToSystemMode(snapshot.operationMode, isPowerOn, capabilities);
 }
 
+/**
+ * True when the AC is known to be off: the snapshot's `airState.operation` if present, otherwise the endpoint's
+ * current OnOff attribute (unknown/undefined is treated as NOT off).
+ */
+function isKnownOff(airConditioner: MatterbridgeEndpoint, snapshot: ThinqSnapshot): boolean {
+	if (snapshot.has(KEY_OPERATION)) {
+		return !snapshot.isPowerOn;
+	}
+	return (airConditioner.getAttribute(OnOff.id, 'onOff') as boolean | undefined) === false;
+}
+
 /** Resolves rock setting from a snapshot, returning undefined if neither swing axis key is present. */
 function resolveRockSetting(
 	airConditioner: MatterbridgeEndpoint,
@@ -317,30 +328,15 @@ export async function applyThinqSnapshotToAirConditioner(
 	}
 
 	if (capabilities.supportsEnergyMonitoring) {
-		if (capabilities.energyMonitoringPlacement === 'endpoint') {
-			const zeroWhenOff = snapshot.has(KEY_OPERATION) && !snapshot.isPowerOn ? 0 : undefined;
-			const watts = snapshot.powerConsumptionWatts ?? zeroWhenOff;
-			if (watts !== undefined) {
-				await airConditioner.updateAttribute(
-					ElectricalPowerMeasurement.id,
-					'activePower',
-					Math.round(watts * 1000),
-					logger,
-				);
-			}
-		} else {
-			const powerConsumptionWatts = snapshot.powerConsumptionWatts;
-			if (powerConsumptionWatts !== undefined) {
-				const energyMonitorChild = airConditioner.getChildEndpointById('EnergyMonitor');
-				if (energyMonitorChild) {
-					await energyMonitorChild.updateAttribute(
-						ElectricalPowerMeasurement.id,
-						'activePower',
-						Math.round(powerConsumptionWatts * 1000),
-						logger,
-					);
-				}
-			}
+		// LG reports a floor raw value (~50 W) while the AC is off; never show that as consumption.
+		const watts = isKnownOff(airConditioner, snapshot) ? 0 : snapshot.powerConsumptionWatts;
+		if (watts !== undefined) {
+			await airConditioner.updateAttribute(
+				ElectricalPowerMeasurement.id,
+				'activePower',
+				Math.round(watts * 1000),
+				logger,
+			);
 		}
 	}
 }

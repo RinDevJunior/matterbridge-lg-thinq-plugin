@@ -53,11 +53,10 @@ export function buildAirConditionerEndpoint(
 		maxCoolSetpointLimitCelsius,
 	} = setpoints;
 
-	const energyOnEndpoint =
-		capabilities.supportsEnergyMonitoring && capabilities.energyMonitoringPlacement === 'endpoint';
-
 	const endpoint = new MatterbridgeEndpoint(
-		energyOnEndpoint ? [roomAirConditioner, powerSource, electricalSensor] : [roomAirConditioner, powerSource],
+		capabilities.supportsEnergyMonitoring
+			? [roomAirConditioner, powerSource, electricalSensor]
+			: [roomAirConditioner, powerSource],
 		{
 			id: `${device.name.replaceAll(' ', '')}-${device.id.replaceAll(' ', '')}`,
 		},
@@ -131,16 +130,10 @@ export function buildAirConditionerEndpoint(
 			.createDefaultPm10ConcentrationMeasurementClusterServer();
 	}
 
-	if (energyOnEndpoint) {
+	if (capabilities.supportsEnergyMonitoring) {
+		// Electrical measurement lives on the AC endpoint itself (electricalSensor device type). PowerTopology is
+		// mandatory for electricalSensor; activePower starts at 0 (not null) because Apple may hide null.
 		endpoint
-			.createDefaultPowerTopologyClusterServer()
-			.createDefaultElectricalPowerMeasurementClusterServer(null, null, 0, null);
-	} else if (capabilities.supportsEnergyMonitoring) {
-		endpoint
-			.addChildDeviceType('EnergyMonitor', [electricalSensor])
-			.createDefaultIdentifyClusterServer()
-			// TreeTopology default (matterbridge demo ElectricalSensor), PowerTopology is mandatory for electricalSensor,
-			// activePower 0 (not null) because Apple may hide null
 			.createDefaultPowerTopologyClusterServer()
 			.createDefaultElectricalPowerMeasurementClusterServer(null, null, 0, null);
 	}
