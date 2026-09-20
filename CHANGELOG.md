@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.0-rc09] - 2026-09-20
+
+### Changed
+
+- **AC is now a bridged device** — the AC registers as a normal bridged device and the hardcoded standalone "server" mode was removed, because on iOS 27 the Apple Home Energy tab (whole-home total and per-device detail) only worked in bridged mode. Note for users: remove the old standalone AC from Apple Home and pair through Matterbridge's bridge.
+- **Energy measurement on the AC endpoint** — when `supportsEnergyMonitoring` is on, the electrical measurement now always lives on the AC endpoint itself (room air conditioner + power source + electrical sensor device types, with PowerTopology and ElectricalPowerMeasurement); the separate EnergyMonitor child endpoint and the `energyMonitoringPlacement` setting were removed.
+
+### Fixed
+
+- **Power shown while AC is off** — power now reads 0 W when the AC is off; LG reports a floor of about 50 in that state, which was wrongly shown as real consumption.
+
+<a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
+
+---
+
 ## [0.1.0-rc08] - 2026-09-19
 
 ### Changed
