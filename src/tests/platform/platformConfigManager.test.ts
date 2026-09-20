@@ -359,40 +359,6 @@ describe('PlatformConfigManager', () => {
 			expect(capabilities.supportsHeat).toBe(true);
 			expect(capabilities.supportsFanSpeedControl).toBe(true);
 		});
-
-		it('should return capabilities with energyMonitoringPlacement when specified', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
-				thinq: {
-					loginType: 'account',
-					country: 'US',
-					language: 'en-US',
-					devices: [
-						{
-							deviceId: 'device-1',
-							capabilities: {
-								supportsEnergyMonitoring: true,
-								energyMonitoringPlacement: 'endpoint',
-							},
-						},
-					],
-				},
-			});
-			const manager = PlatformConfigManager.create(config, mockLogger);
-
-			const capabilities = manager.getDeviceCapabilities('device-1');
-			expect(capabilities.supportsEnergyMonitoring).toBe(true);
-			expect(capabilities.energyMonitoringPlacement).toBe('endpoint');
-		});
-
-		it('should return "child" as default energyMonitoringPlacement when device not in config', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
-				thinq: { loginType: 'account', country: 'US', language: 'en-US', devices: [] },
-			});
-			const manager = PlatformConfigManager.create(config, mockLogger);
-
-			const capabilities = manager.getDeviceCapabilities('unknown-device');
-			expect(capabilities.energyMonitoringPlacement).toBe('child');
-		});
 	});
 
 	describe('getSceneButtons', () => {

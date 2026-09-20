@@ -22,7 +22,6 @@ vi.mock('../../../platform/thinq/thinqAirConditionerSceneButtons.js', () => ({
 vi.mock('../../../platform/thinq/thinqAirConditionerEndpointFactory.js', () => ({
 	buildAirConditionerEndpoint: vi.fn(() => ({
 		log: { debug: vi.fn(), info: vi.fn(), error: vi.fn() },
-		mode: 'server',
 		createDefaultTemperatureMeasurementClusterServer: vi.fn().mockReturnThis(),
 		addRequiredClusterServers: vi.fn().mockReturnThis(),
 	})),
@@ -132,7 +131,18 @@ describe('ThinqDeviceConfigurator', () => {
 
 			// Assert
 			expect(result).toBeDefined();
-			expect(result.mode).toBe('server');
+		});
+
+		it('should not assign a mode to the endpoint', async () => {
+			// Arrange
+			const device = createMockThinqAirConditionerDevice();
+
+			// Act
+			const endpoint = await configurator.registerAirConditioner(device);
+
+			// Assert
+			// Verify mode is not set by registerAirConditioner (regression test for removed hardcoded server mode)
+			expect(endpoint.mode).toBeUndefined();
 		});
 
 		it('should use device snapshot values for initial state when defined', async () => {
@@ -165,17 +175,6 @@ describe('ThinqDeviceConfigurator', () => {
 
 			// Assert
 			expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Registering ThinQ AirConditioner'));
-		});
-
-		it('should set mode to server on the endpoint', async () => {
-			// Arrange
-			const device = createMockThinqAirConditionerDevice();
-
-			// Act
-			const endpoint = await configurator.registerAirConditioner(device);
-
-			// Assert
-			expect(endpoint.mode).toBe('server');
 		});
 
 		it('should call registerAirConditionerCommandHandlers with correct parameters', async () => {
