@@ -644,4 +644,100 @@ describe('PlatformConfigManager', () => {
 			expect(manager.getProductNameForDevice('device-1')).toBe('Custom AC');
 		});
 	});
+
+	describe('getWasherControlConfig', () => {
+		it('should return washerControl config when device found with washerControl set', () => {
+			const config = asPartial<LgThinkqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'washer-123',
+							washerControl: { allowRemoteStop: true },
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const result = manager.getWasherControlConfig('washer-123');
+
+			expect(result).toEqual({ allowRemoteStop: true });
+		});
+
+		it('should return empty object when device found but washerControl not set', () => {
+			const config = asPartial<LgThinkqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'washer-123',
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const result = manager.getWasherControlConfig('washer-123');
+
+			expect(result).toEqual({});
+		});
+
+		it('should return empty object when device not found', () => {
+			const config = asPartial<LgThinkqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const result = manager.getWasherControlConfig('unknown-device');
+
+			expect(result).toEqual({});
+		});
+
+		it('should return empty object when thinq.devices is undefined', () => {
+			const config = asPartial<LgThinkqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const result = manager.getWasherControlConfig('washer-123');
+
+			expect(result).toEqual({});
+		});
+
+		it('should return allowRemoteStop false when explicitly set', () => {
+			const config = asPartial<LgThinkqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'washer-123',
+							washerControl: { allowRemoteStop: false },
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const result = manager.getWasherControlConfig('washer-123');
+
+			expect(result).toEqual({ allowRemoteStop: false });
+		});
+	});
 });

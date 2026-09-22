@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { asPartial, buildThinqDeviceData } from '../../../tests/helpers/testUtils.js';
 import type { ThinqDevice } from './ThinqDevice.js';
-import { isAirConditionerDevice, isValidThinqDeviceId, toThinqDevice } from './ThinqDevice.js';
+import { isAirConditionerDevice, isValidThinqDeviceId, isWasherDevice, toThinqDevice } from './ThinqDevice.js';
 
 describe('ThinqDevice', () => {
 	describe('isValidThinqDeviceId', () => {
@@ -49,6 +49,38 @@ describe('ThinqDevice', () => {
 		it('should return false for any other type string', () => {
 			const device = asPartial<ThinqDevice>({ type: 'REFRIGERATOR' });
 			expect(isAirConditionerDevice(device)).toBe(false);
+		});
+	});
+
+	describe('isWasherDevice', () => {
+		it('should return true for a device with type WASHER', () => {
+			const device = asPartial<ThinqDevice>({ type: 'WASHER' });
+			expect(isWasherDevice(device)).toBe(true);
+		});
+
+		it('should return false for AC device type', () => {
+			const device = asPartial<ThinqDevice>({ type: 'AC' });
+			expect(isWasherDevice(device)).toBe(false);
+		});
+
+		it('should return false for WASHER_NEW type (not supported in v1)', () => {
+			const device = asPartial<ThinqDevice>({ type: 'WASHER_NEW' });
+			expect(isWasherDevice(device)).toBe(false);
+		});
+
+		it('should return false for WASH_TOWER type (not supported in v1)', () => {
+			const device = asPartial<ThinqDevice>({ type: 'WASH_TOWER' });
+			expect(isWasherDevice(device)).toBe(false);
+		});
+
+		it('should return false for WASH_TOWER_2 type (not supported in v1)', () => {
+			const device = asPartial<ThinqDevice>({ type: 'WASH_TOWER_2' });
+			expect(isWasherDevice(device)).toBe(false);
+		});
+
+		it('should return false for any other type string', () => {
+			const device = asPartial<ThinqDevice>({ type: 'REFRIGERATOR' });
+			expect(isWasherDevice(device)).toBe(false);
 		});
 	});
 
@@ -166,6 +198,27 @@ describe('ThinqDevice', () => {
 			expect(device.snapshot).toBeDefined();
 			expect(device.snapshot.isPowerOn).toBe(true);
 			expect(device.snapshot.windStrength).toBe(2);
+		});
+
+		it('should carry modelJsonUri when present', () => {
+			const modelUri = 'https://example.com/model.json';
+			const data = buildThinqDeviceData({
+				modelJsonUri: modelUri,
+			});
+
+			const device = toThinqDevice(data);
+
+			expect(device.modelJsonUri).toBe(modelUri);
+		});
+
+		it('should have undefined modelJsonUri when absent', () => {
+			const data = buildThinqDeviceData({
+				modelJsonUri: undefined,
+			});
+
+			const device = toThinqDevice(data);
+
+			expect(device.modelJsonUri).toBeUndefined();
 		});
 	});
 });
