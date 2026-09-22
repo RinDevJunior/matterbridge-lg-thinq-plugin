@@ -41,12 +41,21 @@ export interface ThinqAirConditionerDevice extends ThinqDevice {
 	readonly type: 'AC';
 }
 
+/** ThinQ device narrowed to the Washer type (`deviceType === 201`, `type === 'WASHER'`). */
+export interface ThinqWasherDevice extends ThinqDevice {
+	readonly type: 'WASHER';
+}
+
 export function isValidThinqDeviceId(id: unknown): id is string {
 	return typeof id === 'string' && DEVICE_ID_PATTERN.test(id);
 }
 
 export function isAirConditionerDevice(device: ThinqDevice): device is ThinqAirConditionerDevice {
 	return device.type === 'AC';
+}
+
+export function isWasherDevice(device: ThinqDevice): device is ThinqWasherDevice {
+	return device.type === 'WASHER';
 }
 
 /** Maps a raw `ThinqDeviceData` REST response into the generic `ThinqDevice` domain entity. */
