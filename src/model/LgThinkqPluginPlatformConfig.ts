@@ -27,11 +27,16 @@ export interface MatterOverrideSettings {
 	matterProductId: number;
 }
 
+export interface ThinqWasherControlConfig {
+	allowRemoteStop?: boolean;
+}
+
 export interface ThinqDeviceConfigEntry {
 	deviceId: string;
 	capabilities?: ThinqDeviceCapabilityConfig;
 	sceneButtons?: ThinqSceneButtonConfig[];
 	productName?: string;
+	washerControl?: ThinqWasherControlConfig;
 }
 
 export interface ThinqAuthConfig {

@@ -108,8 +108,17 @@ export class ThinqSnapshot {
 		return value === undefined || Number.isNaN(value) ? undefined : value;
 	}
 
+	private get washerDryer(): Record<string, unknown> | undefined {
+		const value = this.data['washerDryer'];
+		return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : undefined;
+	}
+
+	public get hasWasherDryer(): boolean {
+		return this.washerDryer !== undefined;
+	}
+
 	public get washerRawState(): string | undefined {
-		const value = this.data['washerDryer.state'];
+		const value = this.washerDryer?.['state'];
 		return typeof value === 'string' ? value : undefined;
 	}
 
@@ -130,8 +139,8 @@ export class ThinqSnapshot {
 	}
 
 	public get washerRemainingDurationSeconds(): number | undefined {
-		const hours = this.readNumber('washerDryer.remainTimeHour');
-		const minutes = this.readNumber('washerDryer.remainTimeMinute');
+		const hours = this.readWasherNumber('remainTimeHour');
+		const minutes = this.readWasherNumber('remainTimeMinute');
 		if (hours === undefined && minutes === undefined) {
 			return undefined;
 		}
@@ -143,6 +152,11 @@ export class ThinqSnapshot {
 
 	private readNumber(key: string): number | undefined {
 		const value = this.data[key];
+		return typeof value === 'number' ? value : undefined;
+	}
+
+	private readWasherNumber(key: string): number | undefined {
+		const value = this.washerDryer?.[key];
 		return typeof value === 'number' ? value : undefined;
 	}
 }

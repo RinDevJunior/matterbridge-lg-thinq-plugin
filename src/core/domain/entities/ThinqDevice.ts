@@ -34,6 +34,7 @@ export interface ThinqDevice {
 	readonly platformType: string | undefined;
 	readonly online: boolean;
 	readonly snapshot: ThinqSnapshot;
+	readonly modelJsonUri?: string;
 }
 
 /** ThinQ device narrowed to the AirConditioner type (`deviceType === 401`, `type === 'AC'`). */
@@ -68,5 +69,6 @@ export function toThinqDevice(data: ThinqDeviceData): ThinqDevice {
 		platformType: data.platformType,
 		online: data.online ?? data.snapshot.online ?? false,
 		snapshot: new ThinqSnapshot(data.snapshot),
+		modelJsonUri: data.modelJsonUri,
 	};
 }

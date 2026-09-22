@@ -4,10 +4,6 @@ import { OnOff, OperationalState } from 'matterbridge/matter/clusters';
 
 import type { ThinqSnapshot } from '../../core/domain/value-objects/ThinqSnapshot.js';
 
-const KEY_WASHER_STATE = 'washerDryer.state';
-const KEY_REMAIN_TIME_HOUR = 'washerDryer.remainTimeHour';
-const KEY_REMAIN_TIME_MINUTE = 'washerDryer.remainTimeMinute';
-
 /** Maps a ThinQ washer snapshot to a Matter `OperationalState.OperationalStateEnum`. */
 export function mapWasherStateToOperationalState(snapshot: ThinqSnapshot): OperationalState.OperationalStateEnum {
 	if (snapshot.isWasherError) {
@@ -33,8 +29,8 @@ export async function applyThinqSnapshotToWasher(
 ): Promise<void> {
 	const deviceId = washer.serialNumber ?? washer.uniqueId ?? 'unknown';
 
-	if (!snapshot.has(KEY_WASHER_STATE)) {
-		logger.debug(`applyThinqSnapshotToWasher: skipped (source key absent): ${KEY_WASHER_STATE}, deviceId=${deviceId}`);
+	if (snapshot.washerRawState === undefined) {
+		logger.debug(`applyThinqSnapshotToWasher: skipped (source key absent): washerDryer.state, deviceId=${deviceId}`);
 		return;
 	}
 
@@ -58,12 +54,7 @@ export async function applyThinqSnapshotToWasher(
 		logger,
 	);
 
-	if (snapshot.has(KEY_REMAIN_TIME_HOUR) || snapshot.has(KEY_REMAIN_TIME_MINUTE)) {
-		await washer.updateAttribute(
-			OperationalState.id,
-			'countdownTime',
-			snapshot.washerRemainingDurationSeconds ?? null,
-			logger,
-		);
+	if (snapshot.washerRemainingDurationSeconds !== undefined) {
+		await washer.updateAttribute(OperationalState.id, 'countdownTime', snapshot.washerRemainingDurationSeconds, logger);
 	}
 }
