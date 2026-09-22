@@ -119,6 +119,17 @@ export class ThinqApiClient {
 		return this.gateway.data;
 	}
 
+	/**
+	 * Fetches a device's model JSON from its own CDN `modelJsonUri` (an absolute URL, not gateway-relative),
+	 * so this bypasses the private `request()` helper entirely — direct unauthenticated `axios.get`, mirroring
+	 * how both reference implementations fetch model JSON.
+	 */
+	public async getDeviceModel(modelJsonUri: string): Promise<Record<string, unknown>> {
+		this.logger.debug(`ThinQ getDeviceModel request -> GET ${modelJsonUri}`);
+		const response = await axios.get<Record<string, unknown>>(modelJsonUri);
+		return response.data;
+	}
+
 	public async getListHomes(): Promise<ThinqHome[]> {
 		if (!this.homesCache) {
 			const data = await this.request<{ result: { item: ThinqHome[] } }>('get', 'service/homes');

@@ -24,6 +24,9 @@ ${b}Options:${r}
   ${y}--help${r}         Show this help message
   ${y}--debug${r}        Enable debug logging
 
+${b}Devices options:${r}
+  ${y}--dump-snapshot${r} Device id; prints its full raw ThinQ snapshot JSON instead of the device list
+
 ${b}Energy options:${r}
   ${y}--device${r}       Device id (default: first AC device)
   ${y}--samples${r}      Number of snapshots to fetch (default: 1)
@@ -42,6 +45,7 @@ ${b}Examples:${r}
   npm run cli -- --command ${g}login${r} --type account --country US --language en-US
   npm run cli -- --command ${g}login${r} --type token
   npm run cli -- --command ${g}devices${r}
+  npm run cli -- --command ${g}devices${r} --dump-snapshot <deviceId>
   npm run cli -- --command ${g}energy${r}
   npm run cli -- --command ${g}energy${r} --samples 5 --interval 10 --keep-alive
 `;

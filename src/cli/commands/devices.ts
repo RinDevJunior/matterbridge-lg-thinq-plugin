@@ -5,7 +5,11 @@ import { ThinqSession } from '../../services/thinq/session.js';
 import { ThinqApiClient } from '../../services/thinq/thinqApiClient.js';
 import type { CliSession } from '../types.js';
 
-export async function cmdDevices(session: CliSession, logger: AnsiLogger): Promise<void> {
+export async function cmdDevices(
+	session: CliSession,
+	logger: AnsiLogger,
+	dumpSnapshotDeviceId?: string,
+): Promise<void> {
 	const { userData, country, language } = session;
 
 	const thinqSession = new ThinqSession(userData.accessToken, userData.refreshToken, userData.expiresAtEpochSeconds);
@@ -19,6 +23,17 @@ export async function cmdDevices(session: CliSession, logger: AnsiLogger): Promi
 
 	if (devices.length === 0) {
 		console.log('No devices found.');
+		return;
+	}
+
+	if (dumpSnapshotDeviceId) {
+		const device = devices.find((d) => d.id === dumpSnapshotDeviceId);
+		if (!device) {
+			console.error(`Device not found: ${dumpSnapshotDeviceId}`);
+			process.exitCode = 1;
+			return;
+		}
+		console.log(JSON.stringify(device.snapshot.raw, null, 2));
 		return;
 	}
 

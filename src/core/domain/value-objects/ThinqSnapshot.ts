@@ -1,4 +1,21 @@
 /**
+ * ThinQ `washerDryer.state` values that do NOT count as "actively running" (ported verbatim from
+ * `homebridge-lg-thinq/src/devices/WasherDryer.ts:14-15`).
+ */
+const WASHER_NOT_RUNNING_STATES = [
+	'COOLDOWN',
+	'POWEROFF',
+	'POWERFAIL',
+	'INITIAL',
+	'PAUSE',
+	'AUDIBLE_DIAGNOSIS',
+	'FIRMWARE',
+	'COURSE_DOWNLOAD',
+	'ERROR',
+	'END',
+];
+
+/**
  * Typed accessor over a ThinQ device's raw flat-key snapshot bag (e.g. `airState.opMode`).
  * Phase 1 only exposes the AirConditioner fields used by `ThinqDeviceConfigurator`.
  */
@@ -91,8 +108,55 @@ export class ThinqSnapshot {
 		return value === undefined || Number.isNaN(value) ? undefined : value;
 	}
 
+	private get washerDryer(): Record<string, unknown> | undefined {
+		const value = this.data['washerDryer'];
+		return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : undefined;
+	}
+
+	public get hasWasherDryer(): boolean {
+		return this.washerDryer !== undefined;
+	}
+
+	public get washerRawState(): string | undefined {
+		const value = this.washerDryer?.['state'];
+		return typeof value === 'string' ? value : undefined;
+	}
+
+	public get isWasherPowerOn(): boolean {
+		return this.washerRawState !== undefined && !['POWEROFF', 'POWERFAIL'].includes(this.washerRawState);
+	}
+
+	public get isWasherRunning(): boolean {
+		return (
+			this.isWasherPowerOn &&
+			this.washerRawState !== undefined &&
+			!WASHER_NOT_RUNNING_STATES.includes(this.washerRawState)
+		);
+	}
+
+	public get isWasherError(): boolean {
+		return this.washerRawState === 'ERROR';
+	}
+
+	public get washerRemainingDurationSeconds(): number | undefined {
+		const hours = this.readWasherNumber('remainTimeHour');
+		const minutes = this.readWasherNumber('remainTimeMinute');
+		if (hours === undefined && minutes === undefined) {
+			return undefined;
+		}
+		if (!this.isWasherRunning) {
+			return 0;
+		}
+		return (hours ?? 0) * 3600 + (minutes ?? 0) * 60;
+	}
+
 	private readNumber(key: string): number | undefined {
 		const value = this.data[key];
+		return typeof value === 'number' ? value : undefined;
+	}
+
+	private readWasherNumber(key: string): number | undefined {
+		const value = this.washerDryer?.[key];
 		return typeof value === 'number' ? value : undefined;
 	}
 }

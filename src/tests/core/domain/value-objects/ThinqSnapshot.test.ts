@@ -705,4 +705,331 @@ describe('ThinqSnapshot', () => {
 			expect(snapshot.isPowerOn).toBe(false);
 		});
 	});
+
+	describe('washerRawState', () => {
+		it('should return the washerDryer.state string when present', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 'RUNNING', remainTimeHour: 1 },
+			});
+
+			// Act & Assert
+			expect(snapshot.washerRawState).toBe('RUNNING');
+		});
+
+		it('should return undefined when washerDryer is absent', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({});
+
+			// Act & Assert
+			expect(snapshot.washerRawState).toBeUndefined();
+		});
+
+		it('should return undefined when washerDryer.state is absent', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { remainTimeHour: 1 },
+			});
+
+			// Act & Assert
+			expect(snapshot.washerRawState).toBeUndefined();
+		});
+
+		it('should return undefined when washerDryer.state is not a string', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 123 },
+			});
+
+			// Act & Assert
+			expect(snapshot.washerRawState).toBeUndefined();
+		});
+	});
+
+	describe('isWasherPowerOn', () => {
+		it('should return true when washerRawState is RUNNING', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 'RUNNING' },
+			});
+
+			// Act & Assert
+			expect(snapshot.isWasherPowerOn).toBe(true);
+		});
+
+		it('should return true when washerRawState is PAUSE', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 'PAUSE' },
+			});
+
+			// Act & Assert
+			expect(snapshot.isWasherPowerOn).toBe(true);
+		});
+
+		it('should return true when washerRawState is END', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 'END' },
+			});
+
+			// Act & Assert
+			expect(snapshot.isWasherPowerOn).toBe(true);
+		});
+
+		it('should return true when washerRawState is ERROR', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 'ERROR' },
+			});
+
+			// Act & Assert
+			expect(snapshot.isWasherPowerOn).toBe(true);
+		});
+
+		it('should return false when washerRawState is POWEROFF', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 'POWEROFF' },
+			});
+
+			// Act & Assert
+			expect(snapshot.isWasherPowerOn).toBe(false);
+		});
+
+		it('should return false when washerRawState is POWERFAIL', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 'POWERFAIL' },
+			});
+
+			// Act & Assert
+			expect(snapshot.isWasherPowerOn).toBe(false);
+		});
+
+		it('should return false when washerDryer is absent', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({});
+
+			// Act & Assert
+			expect(snapshot.isWasherPowerOn).toBe(false);
+		});
+	});
+
+	describe('isWasherRunning', () => {
+		it('should return true when washerRawState is RUNNING', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 'RUNNING' },
+			});
+
+			// Act & Assert
+			expect(snapshot.isWasherRunning).toBe(true);
+		});
+
+		it('should return false when washerRawState is PAUSE (not running, even if powered on)', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 'PAUSE' },
+			});
+
+			// Act & Assert
+			expect(snapshot.isWasherRunning).toBe(false);
+		});
+
+		it('should return false when washerRawState is END (finished, not running)', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 'END' },
+			});
+
+			// Act & Assert
+			expect(snapshot.isWasherRunning).toBe(false);
+		});
+
+		it('should return false when washerRawState is POWEROFF', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 'POWEROFF' },
+			});
+
+			// Act & Assert
+			expect(snapshot.isWasherRunning).toBe(false);
+		});
+
+		it('should return false when washerRawState is ERROR', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 'ERROR' },
+			});
+
+			// Act & Assert
+			expect(snapshot.isWasherRunning).toBe(false);
+		});
+
+		it('should return false when washerDryer is absent', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({});
+
+			// Act & Assert
+			expect(snapshot.isWasherRunning).toBe(false);
+		});
+	});
+
+	describe('isWasherError', () => {
+		it('should return true when washerRawState is ERROR', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 'ERROR' },
+			});
+
+			// Act & Assert
+			expect(snapshot.isWasherError).toBe(true);
+		});
+
+		it('should return false when washerRawState is RUNNING', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 'RUNNING' },
+			});
+
+			// Act & Assert
+			expect(snapshot.isWasherError).toBe(false);
+		});
+
+		it('should return false when washerRawState is POWEROFF', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 'POWEROFF' },
+			});
+
+			// Act & Assert
+			expect(snapshot.isWasherError).toBe(false);
+		});
+
+		it('should return false when washerDryer is absent', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({});
+
+			// Act & Assert
+			expect(snapshot.isWasherError).toBe(false);
+		});
+	});
+
+	describe('washerRemainingDurationSeconds', () => {
+		it('should return combined seconds when both hours and minutes present', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 'RUNNING', remainTimeHour: 1, remainTimeMinute: 30 },
+			});
+
+			// Act
+			const result = snapshot.washerRemainingDurationSeconds;
+
+			// Assert
+			expect(result).toBe(5400); // 1*3600 + 30*60
+		});
+
+		it('should return seconds from hours only', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 'RUNNING', remainTimeHour: 2 },
+			});
+
+			// Act
+			const result = snapshot.washerRemainingDurationSeconds;
+
+			// Assert
+			expect(result).toBe(7200); // 2*3600
+		});
+
+		it('should return seconds from minutes only', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 'RUNNING', remainTimeMinute: 45 },
+			});
+
+			// Act
+			const result = snapshot.washerRemainingDurationSeconds;
+
+			// Assert
+			expect(result).toBe(2700); // 45*60
+		});
+
+		it('should return 0 when present but not running (PAUSE)', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 'PAUSE', remainTimeHour: 1, remainTimeMinute: 30 },
+			});
+
+			// Act
+			const result = snapshot.washerRemainingDurationSeconds;
+
+			// Assert
+			expect(result).toBe(0); // Zeroed when not running
+		});
+
+		it('should return 0 when present but not running (END)', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 'END', remainTimeHour: 1 },
+			});
+
+			// Act
+			const result = snapshot.washerRemainingDurationSeconds;
+
+			// Assert
+			expect(result).toBe(0); // Zeroed when not running
+		});
+
+		it('should return undefined when both remain times absent', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 'RUNNING' },
+			});
+
+			// Act
+			const result = snapshot.washerRemainingDurationSeconds;
+
+			// Assert
+			expect(result).toBeUndefined();
+		});
+
+		it('should return undefined when washerDryer absent', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({});
+
+			// Act
+			const result = snapshot.washerRemainingDurationSeconds;
+
+			// Assert
+			expect(result).toBeUndefined();
+		});
+
+		it('should handle zero hour/minute values', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 'RUNNING', remainTimeHour: 0, remainTimeMinute: 0 },
+			});
+
+			// Act
+			const result = snapshot.washerRemainingDurationSeconds;
+
+			// Assert
+			expect(result).toBe(0);
+		});
+
+		it('should add hours and minutes correctly (large values)', () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 'RUNNING', remainTimeHour: 10, remainTimeMinute: 59 },
+			});
+
+			// Act
+			const result = snapshot.washerRemainingDurationSeconds;
+
+			// Assert
+			expect(result).toBe(39540); // 10*3600 + 59*60
+		});
+	});
 });

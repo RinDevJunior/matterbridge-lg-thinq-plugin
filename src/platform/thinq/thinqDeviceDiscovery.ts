@@ -1,12 +1,16 @@
 import { AnsiLogger } from 'matterbridge/logger';
 
-import type { ThinqAirConditionerDevice, ThinqDevice } from '../../core/domain/entities/ThinqDevice.js';
+import type {
+	ThinqAirConditionerDevice,
+	ThinqDevice,
+	ThinqWasherDevice,
+} from '../../core/domain/entities/ThinqDevice.js';
 import { ThinqDeviceService } from '../../services/thinq/thinqDeviceService.js';
 
 /**
  * Dispatches discovered ThinQ devices to their typed device entity, keyed by `deviceType` string
- * (ports `Helper.make`, `homebridge-lg-thinq/src/helper.ts:32-49`). Phase 1 only supports AirConditioner
- * ('AC') — every other type is unregistered (returns `undefined`), matching the source's
+ * (ports `Helper.make`, `homebridge-lg-thinq/src/helper.ts:32-49`). Supports AirConditioner ('AC') and
+ * Washer ('WASHER') — every other type is unregistered (returns `undefined`), matching the source's
  * `unregisterUnsupportedDevice` fail-closed behavior.
  */
 export class ThinqDeviceDiscovery {
@@ -34,10 +38,12 @@ export class ThinqDeviceDiscovery {
 		return supported;
 	}
 
-	private dispatch(device: ThinqDevice): ThinqAirConditionerDevice | undefined {
+	private dispatch(device: ThinqDevice): ThinqAirConditionerDevice | ThinqWasherDevice | undefined {
 		switch (device.type) {
 			case 'AC':
 				return { ...device, type: 'AC' };
+			case 'WASHER':
+				return { ...device, type: 'WASHER' };
 			default:
 				return undefined;
 		}

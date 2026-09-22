@@ -38,7 +38,8 @@ export async function main(): Promise<void> {
 				return;
 			}
 
-			await cmdDevices(session, logger);
+			const dumpSnapshotDeviceId = args['dump-snapshot'];
+			await cmdDevices(session, logger, dumpSnapshotDeviceId);
 			return;
 		}
 

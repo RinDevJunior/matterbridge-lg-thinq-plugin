@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ThinqAirConditionerDevice } from '../../../core/domain/entities/ThinqDevice.js';
+import type { ThinqAirConditionerDevice, ThinqWasherDevice } from '../../../core/domain/entities/ThinqDevice.js';
 import { DEFAULT_AIR_CONDITIONER_CAPABILITIES } from '../../../core/domain/value-objects/AirConditionerCapabilities.js';
 import { ThinqSnapshot } from '../../../core/domain/value-objects/ThinqSnapshot.js';
 import type { PlatformConfigManager } from '../../../platform/platformConfigManager.js';
@@ -9,6 +9,8 @@ import { registerAirConditionerCommandHandlers } from '../../../platform/thinq/t
 import { buildAirConditionerEndpoint } from '../../../platform/thinq/thinqAirConditionerEndpointFactory.js';
 import * as sceneButtonsModule from '../../../platform/thinq/thinqAirConditionerSceneButtons.js';
 import { ThinqDeviceConfigurator } from '../../../platform/thinq/thinqDeviceConfigurator.js';
+import { registerWasherCommandHandlers } from '../../../platform/thinq/thinqWasherCommandHandlers.js';
+import { buildWasherEndpoint } from '../../../platform/thinq/thinqWasherEndpointFactory.js';
 import type { ThinqApiClient } from '../../../services/thinq/thinqApiClient.js';
 import { asPartial, createMockLogger } from '../../helpers/testUtils.js';
 
@@ -26,6 +28,13 @@ vi.mock('../../../platform/thinq/thinqAirConditionerEndpointFactory.js', () => (
 		addRequiredClusterServers: vi.fn().mockReturnThis(),
 	})),
 }));
+vi.mock('../../../platform/thinq/thinqWasherEndpointFactory.js', () => ({
+	buildWasherEndpoint: vi.fn(() => ({
+		log: { debug: vi.fn(), info: vi.fn(), error: vi.fn() },
+	})),
+}));
+vi.mock('../../../platform/thinq/thinqWasherCommandHandlers.js');
+vi.mock('../../../platform/thinq/thinqWasherStopCommandResolver.js');
 
 function createMockThinqAirConditionerDevice(): ThinqAirConditionerDevice {
 	return asPartial<ThinqAirConditionerDevice>({
@@ -51,10 +60,26 @@ function createMockApiClient(): ThinqApiClient {
 	});
 }
 
+function createMockWasherDevice(): ThinqWasherDevice {
+	return asPartial<ThinqWasherDevice>({
+		id: 'washer-456',
+		name: 'Laundry Room Washer',
+		type: 'WASHER',
+		modelName: 'VCDWL_QEUK',
+		platformType: 'THINQ',
+		online: true,
+		snapshot: new ThinqSnapshot({
+			'washerDryer.state': 'RUNNING',
+		}),
+		modelJsonUri: 'https://example.com/model.json',
+	});
+}
+
 function createMockConfigManager(): PlatformConfigManager {
 	return asPartial<PlatformConfigManager>({
 		getDeviceCapabilities: vi.fn().mockReturnValue(DEFAULT_AIR_CONDITIONER_CAPABILITIES),
 		getSceneButtons: vi.fn().mockReturnValue([]),
+		getWasherControlConfig: vi.fn().mockReturnValue({}),
 		overrideMatterConfiguration: false,
 		matterOverrideSettings: {
 			matterVendorName: 'Matterbridge',
@@ -476,6 +501,102 @@ describe('ThinqDeviceConfigurator', () => {
 					productName: 'Custom AC',
 				}),
 			);
+		});
+	});
+
+	describe('registerWasher', () => {
+		it('should log device registration', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+
+			// Act
+			await configurator.registerWasher(device);
+
+			// Assert
+			expect(mockLogger.info).toHaveBeenCalledWith(
+				expect.stringContaining('Registering ThinQ Washer: Laundry Room Washer (washer-456)'),
+			);
+		});
+
+		it('should call buildWasherEndpoint with the device', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const buildEndpointSpy = vi.mocked(buildWasherEndpoint);
+
+			// Act
+			await configurator.registerWasher(device);
+
+			// Assert
+			expect(buildEndpointSpy).toHaveBeenCalledWith(device);
+		});
+
+		it('should call registerWasherCommandHandlers with correct parameters', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const registerHandlersSpy = vi.mocked(registerWasherCommandHandlers);
+
+			// Act
+			await configurator.registerWasher(device);
+
+			// Assert
+			expect(registerHandlersSpy).toHaveBeenCalled();
+			const call = registerHandlersSpy.mock.calls[0];
+			expect(call[1]).toBe(device); // device parameter
+			expect(call[2]).toBe(mockApiClient); // apiClient parameter
+			expect(call[3]).toBe(mockLogger); // logger parameter
+		});
+
+		it('should return an endpoint', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+
+			// Act
+			const result = await configurator.registerWasher(device);
+
+			// Assert
+			expect(result).toBeDefined();
+		});
+
+		it('should call getWasherControlConfig with device id', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const getConfigSpy = vi.mocked(mockConfigManager.getWasherControlConfig);
+
+			// Act
+			await configurator.registerWasher(device);
+
+			// Assert
+			expect(getConfigSpy).toHaveBeenCalledWith('washer-456');
+		});
+
+		it('should pass washerControl config to registerWasherCommandHandlers', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const washerControl = { allowRemoteStop: true };
+			vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue(washerControl);
+			const registerHandlersSpy = vi.mocked(registerWasherCommandHandlers);
+
+			// Act
+			await configurator.registerWasher(device);
+
+			// Assert
+			const call = registerHandlersSpy.mock.calls[0];
+			expect(call[4]).toEqual(washerControl); // washerControl parameter
+		});
+
+		it('should pass 5+ parameters to registerWasherCommandHandlers (includes stop payload)', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const registerHandlersSpy = vi.mocked(registerWasherCommandHandlers);
+
+			// Act
+			await configurator.registerWasher(device);
+
+			// Assert
+			const call = registerHandlersSpy.mock.calls[0];
+			// Verify the function is called with 6 parameters:
+			// washer, device, apiClient, logger, washerControl, stopCommandPayload
+			expect(call.length).toBe(6);
 		});
 	});
 });

@@ -48,31 +48,34 @@ describe('ThinqDeviceDiscovery', () => {
 			expect(result[0].type).toBe('AC');
 		});
 
-		it('should skip unsupported device types', async () => {
+		it('should include WASHER device type (v1 support)', async () => {
 			const washerDevice = asPartial<ThinqDevice>({
 				type: 'WASHER',
 				id: 'device-washer-1',
 				name: 'Washer',
+				modelName: 'VCDWL_QEUK',
+				online: true,
 			});
 			vi.mocked(mockDeviceService.discoverDevices).mockResolvedValue([washerDevice]);
 
 			const result = await discovery.discoverDevices();
 
-			expect(result).toEqual([]);
+			expect(result).toHaveLength(1);
+			expect(result[0].type).toBe('WASHER');
 		});
 
-		it('should log info message for skipped device types', async () => {
-			const washerDevice = asPartial<ThinqDevice>({
-				type: 'WASHER',
-				id: 'device-washer-1',
-				name: 'Washer',
+		it('should skip unsupported washer variants (WASHER_NEW)', async () => {
+			const washerNewDevice = asPartial<ThinqDevice>({
+				type: 'WASHER_NEW',
+				id: 'device-washer-new-1',
+				name: 'Washer New',
 			});
-			vi.mocked(mockDeviceService.discoverDevices).mockResolvedValue([washerDevice]);
+			vi.mocked(mockDeviceService.discoverDevices).mockResolvedValue([washerNewDevice]);
 
 			await discovery.discoverDevices();
 
 			expect(mockLogger.info).toHaveBeenCalledWith(
-				expect.stringContaining('ThinQ device type not supported, skipping: WASHER'),
+				expect.stringContaining('ThinQ device type not supported, skipping: WASHER_NEW'),
 			);
 		});
 
@@ -120,9 +123,10 @@ describe('ThinqDeviceDiscovery', () => {
 
 			const result = await discovery.discoverDevices();
 
-			expect(result).toHaveLength(2);
+			expect(result).toHaveLength(3);
 			expect(result[0].id).toBe('device-ac-1');
-			expect(result[1].id).toBe('device-ac-2');
+			expect(result[1].id).toBe('device-washer-1');
+			expect(result[2].id).toBe('device-ac-2');
 		});
 
 		it('should properly narrow AC device type', async () => {

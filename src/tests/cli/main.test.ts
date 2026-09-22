@@ -119,7 +119,32 @@ describe('main', () => {
 		await main();
 
 		// Assert
-		expect(cmdDevices).toHaveBeenCalledWith(mockSession, expect.any(Object));
+		expect(cmdDevices).toHaveBeenCalledWith(mockSession, expect.any(Object), undefined);
+	});
+
+	it('should call cmdDevices with dump-snapshot flag when --dump-snapshot is provided', async () => {
+		// Arrange
+		const mockSession = {
+			loginType: 'account' as const,
+			country: 'US',
+			language: 'en-US',
+			userData: {
+				accessToken: 'token',
+				refreshToken: 'refresh',
+				expiresAtEpochSeconds: 123,
+				country: 'US',
+				language: 'en-US',
+			},
+		};
+		vi.mocked(parseArgs).mockReturnValue({ command: 'devices', 'dump-snapshot': 'washer-123' });
+		vi.mocked(loadSession).mockReturnValue(mockSession);
+		vi.mocked(cmdDevices).mockResolvedValue(undefined);
+
+		// Act
+		await main();
+
+		// Assert
+		expect(cmdDevices).toHaveBeenCalledWith(mockSession, expect.any(Object), 'washer-123');
 	});
 
 	it('should error when command is "devices" but session does not exist', async () => {

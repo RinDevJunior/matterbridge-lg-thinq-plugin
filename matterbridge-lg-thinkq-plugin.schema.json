@@ -135,6 +135,18 @@
 									}
 								}
 							},
+							"washerControl": {
+								"title": "Washer Control",
+								"type": "object",
+								"properties": {
+									"allowRemoteStop": {
+										"title": "Allow Remote Stop (Washer)",
+										"description": "Turning this on lets Apple Home send a real stop/cancel command to the physical washer. Off by default.",
+										"type": "boolean",
+										"default": false
+									}
+								}
+							},
 							"sceneButtons": {
 								"title": "Scene Buttons",
 								"description": "Optional custom quick-access scene buttons that switch the AC to a saved mode combo with one tap.",

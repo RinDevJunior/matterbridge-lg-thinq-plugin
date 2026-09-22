@@ -13,6 +13,7 @@ import {
 	LgThinkqPluginPlatformConfig,
 	type MatterOverrideSettings,
 	type ThinqSceneButtonConfig,
+	type ThinqWasherControlConfig,
 } from '../model/LgThinkqPluginPlatformConfig.js';
 
 const DEFAULT_THINQ_REFRESH_INTERVAL_SECONDS = 60;
@@ -91,6 +92,10 @@ export class PlatformConfigManager {
 
 	public getSceneButtons(deviceId: string): ThinqSceneButtonConfig[] {
 		return this.config.thinq.devices?.find((d) => d.deviceId === deviceId)?.sceneButtons ?? [];
+	}
+
+	public getWasherControlConfig(deviceId: string): ThinqWasherControlConfig {
+		return this.config.thinq.devices?.find((d) => d.deviceId === deviceId)?.washerControl ?? {};
 	}
 
 	public get overrideMatterConfiguration(): boolean {
