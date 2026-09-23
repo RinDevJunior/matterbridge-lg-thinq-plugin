@@ -32,12 +32,17 @@ export interface ThinqWasherControlConfig {
 	allowRemoteStop?: boolean;
 }
 
+export interface ThinqAcFilterControlConfig {
+	allowFilterReset?: boolean;
+}
+
 export interface ThinqDeviceConfigEntry {
 	deviceId: string;
 	capabilities?: ThinqDeviceCapabilityConfig;
 	sceneButtons?: ThinqSceneButtonConfig[];
 	productName?: string;
 	washerControl?: ThinqWasherControlConfig;
+	acFilterControl?: ThinqAcFilterControlConfig;
 }
 
 export interface ThinqAuthConfig {

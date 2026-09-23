@@ -37,6 +37,11 @@ export class ThinqFilterState {
 	public get changeDate(): number | undefined {
 		return this.changeDateRaw;
 	}
+
+	/** The device's rated total filter life in hours — echoed back unchanged in a reset `Set` payload. */
+	public get ratedMaxTimeHours(): number {
+		return this.maxTimeHours;
+	}
 }
 
 function readNumber(data: Record<string, unknown> | undefined, key: string): number | undefined {

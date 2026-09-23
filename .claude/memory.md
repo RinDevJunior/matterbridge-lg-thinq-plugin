@@ -96,6 +96,18 @@ It is version-controlled — commit and push changes so teammates can pull the l
   standalone interval-timer service (separate from `ThinqDeviceService`), `serviceContainer.getFilterMonitoringService()`
   singleton; `applyThinqFilterStateToAirConditioner` (new file, not `thinqAirConditionerStateSync.ts`)
   writes `HepaFilterMonitoring.condition`/`changeIndication` only when state is defined.
+- ThinQ AC filter RESET (v2) planned (Sep 23, 2026, verified against installed SDK):
+  `@matterbridge/core/dist/behaviors/hepaFilterMonitoringServer.js` `MatterbridgeHepaFilterMonitoringServer.resetCondition()`
+  DOES `await device.commandHandler.executeHandler(...)` before writing `state.condition=100`/
+  `changeIndication=Ok`/`lastChangedTime=now` directly — those writes are SKIPPED entirely if our
+  `addCommandHandler('resetCondition', ...)` handler throws, so a failed real ThinQ `Set` call can
+  never flip the attributes. Do NOT manually `updateAttribute` those fields on success — the SDK
+  already does it, would race/duplicate. `ThinqApiClient.sendCommand` already supports arbitrary
+  `ctrlKey`/`command`/`dataSetList` overrides (proven by washer's `stop`) — no new API-client method
+  needed; reset is `sendCommand(id, {ctrlKey:'filterMngStateCtrl', command:'Set', dataSetList})`.
+  New registration kept in its OWN file/function (`registerFilterResetCommandHandler`), NOT folded
+  into `registerAirConditionerCommandHandlers` — that function has 39 existing call sites in its test
+  file that a new required param would break. See `workspace/ac-filter-monitoring/plan-v2-reset.md`.
 
 ## Test Patterns
 

@@ -13,6 +13,7 @@ import {
 	THINQ_FAN_SPEED_MEDIUM,
 } from './thinqAirConditionerCommandHandlers.js';
 import { buildAirConditionerEndpoint } from './thinqAirConditionerEndpointFactory.js';
+import { registerFilterResetCommandHandler } from './thinqAirConditionerFilterResetCommandHandler.js';
 import { registerSceneButtonCommandHandlers } from './thinqAirConditionerSceneButtons.js';
 import { registerWasherCommandHandlers } from './thinqWasherCommandHandlers.js';
 import { buildWasherEndpoint } from './thinqWasherEndpointFactory.js';
@@ -95,6 +96,16 @@ export class ThinqDeviceConfigurator {
 		registerAirConditionerCommandHandlers(airConditioner, device, this.apiClient, this.logger, capabilities);
 		registerAuxiliaryToggleCommandHandlers(airConditioner, device, this.apiClient, this.logger, capabilities);
 		registerSceneButtonCommandHandlers(airConditioner, sceneButtons, device, this.apiClient, this.logger);
+
+		const filterResetControl = this.configManager.getAcFilterControlConfig(device.id);
+		registerFilterResetCommandHandler(
+			airConditioner,
+			device,
+			this.apiClient,
+			this.logger,
+			capabilities,
+			filterResetControl,
+		);
 
 		this.logger.debug(`registerAirConditioner: completed for deviceId=${device.id}`);
 		return Promise.resolve(airConditioner);

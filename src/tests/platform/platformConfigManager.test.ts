@@ -783,4 +783,100 @@ describe('PlatformConfigManager', () => {
 			expect(result).toEqual({ allowRemoteStop: false });
 		});
 	});
+
+	describe('getAcFilterControlConfig', () => {
+		it('should return acFilterControl config when device found with acFilterControl set', () => {
+			const config = asPartial<LgThinkqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'ac-123',
+							acFilterControl: { allowFilterReset: true },
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const result = manager.getAcFilterControlConfig('ac-123');
+
+			expect(result).toEqual({ allowFilterReset: true });
+		});
+
+		it('should return empty object when device found but acFilterControl not set', () => {
+			const config = asPartial<LgThinkqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'ac-123',
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const result = manager.getAcFilterControlConfig('ac-123');
+
+			expect(result).toEqual({});
+		});
+
+		it('should return empty object when device not found', () => {
+			const config = asPartial<LgThinkqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const result = manager.getAcFilterControlConfig('unknown-device');
+
+			expect(result).toEqual({});
+		});
+
+		it('should return empty object when thinq.devices is undefined', () => {
+			const config = asPartial<LgThinkqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const result = manager.getAcFilterControlConfig('ac-123');
+
+			expect(result).toEqual({});
+		});
+
+		it('should return allowFilterReset false when explicitly set', () => {
+			const config = asPartial<LgThinkqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'ac-123',
+							acFilterControl: { allowFilterReset: false },
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const result = manager.getAcFilterControlConfig('ac-123');
+
+			expect(result).toEqual({ allowFilterReset: false });
+		});
+	});
 });

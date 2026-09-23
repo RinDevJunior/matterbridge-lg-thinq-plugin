@@ -12,6 +12,7 @@ import {
 	createDefaultThinqConfig,
 	LgThinkqPluginPlatformConfig,
 	type MatterOverrideSettings,
+	type ThinqAcFilterControlConfig,
 	type ThinqSceneButtonConfig,
 	type ThinqWasherControlConfig,
 } from '../model/LgThinkqPluginPlatformConfig.js';
@@ -101,6 +102,10 @@ export class PlatformConfigManager {
 
 	public getWasherControlConfig(deviceId: string): ThinqWasherControlConfig {
 		return this.config.thinq.devices?.find((d) => d.deviceId === deviceId)?.washerControl ?? {};
+	}
+
+	public getAcFilterControlConfig(deviceId: string): ThinqAcFilterControlConfig {
+		return this.config.thinq.devices?.find((d) => d.deviceId === deviceId)?.acFilterControl ?? {};
 	}
 
 	public get overrideMatterConfiguration(): boolean {

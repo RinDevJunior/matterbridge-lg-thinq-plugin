@@ -183,4 +183,28 @@ describe('ThinqFilterState', () => {
 			expect(result?.remainingPercent).toBe(1);
 		});
 	});
+
+	describe('ratedMaxTimeHours', () => {
+		it('should return the maxTime value that was passed to fromRaw', () => {
+			const data = {
+				'airState.filterMngStates.useTime': 11,
+				'airState.filterMngStates.maxTime': 720,
+			};
+
+			const result = ThinqFilterState.fromRaw(data);
+
+			expect(result?.ratedMaxTimeHours).toBe(720);
+		});
+
+		it('should return different maxTime values correctly', () => {
+			const data = {
+				'airState.filterMngStates.useTime': 100,
+				'airState.filterMngStates.maxTime': 500,
+			};
+
+			const result = ThinqFilterState.fromRaw(data);
+
+			expect(result?.ratedMaxTimeHours).toBe(500);
+		});
+	});
 });
