@@ -654,17 +654,12 @@ describe('applyThinqSnapshotToAirConditioner with auxiliary toggles (Phase A)', 
 				vi.clearAllMocks();
 			});
 
-			it('should update humidity sensor when supportsHumiditySensor is enabled and humidityPercent is defined', async () => {
+			it('should update humidity on AC endpoint when supportsHumiditySensor is enabled and humidityPercent is defined', async () => {
 				// Arrange
 				capabilities = {
 					...DEFAULT_AIR_CONDITIONER_CAPABILITIES,
 					supportsHumiditySensor: true,
 				};
-
-				const mockChild = {
-					updateAttribute: vi.fn().mockResolvedValue(false),
-				};
-				airConditioner.getChildEndpointById.mockReturnValue(mockChild);
 
 				const snapshot = new ThinqSnapshot({
 					'airState.operation': 1,
@@ -675,12 +670,20 @@ describe('applyThinqSnapshotToAirConditioner with auxiliary toggles (Phase A)', 
 					'airState.humidity.current': 65,
 				});
 
+				const updateAttributeSpy = vi.spyOn(airConditioner, 'updateAttribute').mockResolvedValue(false);
+
 				// Act
 				await applyThinqSnapshotToAirConditioner(airConditioner, snapshot, capabilities, mockLogger);
 
 				// Assert
-				expect(airConditioner.getChildEndpointById).toHaveBeenCalledWith('HumiditySensor');
-				expect(mockChild.updateAttribute).toHaveBeenCalledWith(expect.any(Number), 'measuredValue', 6500, mockLogger);
+				expect(updateAttributeSpy).toHaveBeenCalledWith(
+					RelativeHumidityMeasurement.id,
+					'measuredValue',
+					6500,
+					mockLogger,
+				);
+				// getChildEndpointById should NOT be called for humidity (no child lookup)
+				expect(airConditioner.getChildEndpointById).not.toHaveBeenCalledWith('HumiditySensor');
 			});
 
 			it('should apply humidity heuristic when value > 100', async () => {
@@ -689,11 +692,6 @@ describe('applyThinqSnapshotToAirConditioner with auxiliary toggles (Phase A)', 
 					...DEFAULT_AIR_CONDITIONER_CAPABILITIES,
 					supportsHumiditySensor: true,
 				};
-
-				const mockChild = {
-					updateAttribute: vi.fn().mockResolvedValue(false),
-				};
-				airConditioner.getChildEndpointById.mockReturnValue(mockChild);
 
 				const snapshot = new ThinqSnapshot({
 					'airState.operation': 1,
@@ -704,12 +702,14 @@ describe('applyThinqSnapshotToAirConditioner with auxiliary toggles (Phase A)', 
 					'airState.humidity.current': 650,
 				});
 
+				const updateAttributeSpy = vi.spyOn(airConditioner, 'updateAttribute').mockResolvedValue(false);
+
 				// Act
 				await applyThinqSnapshotToAirConditioner(airConditioner, snapshot, capabilities, mockLogger);
 
 				// Assert
-				expect(mockChild.updateAttribute).toHaveBeenCalledWith(
-					expect.any(Number),
+				expect(updateAttributeSpy).toHaveBeenCalledWith(
+					RelativeHumidityMeasurement.id,
 					'measuredValue',
 					6500, // 65 * 100
 					mockLogger,
@@ -767,31 +767,6 @@ describe('applyThinqSnapshotToAirConditioner with auxiliary toggles (Phase A)', 
 
 				// Assert
 				expect(airConditioner.getChildEndpointById).not.toHaveBeenCalledWith('HumiditySensor');
-			});
-
-			it('should handle missing HumiditySensor child endpoint gracefully', async () => {
-				// Arrange
-				capabilities = {
-					...DEFAULT_AIR_CONDITIONER_CAPABILITIES,
-					supportsHumiditySensor: true,
-				};
-
-				airConditioner.getChildEndpointById.mockReturnValue(undefined); // child doesn't exist
-
-				const snapshot = new ThinqSnapshot({
-					'airState.operation': 1,
-					'airState.tempState.current': 22,
-					'airState.tempState.target': 24,
-					'airState.opMode': 0,
-					'airState.windStrength': 2,
-					'airState.humidity.current': 65,
-				});
-
-				// Act & Assert - should not throw
-				await expect(
-					applyThinqSnapshotToAirConditioner(airConditioner, snapshot, capabilities, mockLogger),
-				).resolves.not.toThrow();
-				expect(airConditioner.getChildEndpointById).toHaveBeenCalledWith('HumiditySensor');
 			});
 
 			it('should update air quality sensor when supportsAirQualitySensor is enabled and all values are defined', async () => {
@@ -948,15 +923,11 @@ describe('applyThinqSnapshotToAirConditioner with auxiliary toggles (Phase A)', 
 					supportsAirQualitySensor: true,
 				};
 
-				const mockHumidityChild = {
-					updateAttribute: vi.fn().mockResolvedValue(false),
-				};
 				const mockAirQualityChild = {
 					updateAttribute: vi.fn().mockResolvedValue(false),
 				};
 
 				airConditioner.getChildEndpointById.mockImplementation((id: string) => {
-					if (id === 'HumiditySensor') return mockHumidityChild;
 					if (id === 'AirQualitySensor') return mockAirQualityChild;
 					return undefined;
 				});
@@ -973,13 +944,21 @@ describe('applyThinqSnapshotToAirConditioner with auxiliary toggles (Phase A)', 
 					'airState.quality.PM10': 50,
 				});
 
+				const updateAttributeSpy = vi.spyOn(airConditioner, 'updateAttribute').mockResolvedValue(false);
+
 				// Act
 				await applyThinqSnapshotToAirConditioner(airConditioner, snapshot, capabilities, mockLogger);
 
 				// Assert
-				expect(airConditioner.getChildEndpointById).toHaveBeenCalledWith('HumiditySensor');
+				// Humidity is on the main AC endpoint
+				expect(updateAttributeSpy).toHaveBeenCalledWith(
+					RelativeHumidityMeasurement.id,
+					'measuredValue',
+					6500,
+					mockLogger,
+				);
+				// Air quality is still on a child endpoint
 				expect(airConditioner.getChildEndpointById).toHaveBeenCalledWith('AirQualitySensor');
-				expect(mockHumidityChild.updateAttribute).toHaveBeenCalled();
 				expect(mockAirQualityChild.updateAttribute).toHaveBeenCalled();
 			});
 

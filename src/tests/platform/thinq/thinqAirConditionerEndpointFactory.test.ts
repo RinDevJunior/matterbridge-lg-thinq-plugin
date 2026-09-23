@@ -418,23 +418,8 @@ describe('buildAirConditionerEndpoint', () => {
 		});
 	});
 
-	describe('humidity sensor child endpoint (Phase C)', () => {
-		it('should create HumiditySensor child endpoint when supportsHumiditySensor is true', () => {
-			// Arrange
-			const capabilities = asPartial<AirConditionerCapabilities>({
-				supportsHeat: true,
-				supportsFanSpeedControl: true,
-				supportsHumiditySensor: true,
-			});
-
-			// Act
-			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
-
-			// Assert
-			expect(mockEndpoint.addChildDeviceType).toHaveBeenCalledWith('HumiditySensor', expect.any(Array));
-		});
-
-		it('should create RelativeHumidityMeasurementClusterServer on HumiditySensor child', () => {
+	describe('humidity measurement on AC endpoint (Phase C)', () => {
+		it('should create RelativeHumidityMeasurementClusterServer on main AC endpoint when supportsHumiditySensor is true', () => {
 			// Arrange
 			const capabilities = asPartial<AirConditionerCapabilities>({
 				supportsHeat: true,
@@ -447,6 +432,23 @@ describe('buildAirConditionerEndpoint', () => {
 
 			// Assert
 			expect(mockEndpoint.createDefaultRelativeHumidityMeasurementClusterServer).toHaveBeenCalledWith(0);
+		});
+
+		it('should not create HumiditySensor child endpoint when supportsHumiditySensor is true', () => {
+			// Arrange
+			const capabilities = asPartial<AirConditionerCapabilities>({
+				supportsHeat: true,
+				supportsFanSpeedControl: true,
+				supportsHumiditySensor: true,
+			});
+
+			// Act
+			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
+
+			// Assert
+			const calls = (mockEndpoint.addChildDeviceType as any).mock.calls;
+			const humidityCallExists = calls.some((call: any[]) => call[0] === 'HumiditySensor');
+			expect(humidityCallExists).toBe(false);
 		});
 
 		it('should not create HumiditySensor child endpoint when supportsHumiditySensor is false', () => {
@@ -590,9 +592,12 @@ describe('buildAirConditionerEndpoint', () => {
 			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
 
 			// Assert
+			// Humidity is now on the main endpoint, not a child
+			expect(mockEndpoint.createDefaultRelativeHumidityMeasurementClusterServer).toHaveBeenCalledWith(0);
+			// Only AirQualitySensor should be a child endpoint
 			const calls = (mockEndpoint.addChildDeviceType as any).mock.calls;
-			expect(calls.some((call: any[]) => call[0] === 'HumiditySensor')).toBe(true);
 			expect(calls.some((call: any[]) => call[0] === 'AirQualitySensor')).toBe(true);
+			expect(calls.some((call: any[]) => call[0] === 'HumiditySensor')).toBe(false);
 		});
 
 		it('should maintain regression parity when both sensor capabilities are false (default)', () => {
@@ -738,7 +743,6 @@ describe('buildAirConditionerEndpoint', () => {
 
 		it('should coexist with humidity sensor and air quality sensor when energy is on endpoint', () => {
 			// Arrange
-			const childHumidityMock = createChainableMock();
 			const childAirQualityMock = createChainableMock();
 			const capabilities = asPartial<AirConditionerCapabilities>({
 				supportsHeat: true,
@@ -748,10 +752,7 @@ describe('buildAirConditionerEndpoint', () => {
 				supportsAirQualitySensor: true,
 			});
 
-			let callCount = 0;
 			mockEndpoint.addChildDeviceType = vi.fn((name: string) => {
-				callCount++;
-				if (name === 'HumiditySensor') return childHumidityMock;
 				if (name === 'AirQualitySensor') return childAirQualityMock;
 				return createChainableMock();
 			});
@@ -760,10 +761,12 @@ describe('buildAirConditionerEndpoint', () => {
 			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
 
 			// Assert
+			// Humidity is on main endpoint, only AirQualitySensor is a child
+			expect(mockEndpoint.createDefaultRelativeHumidityMeasurementClusterServer).toHaveBeenCalledWith(0);
 			const calls = (mockEndpoint.addChildDeviceType as any).mock.calls;
 			const childNames = calls.map((call: any[]) => call[0]);
-			expect(childNames).toContain('HumiditySensor');
 			expect(childNames).toContain('AirQualitySensor');
+			expect(childNames).not.toContain('HumiditySensor');
 			expect(childNames).not.toContain('EnergyMonitor');
 		});
 
@@ -859,13 +862,15 @@ describe('buildAirConditionerEndpoint', () => {
 			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
 
 			// Assert
+			// Humidity and filter monitoring are on the AC endpoint itself, not children
+			expect(mockEndpoint.createDefaultRelativeHumidityMeasurementClusterServer).toHaveBeenCalledWith(0);
+			expect(mockEndpoint.createDefaultHepaFilterMonitoringClusterServer).toHaveBeenCalled();
 			const calls = (mockEndpoint.addChildDeviceType as any).mock.calls;
 			const childNames = calls.map((call: any[]) => call[0]);
-			expect(childNames).toContain('HumiditySensor');
+			// Only AirQualitySensor is a child endpoint
 			expect(childNames).toContain('AirQualitySensor');
-			// Filter monitoring is on the AC endpoint itself, not a child
+			expect(childNames).not.toContain('HumiditySensor');
 			expect(childNames).not.toContain('FilterMonitor');
-			expect(mockEndpoint.createDefaultHepaFilterMonitoringClusterServer).toHaveBeenCalled();
 		});
 	});
 

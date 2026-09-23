@@ -1,7 +1,6 @@
 import {
 	airQualitySensor,
 	electricalSensor,
-	humiditySensor,
 	MatterbridgeEndpoint,
 	powerSource,
 	roomAirConditioner,
@@ -110,10 +109,9 @@ export function buildAirConditionerEndpoint(
 	}
 
 	if (capabilities.supportsHumiditySensor) {
-		endpoint
-			.addChildDeviceType('HumiditySensor', [humiditySensor])
-			.createDefaultIdentifyClusterServer()
-			.createDefaultRelativeHumidityMeasurementClusterServer(0);
+		// RelativeHumidityMeasurement is an optional cluster of roomAirConditioner itself (matterbridgeDeviceTypes.js),
+		// same as TemperatureMeasurement below — no separate child endpoint needed.
+		endpoint.createDefaultRelativeHumidityMeasurementClusterServer(0);
 	}
 
 	if (capabilities.supportsAirQualitySensor) {

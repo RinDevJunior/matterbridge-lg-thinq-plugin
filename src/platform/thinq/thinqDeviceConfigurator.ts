@@ -114,6 +114,10 @@ export class ThinqDeviceConfigurator {
 		this.logger.info(`Registering ThinQ Washer: ${device.name} (${device.id})`);
 
 		const washer = buildWasherEndpoint(device);
+
+		// Hardcoded: the washer is always exposed as its own standalone Matter node (server mode), matching the AC.
+		washer.mode = 'server';
+
 		const washerControl = this.configManager.getWasherControlConfig(device.id);
 		const stopCommandPayload = await this.resolveWasherStopCommandPayload(device);
 		registerWasherCommandHandlers(washer, device, this.apiClient, this.logger, washerControl, stopCommandPayload);
