@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ThinqAirConditionerDevice } from '../../../core/domain/entities/ThinqDevice.js';
 import type { AirConditionerCapabilities } from '../../../core/domain/value-objects/AirConditionerCapabilities.js';
 import { DEFAULT_AIR_CONDITIONER_CAPABILITIES } from '../../../core/domain/value-objects/AirConditionerCapabilities.js';
-import * as auxiliaryToggleModule from '../../../platform/thinq/thinqAirConditionerAuxiliaryToggles.js';
 import { buildAirConditionerEndpoint } from '../../../platform/thinq/thinqAirConditionerEndpointFactory.js';
 import { asPartial } from '../../helpers/testUtils.js';
 
@@ -330,82 +329,6 @@ describe('buildAirConditionerEndpoint', () => {
 			const result = buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
 
 			expect(result).toBe(mockEndpoint);
-		});
-	});
-
-	describe('auxiliary toggle endpoints (Phase A)', () => {
-		it('should call addAuxiliaryToggleEndpoints with capabilities when endpoint is built', () => {
-			// Arrange
-			const capabilities = asPartial<AirConditionerCapabilities>({
-				supportsHeat: true,
-				supportsFanSpeedControl: true,
-				supportsJetMode: true,
-			});
-
-			// Act
-			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
-
-			// Assert
-			expect(auxiliaryToggleModule.addAuxiliaryToggleEndpoints).toHaveBeenCalledWith(
-				mockEndpoint,
-				expect.objectContaining({
-					supportsJetMode: true,
-				}),
-			);
-		});
-
-		it('should call addAuxiliaryToggleEndpoints with all default capabilities when none are enabled', () => {
-			// Arrange
-			const capabilities = { ...DEFAULT_AIR_CONDITIONER_CAPABILITIES };
-
-			// Act
-			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
-
-			// Assert
-			expect(auxiliaryToggleModule.addAuxiliaryToggleEndpoints).toHaveBeenCalledWith(
-				mockEndpoint,
-				expect.objectContaining({
-					supportsJetMode: false,
-					supportsQuietMode: false,
-					supportsEnergySaveMode: false,
-					supportsAirCleanMode: false,
-					supportsLedControl: false,
-				}),
-			);
-		});
-
-		it('should call addAuxiliaryToggleEndpoints with multiple toggle capabilities enabled', () => {
-			// Arrange
-			const capabilities = asPartial<AirConditionerCapabilities>({
-				supportsHeat: true,
-				supportsFanSpeedControl: true,
-				supportsJetMode: true,
-				supportsQuietMode: true,
-				supportsLedControl: true,
-				supportsEnergySaveMode: false,
-				supportsAirCleanMode: false,
-			});
-
-			// Act
-			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
-
-			// Assert
-			expect(auxiliaryToggleModule.addAuxiliaryToggleEndpoints).toHaveBeenCalledWith(mockEndpoint, capabilities);
-		});
-
-		it('should call addAuxiliaryToggleEndpoints exactly once per endpoint build', () => {
-			// Arrange
-			const capabilities = asPartial<AirConditionerCapabilities>({
-				supportsHeat: true,
-				supportsFanSpeedControl: true,
-				supportsJetMode: true,
-			});
-
-			// Act
-			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
-
-			// Assert
-			expect(auxiliaryToggleModule.addAuxiliaryToggleEndpoints).toHaveBeenCalledTimes(1);
 		});
 	});
 

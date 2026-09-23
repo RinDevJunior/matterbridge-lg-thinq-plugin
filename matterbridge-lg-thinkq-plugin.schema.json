@@ -81,36 +81,6 @@
 										"type": "boolean",
 										"default": true
 									},
-									"supportsJetMode": {
-										"title": "Supports Jet Mode",
-										"description": "Whether this device supports jet mode toggle.",
-										"type": "boolean",
-										"default": false
-									},
-									"supportsQuietMode": {
-										"title": "Supports Quiet Mode",
-										"description": "Whether this device supports quiet mode toggle.",
-										"type": "boolean",
-										"default": false
-									},
-									"supportsEnergySaveMode": {
-										"title": "Supports Energy-Save Mode",
-										"description": "Whether this device supports energy-save mode toggle.",
-										"type": "boolean",
-										"default": false
-									},
-									"supportsAirCleanMode": {
-										"title": "Supports Air-Clean Mode",
-										"description": "Whether this device supports air-clean mode toggle.",
-										"type": "boolean",
-										"default": false
-									},
-									"supportsLedControl": {
-										"title": "Supports LED Control",
-										"description": "Whether this device supports LED/display light control toggle.",
-										"type": "boolean",
-										"default": false
-									},
 									"supportsSwingMode": {
 										"title": "Supports Swing Mode",
 										"description": "Whether this device supports swing mode (vertical/horizontal vane control).",

@@ -4,7 +4,6 @@ import type { ThinqAirConditionerDevice, ThinqWasherDevice } from '../../../core
 import { DEFAULT_AIR_CONDITIONER_CAPABILITIES } from '../../../core/domain/value-objects/AirConditionerCapabilities.js';
 import { ThinqSnapshot } from '../../../core/domain/value-objects/ThinqSnapshot.js';
 import type { PlatformConfigManager } from '../../../platform/platformConfigManager.js';
-import * as auxiliaryTogglesModule from '../../../platform/thinq/thinqAirConditionerAuxiliaryToggles.js';
 import { registerAirConditionerCommandHandlers } from '../../../platform/thinq/thinqAirConditionerCommandHandlers.js';
 import { buildAirConditionerEndpoint } from '../../../platform/thinq/thinqAirConditionerEndpointFactory.js';
 import * as sceneButtonsModule from '../../../platform/thinq/thinqAirConditionerSceneButtons.js';
@@ -224,46 +223,6 @@ describe('ThinqDeviceConfigurator', () => {
 			);
 		});
 
-		it('should call registerAuxiliaryToggleCommandHandlers with correct parameters (Phase A)', async () => {
-			// Arrange
-			const device = createMockThinqAirConditionerDevice();
-			const registerAuxHandlersSpy = vi.mocked(auxiliaryTogglesModule.registerAuxiliaryToggleCommandHandlers);
-
-			// Act
-			await configurator.registerAirConditioner(device);
-
-			// Assert
-			expect(registerAuxHandlersSpy).toHaveBeenCalledWith(
-				expect.anything(), // endpoint
-				device,
-				mockApiClient,
-				mockLogger,
-				DEFAULT_AIR_CONDITIONER_CAPABILITIES,
-			);
-		});
-
-		it('should call registerAuxiliaryToggleCommandHandlers after registerAirConditionerCommandHandlers', async () => {
-			// Arrange
-			const device = createMockThinqAirConditionerDevice();
-			const registerHandlersSpy = vi.mocked(registerAirConditionerCommandHandlers);
-			const registerAuxHandlersSpy = vi.mocked(auxiliaryTogglesModule.registerAuxiliaryToggleCommandHandlers);
-
-			// Mock to track call order
-			const callOrder: string[] = [];
-			registerHandlersSpy.mockImplementation(() => {
-				callOrder.push('registerAirConditionerCommandHandlers');
-			});
-			registerAuxHandlersSpy.mockImplementation(() => {
-				callOrder.push('registerAuxiliaryToggleCommandHandlers');
-			});
-
-			// Act
-			await configurator.registerAirConditioner(device);
-
-			// Assert
-			expect(callOrder).toEqual(['registerAirConditionerCommandHandlers', 'registerAuxiliaryToggleCommandHandlers']);
-		});
-
 		it('should call getSceneButtons with device id', async () => {
 			// Arrange
 			const device = createMockThinqAirConditionerDevice();
@@ -315,20 +274,16 @@ describe('ThinqDeviceConfigurator', () => {
 			);
 		});
 
-		it('should call registerSceneButtonCommandHandlers after registerAuxiliaryToggleCommandHandlers', async () => {
+		it('should call registerSceneButtonCommandHandlers after registerAirConditionerCommandHandlers', async () => {
 			// Arrange
 			const device = createMockThinqAirConditionerDevice();
 			const registerHandlersSpy = vi.mocked(registerAirConditionerCommandHandlers);
-			const registerAuxHandlersSpy = vi.mocked(auxiliaryTogglesModule.registerAuxiliaryToggleCommandHandlers);
 			const registerSceneHandlersSpy = vi.mocked(sceneButtonsModule.registerSceneButtonCommandHandlers);
 
 			// Mock to track call order
 			const callOrder: string[] = [];
 			registerHandlersSpy.mockImplementation(() => {
 				callOrder.push('registerAirConditionerCommandHandlers');
-			});
-			registerAuxHandlersSpy.mockImplementation(() => {
-				callOrder.push('registerAuxiliaryToggleCommandHandlers');
 			});
 			registerSceneHandlersSpy.mockImplementation(() => {
 				callOrder.push('registerSceneButtonCommandHandlers');
@@ -338,11 +293,7 @@ describe('ThinqDeviceConfigurator', () => {
 			await configurator.registerAirConditioner(device);
 
 			// Assert
-			expect(callOrder).toEqual([
-				'registerAirConditionerCommandHandlers',
-				'registerAuxiliaryToggleCommandHandlers',
-				'registerSceneButtonCommandHandlers',
-			]);
+			expect(callOrder).toEqual(['registerAirConditionerCommandHandlers', 'registerSceneButtonCommandHandlers']);
 		});
 
 		it('should pass options with undefined override fields when overrideMatterConfiguration is false', async () => {
