@@ -5,7 +5,6 @@ import { FanControl } from 'matterbridge/matter/clusters';
 import type { ThinqAirConditionerDevice, ThinqWasherDevice } from '../../core/domain/entities/ThinqDevice.js';
 import type { ThinqApiClient } from '../../services/thinq/thinqApiClient.js';
 import { PlatformConfigManager } from '../platformConfigManager.js';
-import { registerAuxiliaryToggleCommandHandlers } from './thinqAirConditionerAuxiliaryToggles.js';
 import {
 	registerAirConditionerCommandHandlers,
 	THINQ_FAN_SPEED_AUTO,
@@ -94,7 +93,6 @@ export class ThinqDeviceConfigurator {
 			.addRequiredClusterServers();
 
 		registerAirConditionerCommandHandlers(airConditioner, device, this.apiClient, this.logger, capabilities);
-		registerAuxiliaryToggleCommandHandlers(airConditioner, device, this.apiClient, this.logger, capabilities);
 		registerSceneButtonCommandHandlers(airConditioner, sceneButtons, device, this.apiClient, this.logger);
 
 		const filterResetControl = this.configManager.getAcFilterControlConfig(device.id);

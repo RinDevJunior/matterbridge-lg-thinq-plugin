@@ -4,11 +4,6 @@ import type { ThinqDeviceConfigEntry } from '../../../model/LgThinkqPluginPlatfo
 export interface AirConditionerCapabilities {
 	readonly supportsHeat: boolean;
 	readonly supportsFanSpeedControl: boolean;
-	readonly supportsJetMode: boolean;
-	readonly supportsQuietMode: boolean;
-	readonly supportsEnergySaveMode: boolean;
-	readonly supportsAirCleanMode: boolean;
-	readonly supportsLedControl: boolean;
 	readonly supportsSwingMode: boolean;
 	readonly supportsHumiditySensor: boolean;
 	readonly supportsAirQualitySensor: boolean;
@@ -19,11 +14,6 @@ export interface AirConditionerCapabilities {
 export const DEFAULT_AIR_CONDITIONER_CAPABILITIES: AirConditionerCapabilities = {
 	supportsHeat: true,
 	supportsFanSpeedControl: true,
-	supportsJetMode: false,
-	supportsQuietMode: false,
-	supportsEnergySaveMode: false,
-	supportsAirCleanMode: false,
-	supportsLedControl: false,
 	supportsSwingMode: false,
 	supportsHumiditySensor: false,
 	supportsAirQualitySensor: false,
@@ -47,13 +37,6 @@ export function resolveAirConditionerCapabilities(
 		supportsHeat: capabilities?.supportsHeat ?? DEFAULT_AIR_CONDITIONER_CAPABILITIES.supportsHeat,
 		supportsFanSpeedControl:
 			capabilities?.supportsFanSpeedControl ?? DEFAULT_AIR_CONDITIONER_CAPABILITIES.supportsFanSpeedControl,
-		supportsJetMode: capabilities?.supportsJetMode ?? DEFAULT_AIR_CONDITIONER_CAPABILITIES.supportsJetMode,
-		supportsQuietMode: capabilities?.supportsQuietMode ?? DEFAULT_AIR_CONDITIONER_CAPABILITIES.supportsQuietMode,
-		supportsEnergySaveMode:
-			capabilities?.supportsEnergySaveMode ?? DEFAULT_AIR_CONDITIONER_CAPABILITIES.supportsEnergySaveMode,
-		supportsAirCleanMode:
-			capabilities?.supportsAirCleanMode ?? DEFAULT_AIR_CONDITIONER_CAPABILITIES.supportsAirCleanMode,
-		supportsLedControl: capabilities?.supportsLedControl ?? DEFAULT_AIR_CONDITIONER_CAPABILITIES.supportsLedControl,
 		supportsSwingMode: capabilities?.supportsSwingMode ?? DEFAULT_AIR_CONDITIONER_CAPABILITIES.supportsSwingMode,
 		supportsHumiditySensor:
 			capabilities?.supportsHumiditySensor ?? DEFAULT_AIR_CONDITIONER_CAPABILITIES.supportsHumiditySensor,

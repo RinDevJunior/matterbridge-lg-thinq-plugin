@@ -3,11 +3,6 @@ import { PlatformConfig } from 'matterbridge';
 export interface ThinqDeviceCapabilityConfig {
 	supportsHeat?: boolean;
 	supportsFanSpeedControl?: boolean;
-	supportsJetMode?: boolean;
-	supportsQuietMode?: boolean;
-	supportsEnergySaveMode?: boolean;
-	supportsAirCleanMode?: boolean;
-	supportsLedControl?: boolean;
 	supportsSwingMode?: boolean;
 	supportsHumiditySensor?: boolean;
 	supportsAirQualitySensor?: boolean;

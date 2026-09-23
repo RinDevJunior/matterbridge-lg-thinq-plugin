@@ -14,7 +14,6 @@ import {
 
 import type { AirConditionerCapabilities } from '../../core/domain/value-objects/AirConditionerCapabilities.js';
 import type { ThinqSnapshot } from '../../core/domain/value-objects/ThinqSnapshot.js';
-import { applyAuxiliaryToggleSnapshot } from './thinqAirConditionerAuxiliaryToggles.js';
 import {
 	THINQ_FAN_SPEED_AUTO,
 	THINQ_FAN_SPEED_LOW,
@@ -283,8 +282,6 @@ export async function applyThinqSnapshotToAirConditioner(
 	if (capabilities.supportsFanSpeedControl && capabilities.supportsSwingMode && rockSetting !== undefined) {
 		await airConditioner.updateAttribute(FanControl.id, 'rockSetting', rockSetting, logger);
 	}
-
-	await applyAuxiliaryToggleSnapshot(airConditioner, snapshot, capabilities, logger);
 
 	if (capabilities.supportsHumiditySensor) {
 		const humidityPercent = snapshot.humidityPercent;

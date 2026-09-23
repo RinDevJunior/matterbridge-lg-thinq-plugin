@@ -10,7 +10,6 @@ import { AirQuality, FanControl } from 'matterbridge/matter/clusters';
 
 import type { ThinqAirConditionerDevice } from '../../core/domain/entities/ThinqDevice.js';
 import type { AirConditionerCapabilities } from '../../core/domain/value-objects/AirConditionerCapabilities.js';
-import { addAuxiliaryToggleEndpoints } from './thinqAirConditionerAuxiliaryToggles.js';
 import { addSceneButtonEndpoints } from './thinqAirConditionerSceneButtons.js';
 
 export interface AirConditionerEndpointSetpoints {
@@ -111,8 +110,6 @@ export function buildAirConditionerEndpoint(
 	} else {
 		endpoint.createOnOffFanControlClusterServer(initialFanMode);
 	}
-
-	addAuxiliaryToggleEndpoints(endpoint, capabilities);
 
 	if (capabilities.supportsHumiditySensor) {
 		endpoint
