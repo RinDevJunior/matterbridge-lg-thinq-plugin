@@ -1,7 +1,7 @@
 {
 	"name": "matterbridge-lg-thinkq-plugin",
 	"type": "DynamicPlatform",
-	"version": "0.1.0-rc09",
+	"version": "0.1.0-rc10",
 	"thinq": {
 		"loginType": "account",
 		"username": "",

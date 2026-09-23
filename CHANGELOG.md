@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.0-rc10] - 2026-09-23
+
+### Added
+
+- **LG ThinQ Washer support (v1, read-only)** — reports power, run state, and remaining time, registering as Matterbridge's LaundryWasher device type; note that Apple Home does not display the appliance device type at all, a confirmed Matterbridge/Apple platform limitation rather than a bug in this plugin, so the washer is usable today via Home Assistant, SmartThings, or other Matter controllers (PR #13).
+- **Opt-in washer Stop command** — `washerControl.allowRemoteStop` (default off) lets Apple Home send a real stop/cancel command to the physical washer (PR #13).
+- **AC filter life monitoring** — opt-in via `supportsFilterMonitoring` (default off), exposed as HepaFilterMonitoring; live-verified against a real device with an exact match to the official LG app (PR #15).
+- **Opt-in AC filter reset command** — `acFilterControl.allowFilterReset` (default off) sends a real filter-counter reset command after you've replaced/cleaned the filter; this command has not been live-tested yet, so enable only when you are ready to verify it yourself (PR #15).
+
+### Fixed
+
+- **AC mode dropdown showing unsupported values** — Dry and Fan-only opModes now report as Cool instead of SystemMode values Apple Home silently dropped, so the mode dropdown only ever shows what Apple can actually display (Off/Heat/Cool/Auto) (PR #14).
+
+<a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
+
+---
+
 ## [0.1.0-rc09] - 2026-09-20
 
 ### Changed
