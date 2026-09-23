@@ -1,6 +1,7 @@
 import {
 	airQualitySensor,
 	electricalSensor,
+	humiditySensor,
 	MatterbridgeEndpoint,
 	powerSource,
 	roomAirConditioner,
@@ -109,9 +110,13 @@ export function buildAirConditionerEndpoint(
 	}
 
 	if (capabilities.supportsHumiditySensor) {
-		// RelativeHumidityMeasurement is an optional cluster of roomAirConditioner itself (matterbridgeDeviceTypes.js),
-		// same as TemperatureMeasurement below — no separate child endpoint needed.
-		endpoint.createDefaultRelativeHumidityMeasurementClusterServer(0);
+		// RelativeHumidityMeasurement is spec-legal directly on roomAirConditioner, but Apple Home only builds a
+		// Humidity service from an endpoint actually typed humiditySensor (confirmed by regression: moving this
+		// onto the AC's own endpoint made the reading disappear from Apple Home entirely). Keep as a child.
+		endpoint
+			.addChildDeviceType('HumiditySensor', [humiditySensor])
+			.createDefaultIdentifyClusterServer()
+			.createDefaultRelativeHumidityMeasurementClusterServer(0);
 	}
 
 	if (capabilities.supportsAirQualitySensor) {

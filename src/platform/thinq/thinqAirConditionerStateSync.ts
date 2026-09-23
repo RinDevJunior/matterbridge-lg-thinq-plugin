@@ -286,12 +286,15 @@ export async function applyThinqSnapshotToAirConditioner(
 	if (capabilities.supportsHumiditySensor) {
 		const humidityPercent = snapshot.humidityPercent;
 		if (humidityPercent !== undefined) {
-			await airConditioner.updateAttribute(
-				RelativeHumidityMeasurement.id,
-				'measuredValue',
-				humidityPercent * 100,
-				logger,
-			);
+			const humiditySensorChild = airConditioner.getChildEndpointById('HumiditySensor');
+			if (humiditySensorChild) {
+				await humiditySensorChild.updateAttribute(
+					RelativeHumidityMeasurement.id,
+					'measuredValue',
+					humidityPercent * 100,
+					logger,
+				);
+			}
 		}
 	}
 
