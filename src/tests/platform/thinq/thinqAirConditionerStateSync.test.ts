@@ -1566,10 +1566,8 @@ describe('applyThinqSnapshotToAirConditioner with auxiliary toggles (Phase A)', 
 
 		it('should map unsupported opMode (Dry when disabled) to Cool when OnOff is true', async () => {
 			// Arrange
-			capabilities = {
-				...DEFAULT_AIR_CONDITIONER_CAPABILITIES,
-				supportsDry: false,
-			};
+			// Note: supportsDry is irrelevant; Dry always collapses to Cool for Apple Home compatibility
+			capabilities = DEFAULT_AIR_CONDITIONER_CAPABILITIES;
 
 			airConditioner.getAttribute.mockImplementation((clusterId: number, attr: string) => {
 				if (clusterId === OnOff.id && attr === 'onOff') {
