@@ -131,31 +131,10 @@
 								"properties": {
 									"allowFilterReset": {
 										"title": "Allow Filter Reset (AC)",
-										"description": "Turning this on lets Apple Home send a real filter-counter reset command to the physical air conditioner, after you've replaced/cleaned the filter. Off by default. This command has not been live-tested yet — enable only when you are ready to verify it yourself.",
+										"description": "Turning this on lets Apple Home send a real filter-counter reset command to the physical air conditioner, after you've replaced/cleaned the filter. Off by default. This command has not been live-tested yet \u2014 enable only when you are ready to verify it yourself.",
 										"type": "boolean",
 										"default": false
 									}
-								}
-							},
-							"sceneButtons": {
-								"title": "Scene Buttons",
-								"description": "Optional custom quick-access scene buttons that switch the AC to a saved mode combo with one tap.",
-								"type": "array",
-								"items": {
-									"type": "object",
-									"properties": {
-										"name": {
-											"title": "Button Name",
-											"description": "Display name for this scene button (e.g. 'Eco', 'Comfort').",
-											"type": "string"
-										},
-										"opMode": {
-											"title": "Operation Mode",
-											"description": "ThinQ operation mode number to activate when this button is pressed.",
-											"type": "number"
-										}
-									},
-									"required": ["name", "opMode"]
 								}
 							},
 							"productName": {
@@ -281,7 +260,11 @@
 					"dependencies": {
 						"overrideMatterConfiguration": {
 							"if": {
-								"properties": { "overrideMatterConfiguration": { "const": true } }
+								"properties": {
+									"overrideMatterConfiguration": {
+										"const": true
+									}
+								}
 							},
 							"then": {
 								"properties": {
@@ -289,14 +272,26 @@
 										"title": "Matter Override Settings",
 										"type": "object",
 										"properties": {
-											"matterVendorName": { "title": "Vendor Name", "type": "string", "default": "Matterbridge" },
-											"matterVendorId": { "title": "Vendor ID", "type": "number", "default": 65521 },
+											"matterVendorName": {
+												"title": "Vendor Name",
+												"type": "string",
+												"default": "Matterbridge"
+											},
+											"matterVendorId": {
+												"title": "Vendor ID",
+												"type": "number",
+												"default": 65521
+											},
 											"matterProductName": {
 												"title": "Product Name",
 												"type": "string",
 												"default": "LG Air Conditioner"
 											},
-											"matterProductId": { "title": "Product ID", "type": "number", "default": 32768 }
+											"matterProductId": {
+												"title": "Product ID",
+												"type": "number",
+												"default": 32768
+											}
 										},
 										"required": ["matterVendorName", "matterVendorId", "matterProductName", "matterProductId"]
 									}

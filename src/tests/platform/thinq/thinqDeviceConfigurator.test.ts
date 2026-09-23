@@ -6,7 +6,6 @@ import { ThinqSnapshot } from '../../../core/domain/value-objects/ThinqSnapshot.
 import type { PlatformConfigManager } from '../../../platform/platformConfigManager.js';
 import { registerAirConditionerCommandHandlers } from '../../../platform/thinq/thinqAirConditionerCommandHandlers.js';
 import { buildAirConditionerEndpoint } from '../../../platform/thinq/thinqAirConditionerEndpointFactory.js';
-import * as sceneButtonsModule from '../../../platform/thinq/thinqAirConditionerSceneButtons.js';
 import { ThinqDeviceConfigurator } from '../../../platform/thinq/thinqDeviceConfigurator.js';
 import { registerWasherCommandHandlers } from '../../../platform/thinq/thinqWasherCommandHandlers.js';
 import { buildWasherEndpoint } from '../../../platform/thinq/thinqWasherEndpointFactory.js';
@@ -16,9 +15,6 @@ import { asPartial, createMockLogger } from '../../helpers/testUtils.js';
 vi.mock('../../../platform/thinq/thinqAirConditionerCommandHandlers.js');
 vi.mock('../../../platform/thinq/thinqAirConditionerAuxiliaryToggles.js', () => ({
 	registerAuxiliaryToggleCommandHandlers: vi.fn(),
-}));
-vi.mock('../../../platform/thinq/thinqAirConditionerSceneButtons.js', () => ({
-	registerSceneButtonCommandHandlers: vi.fn(),
 }));
 vi.mock('../../../platform/thinq/thinqAirConditionerEndpointFactory.js', () => ({
 	buildAirConditionerEndpoint: vi.fn(() => ({
@@ -80,7 +76,6 @@ function createMockWasherDevice(): ThinqWasherDevice {
 function createMockConfigManager(): PlatformConfigManager {
 	return asPartial<PlatformConfigManager>({
 		getDeviceCapabilities: vi.fn().mockReturnValue(DEFAULT_AIR_CONDITIONER_CAPABILITIES),
-		getSceneButtons: vi.fn().mockReturnValue([]),
 		getWasherControlConfig: vi.fn().mockReturnValue({}),
 		getAcFilterControlConfig: vi.fn().mockReturnValue({}),
 		overrideMatterConfiguration: false,
@@ -161,7 +156,7 @@ describe('ThinqDeviceConfigurator', () => {
 			expect(result).toBeDefined();
 		});
 
-		it('should not assign a mode to the endpoint', async () => {
+		it('should hardcode the endpoint mode to server', async () => {
 			// Arrange
 			const device = createMockThinqAirConditionerDevice();
 
@@ -169,8 +164,8 @@ describe('ThinqDeviceConfigurator', () => {
 			const endpoint = await configurator.registerAirConditioner(device);
 
 			// Assert
-			// Verify mode is not set by registerAirConditioner (regression test for removed hardcoded server mode)
-			expect(endpoint.mode).toBeUndefined();
+			// The AC is always exposed as its own standalone Matter node (server mode), not user-configurable.
+			expect(endpoint.mode).toBe('server');
 		});
 
 		it('should use device snapshot values for initial state when defined', async () => {
@@ -223,79 +218,6 @@ describe('ThinqDeviceConfigurator', () => {
 			);
 		});
 
-		it('should call getSceneButtons with device id', async () => {
-			// Arrange
-			const device = createMockThinqAirConditionerDevice();
-			const getSceneButtonsSpy = vi.mocked(mockConfigManager.getSceneButtons);
-
-			// Act
-			await configurator.registerAirConditioner(device);
-
-			// Assert
-			expect(getSceneButtonsSpy).toHaveBeenCalledWith('device-123');
-		});
-
-		it('should call registerSceneButtonCommandHandlers with correct parameters', async () => {
-			// Arrange
-			const device = createMockThinqAirConditionerDevice();
-			const sceneButtons = [{ name: 'PowerOff', opMode: 0 }];
-			vi.mocked(mockConfigManager.getSceneButtons).mockReturnValue(sceneButtons);
-			const registerSceneHandlersSpy = vi.mocked(sceneButtonsModule.registerSceneButtonCommandHandlers);
-
-			// Act
-			await configurator.registerAirConditioner(device);
-
-			// Assert
-			expect(registerSceneHandlersSpy).toHaveBeenCalledWith(
-				expect.anything(), // endpoint
-				sceneButtons,
-				device,
-				mockApiClient,
-				mockLogger,
-			);
-		});
-
-		it('should pass empty scene buttons array to handler when none configured', async () => {
-			// Arrange
-			const device = createMockThinqAirConditionerDevice();
-			vi.mocked(mockConfigManager.getSceneButtons).mockReturnValue([]);
-			const registerSceneHandlersSpy = vi.mocked(sceneButtonsModule.registerSceneButtonCommandHandlers);
-
-			// Act
-			await configurator.registerAirConditioner(device);
-
-			// Assert
-			expect(registerSceneHandlersSpy).toHaveBeenCalledWith(
-				expect.anything(), // endpoint
-				[],
-				device,
-				mockApiClient,
-				mockLogger,
-			);
-		});
-
-		it('should call registerSceneButtonCommandHandlers after registerAirConditionerCommandHandlers', async () => {
-			// Arrange
-			const device = createMockThinqAirConditionerDevice();
-			const registerHandlersSpy = vi.mocked(registerAirConditionerCommandHandlers);
-			const registerSceneHandlersSpy = vi.mocked(sceneButtonsModule.registerSceneButtonCommandHandlers);
-
-			// Mock to track call order
-			const callOrder: string[] = [];
-			registerHandlersSpy.mockImplementation(() => {
-				callOrder.push('registerAirConditionerCommandHandlers');
-			});
-			registerSceneHandlersSpy.mockImplementation(() => {
-				callOrder.push('registerSceneButtonCommandHandlers');
-			});
-
-			// Act
-			await configurator.registerAirConditioner(device);
-
-			// Assert
-			expect(callOrder).toEqual(['registerAirConditionerCommandHandlers', 'registerSceneButtonCommandHandlers']);
-		});
-
 		it('should pass options with undefined override fields when overrideMatterConfiguration is false', async () => {
 			// Arrange
 			const device = createMockThinqAirConditionerDevice();
@@ -330,7 +252,6 @@ describe('ThinqDeviceConfigurator', () => {
 			};
 			mockConfigManager = asPartial<PlatformConfigManager>({
 				getDeviceCapabilities: vi.fn().mockReturnValue(DEFAULT_AIR_CONDITIONER_CAPABILITIES),
-				getSceneButtons: vi.fn().mockReturnValue([]),
 				getAcFilterControlConfig: vi.fn().mockReturnValue({}),
 				overrideMatterConfiguration: true,
 				matterOverrideSettings: customSettings,
@@ -368,7 +289,6 @@ describe('ThinqDeviceConfigurator', () => {
 			};
 			mockConfigManager = asPartial<PlatformConfigManager>({
 				getDeviceCapabilities: vi.fn().mockReturnValue(DEFAULT_AIR_CONDITIONER_CAPABILITIES),
-				getSceneButtons: vi.fn().mockReturnValue([]),
 				getAcFilterControlConfig: vi.fn().mockReturnValue({}),
 				overrideMatterConfiguration: true,
 				matterOverrideSettings: customSettings,
@@ -406,7 +326,6 @@ describe('ThinqDeviceConfigurator', () => {
 			};
 			mockConfigManager = asPartial<PlatformConfigManager>({
 				getDeviceCapabilities: vi.fn().mockReturnValue(DEFAULT_AIR_CONDITIONER_CAPABILITIES),
-				getSceneButtons: vi.fn().mockReturnValue([]),
 				getAcFilterControlConfig: vi.fn().mockReturnValue({}),
 				overrideMatterConfiguration: true,
 				matterOverrideSettings: customSettings,
@@ -420,46 +339,6 @@ describe('ThinqDeviceConfigurator', () => {
 
 			// Assert
 			expect(getProductNameSpy).toHaveBeenCalledWith('device-123');
-		});
-
-		it('should still pass sceneButtons in options alongside override settings', async () => {
-			// Arrange
-			const device = createMockThinqAirConditionerDevice();
-			const sceneButtons = [{ name: 'PowerOff', opMode: 0 }];
-			const customSettings = {
-				matterVendorName: 'Custom Vendor',
-				matterVendorId: 0xabcd,
-				matterProductName: 'Premium AC',
-				matterProductId: 0xef01,
-			};
-			mockConfigManager = asPartial<PlatformConfigManager>({
-				getDeviceCapabilities: vi.fn().mockReturnValue(DEFAULT_AIR_CONDITIONER_CAPABILITIES),
-				getSceneButtons: vi.fn().mockReturnValue(sceneButtons),
-				getAcFilterControlConfig: vi.fn().mockReturnValue({}),
-				overrideMatterConfiguration: true,
-				matterOverrideSettings: customSettings,
-				getProductNameForDevice: vi.fn().mockReturnValue('Custom AC'),
-			});
-			configurator = new ThinqDeviceConfigurator(mockLogger, mockApiClient, mockConfigManager);
-			const buildEndpointSpy = vi.mocked(buildAirConditionerEndpoint);
-
-			// Act
-			await configurator.registerAirConditioner(device);
-
-			// Assert
-			expect(buildEndpointSpy).toHaveBeenCalledWith(
-				device,
-				expect.anything(),
-				expect.anything(),
-				expect.anything(),
-				expect.objectContaining({
-					sceneButtons,
-					vendorId: 0xabcd,
-					vendorName: 'Custom Vendor',
-					productId: 0xef01,
-					productName: 'Custom AC',
-				}),
-			);
 		});
 
 		it('should call getAcFilterControlConfig with device id', async () => {
@@ -510,30 +389,6 @@ describe('ThinqDeviceConfigurator', () => {
 				DEFAULT_AIR_CONDITIONER_CAPABILITIES,
 				filterResetControl,
 			);
-		});
-
-		it('should call registerFilterResetCommandHandler after registerSceneButtonCommandHandlers', async () => {
-			// Arrange
-			const device = createMockThinqAirConditionerDevice();
-			const registerSceneHandlersSpy = vi.mocked(sceneButtonsModule.registerSceneButtonCommandHandlers);
-
-			const { registerFilterResetCommandHandler: mockedFilterResetHandler } =
-				await import('../../../platform/thinq/thinqAirConditionerFilterResetCommandHandler.js');
-
-			// Mock to track call order
-			const callOrder: string[] = [];
-			registerSceneHandlersSpy.mockImplementation(() => {
-				callOrder.push('registerSceneButtonCommandHandlers');
-			});
-			vi.mocked(mockedFilterResetHandler).mockImplementation(() => {
-				callOrder.push('registerFilterResetCommandHandler');
-			});
-
-			// Act
-			await configurator.registerAirConditioner(device);
-
-			// Assert
-			expect(callOrder).toEqual(['registerSceneButtonCommandHandlers', 'registerFilterResetCommandHandler']);
 		});
 	});
 
