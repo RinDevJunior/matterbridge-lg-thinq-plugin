@@ -1,6 +1,6 @@
 {
 	"title": "Matterbridge LG ThinQ + webOS Plugin",
-	"description": "matterbridge-lg-thinkq-plugin v. 0.1.0-rc11 by https://github.com/RinDevJunior",
+	"description": "matterbridge-lg-thinkq-plugin v. 1.0.0-rc01 by https://github.com/RinDevJunior",
 	"type": "object",
 	"properties": {
 		"name": {
