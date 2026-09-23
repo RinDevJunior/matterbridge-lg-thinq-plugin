@@ -119,7 +119,7 @@ describe('main', () => {
 		await main();
 
 		// Assert
-		expect(cmdDevices).toHaveBeenCalledWith(mockSession, expect.any(Object), undefined);
+		expect(cmdDevices).toHaveBeenCalledWith(mockSession, expect.any(Object), undefined, undefined);
 	});
 
 	it('should call cmdDevices with dump-snapshot flag when --dump-snapshot is provided', async () => {
@@ -144,7 +144,7 @@ describe('main', () => {
 		await main();
 
 		// Assert
-		expect(cmdDevices).toHaveBeenCalledWith(mockSession, expect.any(Object), 'washer-123');
+		expect(cmdDevices).toHaveBeenCalledWith(mockSession, expect.any(Object), 'washer-123', undefined);
 	});
 
 	it('should error when command is "devices" but session does not exist', async () => {

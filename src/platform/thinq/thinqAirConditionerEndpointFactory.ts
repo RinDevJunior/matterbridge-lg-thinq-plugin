@@ -138,6 +138,10 @@ export function buildAirConditionerEndpoint(
 			.createDefaultElectricalPowerMeasurementClusterServer(null, null, 0, null);
 	}
 
+	if (capabilities.supportsFilterMonitoring) {
+		endpoint.createDefaultHepaFilterMonitoringClusterServer();
+	}
+
 	if (options?.sceneButtons) {
 		addSceneButtonEndpoints(endpoint, options.sceneButtons);
 	}

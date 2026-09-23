@@ -273,6 +273,49 @@ describe('PlatformConfigManager', () => {
 		});
 	});
 
+	describe('thinqFilterMonitoringIntervalSeconds getter', () => {
+		it('should return configured filter monitoring interval when set', () => {
+			const config = asPartial<LgThinkqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					filterMonitoringIntervalSeconds: 900,
+					devices: [],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			expect(manager.thinqFilterMonitoringIntervalSeconds).toBe(900);
+		});
+
+		it('should return default filter monitoring interval when not configured', () => {
+			const config = asPartial<LgThinkqPluginPlatformConfig>({
+				thinq: { loginType: 'account', country: 'US', language: 'en-US', devices: [] },
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			expect(manager.thinqFilterMonitoringIntervalSeconds).toBe(3600);
+		});
+
+		it('should allow custom interval independent of refresh interval', () => {
+			const config = asPartial<LgThinkqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					refreshIntervalSeconds: 60,
+					filterMonitoringIntervalSeconds: 1800,
+					devices: [],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			expect(manager.thinqRefreshIntervalSeconds).toBe(60);
+			expect(manager.thinqFilterMonitoringIntervalSeconds).toBe(1800);
+		});
+	});
+
 	describe('validateConfig', () => {
 		it('should return true when loginType is token and refreshToken is set', () => {
 			const config = asPartial<LgThinkqPluginPlatformConfig>({

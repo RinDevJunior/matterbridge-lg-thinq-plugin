@@ -17,6 +17,7 @@ import {
 } from '../model/LgThinkqPluginPlatformConfig.js';
 
 const DEFAULT_THINQ_REFRESH_INTERVAL_SECONDS = 60;
+const DEFAULT_FILTER_MONITORING_INTERVAL_SECONDS = 3600;
 
 /**
  * Manages platform configuration with validation and defaults.
@@ -84,6 +85,10 @@ export class PlatformConfigManager {
 
 	public get thinqRefreshIntervalSeconds(): number {
 		return this.config.thinq.refreshIntervalSeconds ?? DEFAULT_THINQ_REFRESH_INTERVAL_SECONDS;
+	}
+
+	public get thinqFilterMonitoringIntervalSeconds(): number {
+		return this.config.thinq.filterMonitoringIntervalSeconds ?? DEFAULT_FILTER_MONITORING_INTERVAL_SECONDS;
 	}
 
 	public getDeviceCapabilities(deviceId: string): AirConditionerCapabilities {

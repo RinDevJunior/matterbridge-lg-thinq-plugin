@@ -13,6 +13,7 @@ export interface ThinqDeviceCapabilityConfig {
 	supportsHumiditySensor?: boolean;
 	supportsAirQualitySensor?: boolean;
 	supportsEnergyMonitoring?: boolean;
+	supportsFilterMonitoring?: boolean;
 }
 
 export interface ThinqSceneButtonConfig {
@@ -47,6 +48,7 @@ export interface ThinqAuthConfig {
 	country: string;
 	language: string;
 	refreshIntervalSeconds?: number;
+	filterMonitoringIntervalSeconds?: number;
 	devices: ThinqDeviceConfigEntry[];
 }
 

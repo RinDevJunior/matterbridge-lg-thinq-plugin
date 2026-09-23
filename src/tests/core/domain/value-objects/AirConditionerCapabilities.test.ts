@@ -39,6 +39,11 @@ describe('AirConditionerCapabilities', () => {
 			// Assert
 			expect(DEFAULT_AIR_CONDITIONER_CAPABILITIES.supportsEnergyMonitoring).toBe(false);
 		});
+
+		it('should have filter monitoring capability set to false (opt-in)', () => {
+			// Assert
+			expect(DEFAULT_AIR_CONDITIONER_CAPABILITIES.supportsFilterMonitoring).toBe(false);
+		});
 	});
 
 	describe('resolveAirConditionerCapabilities', () => {
@@ -201,6 +206,7 @@ describe('AirConditionerCapabilities', () => {
 				supportsHumiditySensor: false,
 				supportsAirQualitySensor: false,
 				supportsEnergyMonitoring: false,
+				supportsFilterMonitoring: false,
 			});
 		});
 
@@ -658,6 +664,7 @@ describe('AirConditionerCapabilities', () => {
 				supportsHumiditySensor: false,
 				supportsAirQualitySensor: false,
 				supportsEnergyMonitoring: false,
+				supportsFilterMonitoring: false,
 			});
 		});
 
@@ -794,6 +801,144 @@ describe('AirConditionerCapabilities', () => {
 				supportsHumiditySensor: false,
 				supportsAirQualitySensor: false,
 				supportsEnergyMonitoring: false,
+				supportsFilterMonitoring: false,
+			});
+		});
+
+		it('should default supportsFilterMonitoring to false when undefined', () => {
+			// Arrange
+			const devices: ThinqDeviceConfigEntry[] = [{ deviceId: 'device-123', capabilities: {} }];
+
+			// Act
+			const result = resolveAirConditionerCapabilities(devices, 'device-123');
+
+			// Assert
+			expect(result.supportsFilterMonitoring).toBe(false);
+		});
+
+		it('should override supportsFilterMonitoring when specified as true', () => {
+			// Arrange
+			const devices: ThinqDeviceConfigEntry[] = [
+				{
+					deviceId: 'device-123',
+					capabilities: { supportsFilterMonitoring: true },
+				},
+			];
+
+			// Act
+			const result = resolveAirConditionerCapabilities(devices, 'device-123');
+
+			// Assert
+			expect(result.supportsFilterMonitoring).toBe(true);
+			// Verify other flags remain at their defaults
+			expect(result.supportsHeat).toBe(true);
+			expect(result.supportsFanSpeedControl).toBe(true);
+			expect(result.supportsEnergyMonitoring).toBe(false);
+		});
+
+		it('should override supportsFilterMonitoring when specified as false', () => {
+			// Arrange
+			const devices: ThinqDeviceConfigEntry[] = [
+				{
+					deviceId: 'device-123',
+					capabilities: { supportsFilterMonitoring: false },
+				},
+			];
+
+			// Act
+			const result = resolveAirConditionerCapabilities(devices, 'device-123');
+
+			// Assert
+			expect(result.supportsFilterMonitoring).toBe(false);
+		});
+
+		it('should combine supportsFilterMonitoring with other flags', () => {
+			// Arrange
+			const devices: ThinqDeviceConfigEntry[] = [
+				{
+					deviceId: 'device-123',
+					capabilities: {
+						supportsFilterMonitoring: true,
+						supportsEnergyMonitoring: true,
+						supportsHumiditySensor: true,
+						supportsSwingMode: true,
+					},
+				},
+			];
+
+			// Act
+			const result = resolveAirConditionerCapabilities(devices, 'device-123');
+
+			// Assert
+			expect(result.supportsFilterMonitoring).toBe(true);
+			expect(result.supportsEnergyMonitoring).toBe(true);
+			expect(result.supportsHumiditySensor).toBe(true);
+			expect(result.supportsSwingMode).toBe(true);
+			// Existing flags should still default to true
+			expect(result.supportsHeat).toBe(true);
+			expect(result.supportsFanSpeedControl).toBe(true);
+		});
+
+		it('should isolate filter monitoring flag across multiple devices', () => {
+			// Arrange
+			const devices: ThinqDeviceConfigEntry[] = [
+				{
+					deviceId: 'device-001',
+					capabilities: { supportsFilterMonitoring: true },
+				},
+				{
+					deviceId: 'device-002',
+					capabilities: { supportsFilterMonitoring: false },
+				},
+				{
+					deviceId: 'device-003',
+					capabilities: {},
+				},
+			];
+
+			// Act
+			const result001 = resolveAirConditionerCapabilities(devices, 'device-001');
+			const result002 = resolveAirConditionerCapabilities(devices, 'device-002');
+			const result003 = resolveAirConditionerCapabilities(devices, 'device-003');
+
+			// Assert
+			expect(result001.supportsFilterMonitoring).toBe(true);
+			expect(result002.supportsFilterMonitoring).toBe(false);
+			expect(result003.supportsFilterMonitoring).toBe(false);
+		});
+
+		it('should preserve full default object with all flags including filter monitoring', () => {
+			// Arrange
+			const devices: ThinqDeviceConfigEntry[] = [
+				{
+					deviceId: 'device-123',
+					capabilities: {
+						supportsHeat: true,
+						supportsDry: true,
+						supportsFanSpeedControl: true,
+						supportsFilterMonitoring: true,
+					},
+				},
+			];
+
+			// Act
+			const result = resolveAirConditionerCapabilities(devices, 'device-123');
+
+			// Assert
+			expect(result).toEqual({
+				supportsHeat: true,
+				supportsDry: true,
+				supportsFanSpeedControl: true,
+				supportsJetMode: false,
+				supportsQuietMode: false,
+				supportsEnergySaveMode: false,
+				supportsAirCleanMode: false,
+				supportsLedControl: false,
+				supportsSwingMode: false,
+				supportsHumiditySensor: false,
+				supportsAirQualitySensor: false,
+				supportsEnergyMonitoring: false,
+				supportsFilterMonitoring: true,
 			});
 		});
 	});

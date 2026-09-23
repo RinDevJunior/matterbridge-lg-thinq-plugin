@@ -574,4 +574,129 @@ describe('ThinqApiClient', () => {
 			expect(request?.headers?.['x-client-id']).toBe(clientId);
 		});
 	});
+
+	describe('getFilterState', () => {
+		it('should throw error when deviceId is empty', async () => {
+			mockAxios
+				.onGet('https://route.lgthinq.com:46030/v1/service/application/gateway-uri')
+				.reply(200, { result: gatewayData });
+
+			await expect(apiClient.getFilterState('')).rejects.toThrow('Invalid deviceId');
+		});
+
+		it('should throw error when deviceId is whitespace only', async () => {
+			mockAxios
+				.onGet('https://route.lgthinq.com:46030/v1/service/application/gateway-uri')
+				.reply(200, { result: gatewayData });
+
+			await expect(apiClient.getFilterState('   ')).rejects.toThrow('Invalid deviceId');
+		});
+
+		it('should return filter state data on successful response', async () => {
+			const filterData = {
+				'airState.filterMngStates.useTime': 11,
+				'airState.filterMngStates.maxTime': 720,
+				'airState.filterMngStates.changeDate': 20260919,
+			};
+			mockAxios
+				.onGet('https://route.lgthinq.com:46030/v1/service/application/gateway-uri')
+				.reply(200, { result: gatewayData });
+			mockAxios.onPost(`${gatewayData.thinq2Uri}/service/devices/device-123/control-sync`).reply(200, {
+				resultCode: '0000',
+				result: { data: filterData },
+			});
+
+			const result = await apiClient.getFilterState('device-123');
+
+			expect(result).toEqual(filterData);
+		});
+
+		it('should return undefined when response has no result', async () => {
+			mockAxios
+				.onGet('https://route.lgthinq.com:46030/v1/service/application/gateway-uri')
+				.reply(200, { result: gatewayData });
+			mockAxios.onPost(`${gatewayData.thinq2Uri}/service/devices/device-123/control-sync`).reply(200, {
+				resultCode: '0000',
+			});
+
+			const result = await apiClient.getFilterState('device-123');
+
+			expect(result).toBeUndefined();
+		});
+
+		it('should return undefined when response result has no data', async () => {
+			mockAxios
+				.onGet('https://route.lgthinq.com:46030/v1/service/application/gateway-uri')
+				.reply(200, { result: gatewayData });
+			mockAxios.onPost(`${gatewayData.thinq2Uri}/service/devices/device-123/control-sync`).reply(200, {
+				resultCode: '0000',
+				result: {},
+			});
+
+			const result = await apiClient.getFilterState('device-123');
+
+			expect(result).toBeUndefined();
+		});
+
+		it('should use correct payload with ctrlKey filterMngStateCtrl', async () => {
+			const filterData = {
+				'airState.filterMngStates.useTime': 11,
+				'airState.filterMngStates.maxTime': 720,
+			};
+			mockAxios
+				.onGet('https://route.lgthinq.com:46030/v1/service/application/gateway-uri')
+				.reply(200, { result: gatewayData });
+			mockAxios.onPost(`${gatewayData.thinq2Uri}/service/devices/device-123/control-sync`).reply(200, {
+				resultCode: '0000',
+				result: { data: filterData },
+			});
+
+			await apiClient.getFilterState('device-123');
+
+			const request = mockAxios.history.post.find((h) =>
+				h.url?.includes('/service/devices/device-123/control-sync'),
+			) as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+			const body = JSON.parse(request?.data as string);
+			expect(body.ctrlKey).toBe('filterMngStateCtrl');
+			expect(body.command).toBe('Get');
+			expect(Array.isArray(body.dataGetList)).toBe(true);
+		});
+
+		it('should use correct dataGetList field array', async () => {
+			const filterData = {
+				'airState.filterMngStates.useTime': 11,
+				'airState.filterMngStates.maxTime': 720,
+			};
+			mockAxios
+				.onGet('https://route.lgthinq.com:46030/v1/service/application/gateway-uri')
+				.reply(200, { result: gatewayData });
+			mockAxios.onPost(`${gatewayData.thinq2Uri}/service/devices/device-123/control-sync`).reply(200, {
+				resultCode: '0000',
+				result: { data: filterData },
+			});
+
+			await apiClient.getFilterState('device-123');
+
+			const request = mockAxios.history.post.find((h) =>
+				h.url?.includes('/service/devices/device-123/control-sync'),
+			) as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+			const body = JSON.parse(request?.data as string);
+			expect(body.dataGetList).toEqual([
+				'airState.filterMngState.useTime',
+				'airState.filterMngState.remainTime',
+				'airState.filterMngState.maxTime',
+				'airState.filterMngState.changeDate',
+				'airState.filterMngState.type',
+			]);
+		});
+
+		it('should propagate network errors', async () => {
+			mockAxios
+				.onGet('https://route.lgthinq.com:46030/v1/service/application/gateway-uri')
+				.reply(200, { result: gatewayData });
+			mockAxios.onPost(`${gatewayData.thinq2Uri}/service/devices/device-123/control-sync`).reply(500);
+
+			await expect(apiClient.getFilterState('device-123')).rejects.toThrow();
+		});
+	});
 });

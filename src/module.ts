@@ -12,11 +12,13 @@ import { LgThinkqPluginPlatformConfig } from './model/LgThinkqPluginPlatformConf
 import { DeviceRegistry } from './platform/deviceRegistry.js';
 import { PlatformConfigManager } from './platform/platformConfigManager.js';
 import { PlatformState } from './platform/platformState.js';
+import { applyThinqFilterStateToAirConditioner } from './platform/thinq/thinqAirConditionerFilterStateSync.js';
 import { applyThinqSnapshotToAirConditioner } from './platform/thinq/thinqAirConditionerStateSync.js';
 import { applyThinqSnapshotToWasher } from './platform/thinq/thinqWasherStateSync.js';
 import { ThinqServiceContainer } from './services/thinq/serviceContainer.js';
 import { ThinqSession } from './services/thinq/session.js';
 import { ThinqDeviceUpdateListener } from './services/thinq/thinqDeviceService.js';
+import type { ThinqFilterUpdateListener } from './services/thinq/thinqFilterMonitoringService.js';
 import { PLUGIN_NAME } from './settings.js';
 
 export default function initializePlugin(
@@ -44,6 +46,7 @@ export class LgThinkqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 
 	private thinqPollingIntervalMs: number | undefined;
 	private readonly thinqDeviceKindById = new Map<string, 'AC' | 'WASHER'>();
+	private readonly filterMonitoringDeviceIds: string[] = [];
 
 	constructor(
 		matterbridge: PlatformMatterbridge,
@@ -171,6 +174,26 @@ export class LgThinkqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 					`ThinQ MQTT listener failed to start: ${error instanceof Error ? error.message : String(error)}`,
 				);
 			});
+
+		if (this.filterMonitoringDeviceIds.length > 0) {
+			const applyFilterUpdate: ThinqFilterUpdateListener = (deviceId, filterState) => {
+				const endpoint = this.registry.getDevice(deviceId) as MatterbridgeEndpoint | undefined;
+				if (!endpoint) {
+					this.log.debug(`ThinQ filter update received for unregistered device ${deviceId}, skipping.`);
+					return;
+				}
+				void applyThinqFilterStateToAirConditioner(endpoint, filterState, this.log).catch((error: unknown) => {
+					this.log.error(
+						`Failed to apply ThinQ filter state update for ${deviceId}: ${error instanceof Error ? error.message : String(error)}`,
+					);
+				});
+			};
+			const filterMonitoringIntervalMs = this.configManager.thinqFilterMonitoringIntervalSeconds * 1000;
+			this.thinqServices
+				.getFilterMonitoringService()
+				.startPolling(filterMonitoringIntervalMs, this.filterMonitoringDeviceIds, applyFilterUpdate);
+		}
+
 		this.log.debug(`onConfigure: exit — polling started at ${this.thinqPollingIntervalMs}ms interval`);
 	}
 
@@ -182,6 +205,7 @@ export class LgThinkqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 		this.thinqServices.getDeviceService().stopPolling();
 		this.thinqServices.getDeviceService().stopKeepAlive();
 		this.thinqServices.getMqttListener().stop();
+		this.thinqServices.getFilterMonitoringService().stopPolling();
 
 		if (this.configManager.unregisterOnShutdown) {
 			await this.unregisterAllDevices(UNREGISTER_DEVICES_DELAY_MS);
@@ -237,6 +261,9 @@ export class LgThinkqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 				await this.registerDevice(airConditioner);
 				this.registry.register(device.id, airConditioner);
 				this.thinqDeviceKindById.set(device.id, 'AC');
+				if (this.configManager.getDeviceCapabilities(device.id).supportsFilterMonitoring) {
+					this.filterMonitoringDeviceIds.push(device.id);
+				}
 				continue;
 			}
 

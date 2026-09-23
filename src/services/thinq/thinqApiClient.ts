@@ -57,6 +57,8 @@ export interface ThinqCommandPayload {
 	dataKey?: string | null;
 	dataValue?: unknown;
 	dataSetList?: Record<string, unknown>;
+	/** Field list for `Get` commands, e.g. `filterMngStateCtrl`'s `dataGetList`. */
+	dataGetList?: string[];
 	/** Overrides `sendCommand`'s default `'Set'`, e.g. `'Operation'` for AC power (homebridge-lg-thinq parity). */
 	command?: string;
 	/** Overrides `sendCommand`'s default `'basicCtrl'`, e.g. `'favoriteCtrl'` for swing mode compound writes (homebridge-lg-thinq parity). */
@@ -164,6 +166,48 @@ export class ThinqApiClient {
 			command: 'Set',
 			...payload,
 		});
+	}
+
+	/**
+	 * Same wire shape as `sendCommand`, but returns the raw response body instead of discarding it. Used both
+	 * for diagnostic probes (e.g. `--probe-filter`) and real production polling (e.g. `getFilterState`) that
+	 * need to inspect what the cloud actually returns for a given `Get` command, rather than fire-and-forget
+	 * `Set` commands.
+	 */
+	public async sendCommandAndGetResponse<T = unknown>(deviceId: string, payload: ThinqCommandPayload): Promise<T> {
+		if (!deviceId.trim()) {
+			throw new Error('Invalid deviceId: must be a non-empty string.');
+		}
+
+		return this.request<T>('post', `service/devices/${deviceId}/control-sync`, {
+			ctrlKey: 'basicCtrl',
+			command: 'Set',
+			...payload,
+		});
+	}
+
+	/**
+	 * Fetches the filter-life state for an AC device (`filterMngStateCtrl` `Get`). Returns
+	 * `undefined` if the response contains no data (e.g. devices with no filter sensor).
+	 */
+	public async getFilterState(deviceId: string): Promise<Record<string, unknown> | undefined> {
+		if (!deviceId.trim()) {
+			throw new Error('Invalid deviceId: must be a non-empty string.');
+		}
+
+		const response = await this.sendCommandAndGetResponse<{ result?: { data?: Record<string, unknown> } }>(deviceId, {
+			ctrlKey: 'filterMngStateCtrl',
+			command: 'Get',
+			dataGetList: [
+				'airState.filterMngState.useTime',
+				'airState.filterMngState.remainTime',
+				'airState.filterMngState.maxTime',
+				'airState.filterMngState.changeDate',
+				'airState.filterMngState.type',
+			],
+		});
+
+		return response.result?.data;
 	}
 
 	/**

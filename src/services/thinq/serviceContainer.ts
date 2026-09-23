@@ -13,12 +13,14 @@ import { ThinqMqttListener } from './mqtt/thinqMqttListener.js';
 import { ThinqSession } from './session.js';
 import { ThinqApiClient } from './thinqApiClient.js';
 import { ThinqDeviceService } from './thinqDeviceService.js';
+import { ThinqFilterMonitoringService } from './thinqFilterMonitoringService.js';
 
 /** DI container wiring together ThinQ authentication, discovery, polling, and MQTT push services (singletons). */
 export class ThinqServiceContainer {
 	private readonly apiClientInstance: ThinqApiClient;
 	private authenticationCoordinatorInstance: AuthenticationCoordinator | undefined;
 	private deviceServiceInstance: ThinqDeviceService | undefined;
+	private filterMonitoringServiceInstance: ThinqFilterMonitoringService | undefined;
 	private deviceDiscoveryInstance: ThinqDeviceDiscovery | undefined;
 	private deviceConfiguratorInstance: ThinqDeviceConfigurator | undefined;
 	private userDataRepositoryInstance: UserDataRepository | undefined;
@@ -65,6 +67,11 @@ export class ThinqServiceContainer {
 	public getDeviceService(): ThinqDeviceService {
 		this.deviceServiceInstance ??= new ThinqDeviceService(this.apiClientInstance, this.logger);
 		return this.deviceServiceInstance;
+	}
+
+	public getFilterMonitoringService(): ThinqFilterMonitoringService {
+		this.filterMonitoringServiceInstance ??= new ThinqFilterMonitoringService(this.apiClientInstance, this.logger);
+		return this.filterMonitoringServiceInstance;
 	}
 
 	public getDeviceDiscovery(): ThinqDeviceDiscovery {
