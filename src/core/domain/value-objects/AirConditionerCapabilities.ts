@@ -3,7 +3,6 @@ import type { ThinqDeviceConfigEntry } from '../../../model/LgThinkqPluginPlatfo
 /** Resolved per-device Matter capability set for a ThinQ AirConditioner endpoint. */
 export interface AirConditionerCapabilities {
 	readonly supportsHeat: boolean;
-	readonly supportsDry: boolean;
 	readonly supportsFanSpeedControl: boolean;
 	readonly supportsJetMode: boolean;
 	readonly supportsQuietMode: boolean;
@@ -19,7 +18,6 @@ export interface AirConditionerCapabilities {
 
 export const DEFAULT_AIR_CONDITIONER_CAPABILITIES: AirConditionerCapabilities = {
 	supportsHeat: true,
-	supportsDry: true,
 	supportsFanSpeedControl: true,
 	supportsJetMode: false,
 	supportsQuietMode: false,
@@ -35,7 +33,7 @@ export const DEFAULT_AIR_CONDITIONER_CAPABILITIES: AirConditionerCapabilities = 
 
 /**
  * Merges configured per-device capability flags over the full-support default.
- * Existing flags (supportsHeat/supportsDry/supportsFanSpeedControl) default to `true`.
+ * Existing flags (supportsHeat/supportsFanSpeedControl) default to `true`.
  * New flags (all others) default to `false` (opt-in).
  */
 export function resolveAirConditionerCapabilities(
@@ -47,7 +45,6 @@ export function resolveAirConditionerCapabilities(
 
 	return {
 		supportsHeat: capabilities?.supportsHeat ?? DEFAULT_AIR_CONDITIONER_CAPABILITIES.supportsHeat,
-		supportsDry: capabilities?.supportsDry ?? DEFAULT_AIR_CONDITIONER_CAPABILITIES.supportsDry,
 		supportsFanSpeedControl:
 			capabilities?.supportsFanSpeedControl ?? DEFAULT_AIR_CONDITIONER_CAPABILITIES.supportsFanSpeedControl,
 		supportsJetMode: capabilities?.supportsJetMode ?? DEFAULT_AIR_CONDITIONER_CAPABILITIES.supportsJetMode,

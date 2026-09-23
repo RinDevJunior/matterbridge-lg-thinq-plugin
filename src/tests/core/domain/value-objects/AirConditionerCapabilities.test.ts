@@ -11,7 +11,6 @@ describe('AirConditionerCapabilities', () => {
 		it('should have existing capabilities set to true', () => {
 			// Assert
 			expect(DEFAULT_AIR_CONDITIONER_CAPABILITIES.supportsHeat).toBe(true);
-			expect(DEFAULT_AIR_CONDITIONER_CAPABILITIES.supportsDry).toBe(true);
 			expect(DEFAULT_AIR_CONDITIONER_CAPABILITIES.supportsFanSpeedControl).toBe(true);
 		});
 
@@ -99,25 +98,6 @@ describe('AirConditionerCapabilities', () => {
 
 			// Assert
 			expect(result.supportsHeat).toBe(false);
-			expect(result.supportsDry).toBe(true); // default
-			expect(result.supportsFanSpeedControl).toBe(true); // default
-		});
-
-		it('should override supportsDry only when specified', () => {
-			// Arrange
-			const devices: ThinqDeviceConfigEntry[] = [
-				{
-					deviceId: 'device-123',
-					capabilities: { supportsDry: false },
-				},
-			];
-
-			// Act
-			const result = resolveAirConditionerCapabilities(devices, 'device-123');
-
-			// Assert
-			expect(result.supportsHeat).toBe(true); // default
-			expect(result.supportsDry).toBe(false);
 			expect(result.supportsFanSpeedControl).toBe(true); // default
 		});
 
@@ -135,7 +115,6 @@ describe('AirConditionerCapabilities', () => {
 
 			// Assert
 			expect(result.supportsHeat).toBe(true); // default
-			expect(result.supportsDry).toBe(true); // default
 			expect(result.supportsFanSpeedControl).toBe(false);
 		});
 
@@ -146,7 +125,6 @@ describe('AirConditionerCapabilities', () => {
 					deviceId: 'device-123',
 					capabilities: {
 						supportsHeat: false,
-						supportsDry: false,
 						supportsFanSpeedControl: false,
 					},
 				},
@@ -157,7 +135,6 @@ describe('AirConditionerCapabilities', () => {
 
 			// Assert
 			expect(result.supportsHeat).toBe(false);
-			expect(result.supportsDry).toBe(false);
 			expect(result.supportsFanSpeedControl).toBe(false);
 		});
 
@@ -165,7 +142,7 @@ describe('AirConditionerCapabilities', () => {
 			// Arrange
 			const devices: ThinqDeviceConfigEntry[] = [
 				{ deviceId: 'device-001', capabilities: { supportsHeat: false } },
-				{ deviceId: 'device-123', capabilities: { supportsDry: false } },
+				{ deviceId: 'device-123', capabilities: { supportsQuietMode: true } },
 				{ deviceId: 'device-999', capabilities: { supportsFanSpeedControl: false } },
 			];
 
@@ -174,7 +151,7 @@ describe('AirConditionerCapabilities', () => {
 
 			// Assert
 			expect(result.supportsHeat).toBe(true); // default
-			expect(result.supportsDry).toBe(false); // from device-123
+			expect(result.supportsQuietMode).toBe(true); // from device-123
 			expect(result.supportsFanSpeedControl).toBe(true); // default
 		});
 
@@ -183,7 +160,7 @@ describe('AirConditionerCapabilities', () => {
 			const devices: ThinqDeviceConfigEntry[] = [
 				{
 					deviceId: 'device-123',
-					capabilities: { supportsHeat: false, supportsDry: false, supportsFanSpeedControl: true },
+					capabilities: { supportsHeat: false, supportsFanSpeedControl: true },
 				},
 			];
 
@@ -195,7 +172,6 @@ describe('AirConditionerCapabilities', () => {
 			// Result is not frozen, it's just a regular object with readonly interface
 			expect(result).toEqual({
 				supportsHeat: false,
-				supportsDry: false,
 				supportsFanSpeedControl: true,
 				supportsJetMode: false,
 				supportsQuietMode: false,
@@ -217,7 +193,6 @@ describe('AirConditionerCapabilities', () => {
 					deviceId: 'device-123',
 					capabilities: {
 						supportsHeat: undefined,
-						supportsDry: true,
 						supportsFanSpeedControl: undefined,
 					},
 				},
@@ -228,7 +203,6 @@ describe('AirConditionerCapabilities', () => {
 
 			// Assert
 			expect(result.supportsHeat).toBe(true); // defaults to true when undefined
-			expect(result.supportsDry).toBe(true);
 			expect(result.supportsFanSpeedControl).toBe(true); // defaults to true when undefined
 		});
 
@@ -239,7 +213,6 @@ describe('AirConditionerCapabilities', () => {
 					deviceId: 'device-123',
 					capabilities: {
 						supportsHeat: true,
-						supportsDry: true,
 						supportsFanSpeedControl: true,
 					},
 				},
@@ -410,7 +383,6 @@ describe('AirConditionerCapabilities', () => {
 			// Assert
 			// Existing flags should still default to true
 			expect(result.supportsHeat).toBe(true);
-			expect(result.supportsDry).toBe(true);
 			expect(result.supportsFanSpeedControl).toBe(true);
 			// New flags as specified
 			expect(result.supportsJetMode).toBe(true);
@@ -599,7 +571,6 @@ describe('AirConditionerCapabilities', () => {
 			expect(result.supportsAirQualitySensor).toBe(true);
 			// Verify existing flags still default to true
 			expect(result.supportsHeat).toBe(true);
-			expect(result.supportsDry).toBe(true);
 			expect(result.supportsFanSpeedControl).toBe(true);
 		});
 
@@ -641,7 +612,6 @@ describe('AirConditionerCapabilities', () => {
 					deviceId: 'device-123',
 					capabilities: {
 						supportsHeat: true,
-						supportsDry: true,
 						supportsFanSpeedControl: true,
 					},
 				},
@@ -653,7 +623,6 @@ describe('AirConditionerCapabilities', () => {
 			// Assert
 			expect(result).toEqual({
 				supportsHeat: true,
-				supportsDry: true,
 				supportsFanSpeedControl: true,
 				supportsJetMode: false,
 				supportsQuietMode: false,
@@ -777,7 +746,6 @@ describe('AirConditionerCapabilities', () => {
 					deviceId: 'device-123',
 					capabilities: {
 						supportsHeat: true,
-						supportsDry: true,
 						supportsFanSpeedControl: true,
 						supportsEnergyMonitoring: false,
 					},
@@ -790,7 +758,6 @@ describe('AirConditionerCapabilities', () => {
 			// Assert
 			expect(result).toEqual({
 				supportsHeat: true,
-				supportsDry: true,
 				supportsFanSpeedControl: true,
 				supportsJetMode: false,
 				supportsQuietMode: false,
@@ -914,7 +881,6 @@ describe('AirConditionerCapabilities', () => {
 					deviceId: 'device-123',
 					capabilities: {
 						supportsHeat: true,
-						supportsDry: true,
 						supportsFanSpeedControl: true,
 						supportsFilterMonitoring: true,
 					},
@@ -927,7 +893,6 @@ describe('AirConditionerCapabilities', () => {
 			// Assert
 			expect(result).toEqual({
 				supportsHeat: true,
-				supportsDry: true,
 				supportsFanSpeedControl: true,
 				supportsJetMode: false,
 				supportsQuietMode: false,

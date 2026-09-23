@@ -75,12 +75,6 @@
 										"type": "boolean",
 										"default": true
 									},
-									"supportsDry": {
-										"title": "Supports Dry",
-										"description": "Whether this device supports dry mode.",
-										"type": "boolean",
-										"default": true
-									},
 									"supportsFanSpeedControl": {
 										"title": "Supports Fan Speed Control",
 										"description": "Whether this device supports adjustable fan speed.",
