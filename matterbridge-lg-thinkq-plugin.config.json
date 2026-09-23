@@ -10,6 +10,7 @@
 		"country": "US",
 		"language": "en-US",
 		"refreshIntervalSeconds": 60,
+		"filterMonitoringIntervalSeconds": 3600,
 		"devices": []
 	},
 	"webos": {

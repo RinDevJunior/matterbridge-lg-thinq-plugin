@@ -9,6 +9,7 @@ export async function cmdDevices(
 	session: CliSession,
 	logger: AnsiLogger,
 	dumpSnapshotDeviceId?: string,
+	probeFilterDeviceId?: string,
 ): Promise<void> {
 	const { userData, country, language } = session;
 
@@ -16,6 +17,22 @@ export async function cmdDevices(
 	const apiClient = new ThinqApiClient(thinqSession, country, language, logger);
 	if (userData.userNumber) {
 		apiClient.setUserNumber(userData.userNumber);
+	}
+
+	if (probeFilterDeviceId) {
+		const response = await apiClient.sendCommandAndGetResponse(probeFilterDeviceId, {
+			ctrlKey: 'filterMngStateCtrl',
+			command: 'Get',
+			dataGetList: [
+				'airState.filterMngState.useTime',
+				'airState.filterMngState.remainTime',
+				'airState.filterMngState.maxTime',
+				'airState.filterMngState.changeDate',
+				'airState.filterMngState.type',
+			],
+		});
+		console.log(JSON.stringify(response, null, 2));
+		return;
 	}
 
 	const rawDevices = await apiClient.getListDevices();

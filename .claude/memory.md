@@ -79,6 +79,35 @@ It is version-controlled — commit and push changes so teammates can pull the l
 - **CORRECTION to the above (Sep 22, 2026, verified directly against installed matterbridge 3.10.9 `matterbridgeBehaviors.js`/`NamedHandler.js`, not the file the v1 entry cited):** command dispatch (`on`/`off`/`pause`/`stop`/`start`/`resume`/`changeToMode`, all of them) calls `commandHandler.executeHandler(...)` WITHOUT `await`, then immediately mutates local Matter state and returns success — a throw in our async handler does NOT block mutation or block the success response to the controller. Any handler that must guarantee "no optimistic UI state on failure" needs an explicit revert-on-failure (`updateAttribute` back to the prior value in a `.catch()`), mirroring `revertSetpointOnFailure`/`revertToggleOnFailure` already in `thinqAirConditionerCommandHandlers.ts`/`thinqAirConditionerAuxiliaryToggles.ts` — a throw alone is not a safety mechanism.
 - ThinQ Washer v2 planned (Sep 22, 2026, real control — plan-v2-control.md): scope narrowed to ONE real command, `OperationalState.stop`, double-gated (per-device config opt-in default-off AND a `ControlWifi.WMStop`/`WMOff` payload resolved from the device's own `modelJsonUri` at registration time, fetched via new `ThinqApiClient.getDeviceModel()`). `start`/`changeToMode` confirmed structurally inseparable from a course `dataSetList` payload in `ioBroker.lg-thinq` (`main.js:3289-3306`, `helper.js:1316-1405`) — no safe path without new course-table infra. No `pause` primitive exists at the ThinQ API layer at all (exhaustive grep, zero hits) — `pause`/`resume` stay permanently rejected, not aliased to stop/start. See `workspace/washer-integration/answers-washer-v2-control.md`.
 - ThinQ Washer v2 Stop + v1 revert-on-throw implemented (Sep 22, 2026): `OperationalState.id`/`LaundryWasherMode.id` (and every other `matterbridge/matter/clusters` cluster namespace, e.g. `OnOff.id`) export `id` directly on the namespace in the installed matterbridge 3.10.9 (`@matter/types` re-export) — NOT nested under `.Cluster.id` as some upstream matter.js source suggests; use `<Cluster>.id` directly, matches existing codebase usage. `updateAttribute`'s 3rd param (`value`) must be typed as the attribute's real type (`number`/`boolean`), not `unknown`/`unknown|undefined` — `unknown` fails all 3 overloads (TS2769); read via `getAttribute(...) as T | undefined` then `?? fallback` before passing in.
+- ThinQ AC filter monitoring planned (Sep 23, 2026, verified directly against installed SDK):
+  `HepaFilterMonitoring` (id 113/0x71) is an OPTIONAL serverCluster directly on the `RoomAirConditioner`
+  device type (`room-air-conditioner-device.element.js`, conformance "O") — no child endpoint/AirPurifier
+  device type needed, unlike humidity/air-quality sensors. `MatterbridgeEndpoint.createDefaultHepaFilterMonitoringClusterServer(condition=100, changeIndication=Ok, inPlaceIndicator=true, lastChangedTime=null, replacementProductList=[])`
+  already exists (same family as `createDefaultRelativeHumidityMeasurementClusterServer`), hardcodes
+  `degradationDirection: Down` (matches "remaining life %", decreasing = worse). The fabricated
+  "FilterMaintenance" (0x0050) cluster from an earlier bad AI answer does not exist in the SDK at all.
+  Data source: `ThinqApiClient.sendCommandAndGetResponse` (already added for `--probe-filter` CLI flag)
+  POSTs `control-sync` with `ctrlKey:'filterMngStateCtrl', command:'Get'` — REQUEST uses singular
+  `airState.filterMngState.*` keys, but the RESPONSE comes back keyed with PLURAL
+  `airState.filterMngStates.useTime`/`.maxTime`/`.changeDate` (confirmed live, `remainTime`/`type`
+  requested but never returned — compute remaining as `maxTime-useTime`). See `workspace/ac-filter-monitoring/plan.md`.
+- ThinQ AC filter monitoring implemented (Sep 23, 2026): `ThinqFilterState.fromRaw` returns `undefined`
+  (not zeroed) when `useTime`/`maxTime` missing or `maxTime<=0`; `ThinqFilterMonitoringService` is a
+  standalone interval-timer service (separate from `ThinqDeviceService`), `serviceContainer.getFilterMonitoringService()`
+  singleton; `applyThinqFilterStateToAirConditioner` (new file, not `thinqAirConditionerStateSync.ts`)
+  writes `HepaFilterMonitoring.condition`/`changeIndication` only when state is defined.
+- ThinQ AC filter RESET (v2) planned (Sep 23, 2026, verified against installed SDK):
+  `@matterbridge/core/dist/behaviors/hepaFilterMonitoringServer.js` `MatterbridgeHepaFilterMonitoringServer.resetCondition()`
+  DOES `await device.commandHandler.executeHandler(...)` before writing `state.condition=100`/
+  `changeIndication=Ok`/`lastChangedTime=now` directly — those writes are SKIPPED entirely if our
+  `addCommandHandler('resetCondition', ...)` handler throws, so a failed real ThinQ `Set` call can
+  never flip the attributes. Do NOT manually `updateAttribute` those fields on success — the SDK
+  already does it, would race/duplicate. `ThinqApiClient.sendCommand` already supports arbitrary
+  `ctrlKey`/`command`/`dataSetList` overrides (proven by washer's `stop`) — no new API-client method
+  needed; reset is `sendCommand(id, {ctrlKey:'filterMngStateCtrl', command:'Set', dataSetList})`.
+  New registration kept in its OWN file/function (`registerFilterResetCommandHandler`), NOT folded
+  into `registerAirConditionerCommandHandlers` — that function has 39 existing call sites in its test
+  file that a new required param would break. See `workspace/ac-filter-monitoring/plan-v2-reset.md`.
 
 ## Test Patterns
 

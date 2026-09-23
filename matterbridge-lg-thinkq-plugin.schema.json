@@ -46,6 +46,14 @@
 					"minimum": 1,
 					"maximum": 3600
 				},
+				"filterMonitoringIntervalSeconds": {
+					"title": "Filter Monitoring Interval",
+					"description": "Filter life state refresh interval in seconds (low frequency, filter life changes over days/weeks).",
+					"type": "number",
+					"default": 3600,
+					"minimum": 300,
+					"maximum": 86400
+				},
 				"devices": {
 					"title": "ThinQ Devices",
 					"description": "Auto-populated on discovery. Per-device capability flags gate which Matter features are advertised.",
@@ -132,6 +140,12 @@
 										"description": "Whether this device reports instantaneous power consumption data.",
 										"type": "boolean",
 										"default": false
+									},
+									"supportsFilterMonitoring": {
+										"title": "Supports Filter Monitoring",
+										"description": "Whether this device reports air-filter life/remaining-percent data.",
+										"type": "boolean",
+										"default": false
 									}
 								}
 							},
@@ -142,6 +156,18 @@
 									"allowRemoteStop": {
 										"title": "Allow Remote Stop (Washer)",
 										"description": "Turning this on lets Apple Home send a real stop/cancel command to the physical washer. Off by default.",
+										"type": "boolean",
+										"default": false
+									}
+								}
+							},
+							"acFilterControl": {
+								"title": "AC Filter Control",
+								"type": "object",
+								"properties": {
+									"allowFilterReset": {
+										"title": "Allow Filter Reset (AC)",
+										"description": "Turning this on lets Apple Home send a real filter-counter reset command to the physical air conditioner, after you've replaced/cleaned the filter. Off by default. This command has not been live-tested yet — enable only when you are ready to verify it yourself.",
 										"type": "boolean",
 										"default": false
 									}

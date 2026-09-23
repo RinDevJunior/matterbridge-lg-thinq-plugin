@@ -26,6 +26,7 @@ ${b}Options:${r}
 
 ${b}Devices options:${r}
   ${y}--dump-snapshot${r} Device id; prints its full raw ThinQ snapshot JSON instead of the device list
+  ${y}--probe-filter${r}  Device id; sends a filterMngStateCtrl Get probe and prints the raw response JSON
 
 ${b}Energy options:${r}
   ${y}--device${r}       Device id (default: first AC device)
@@ -46,6 +47,7 @@ ${b}Examples:${r}
   npm run cli -- --command ${g}login${r} --type token
   npm run cli -- --command ${g}devices${r}
   npm run cli -- --command ${g}devices${r} --dump-snapshot <deviceId>
+  npm run cli -- --command ${g}devices${r} --probe-filter <deviceId>
   npm run cli -- --command ${g}energy${r}
   npm run cli -- --command ${g}energy${r} --samples 5 --interval 10 --keep-alive
 `;

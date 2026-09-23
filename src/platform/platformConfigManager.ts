@@ -12,11 +12,13 @@ import {
 	createDefaultThinqConfig,
 	LgThinkqPluginPlatformConfig,
 	type MatterOverrideSettings,
+	type ThinqAcFilterControlConfig,
 	type ThinqSceneButtonConfig,
 	type ThinqWasherControlConfig,
 } from '../model/LgThinkqPluginPlatformConfig.js';
 
 const DEFAULT_THINQ_REFRESH_INTERVAL_SECONDS = 60;
+const DEFAULT_FILTER_MONITORING_INTERVAL_SECONDS = 3600;
 
 /**
  * Manages platform configuration with validation and defaults.
@@ -86,6 +88,10 @@ export class PlatformConfigManager {
 		return this.config.thinq.refreshIntervalSeconds ?? DEFAULT_THINQ_REFRESH_INTERVAL_SECONDS;
 	}
 
+	public get thinqFilterMonitoringIntervalSeconds(): number {
+		return this.config.thinq.filterMonitoringIntervalSeconds ?? DEFAULT_FILTER_MONITORING_INTERVAL_SECONDS;
+	}
+
 	public getDeviceCapabilities(deviceId: string): AirConditionerCapabilities {
 		return resolveAirConditionerCapabilities(this.config.thinq.devices, deviceId);
 	}
@@ -96,6 +102,10 @@ export class PlatformConfigManager {
 
 	public getWasherControlConfig(deviceId: string): ThinqWasherControlConfig {
 		return this.config.thinq.devices?.find((d) => d.deviceId === deviceId)?.washerControl ?? {};
+	}
+
+	public getAcFilterControlConfig(deviceId: string): ThinqAcFilterControlConfig {
+		return this.config.thinq.devices?.find((d) => d.deviceId === deviceId)?.acFilterControl ?? {};
 	}
 
 	public get overrideMatterConfiguration(): boolean {

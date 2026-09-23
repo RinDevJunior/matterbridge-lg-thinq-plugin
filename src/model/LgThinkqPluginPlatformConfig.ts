@@ -13,6 +13,7 @@ export interface ThinqDeviceCapabilityConfig {
 	supportsHumiditySensor?: boolean;
 	supportsAirQualitySensor?: boolean;
 	supportsEnergyMonitoring?: boolean;
+	supportsFilterMonitoring?: boolean;
 }
 
 export interface ThinqSceneButtonConfig {
@@ -31,12 +32,17 @@ export interface ThinqWasherControlConfig {
 	allowRemoteStop?: boolean;
 }
 
+export interface ThinqAcFilterControlConfig {
+	allowFilterReset?: boolean;
+}
+
 export interface ThinqDeviceConfigEntry {
 	deviceId: string;
 	capabilities?: ThinqDeviceCapabilityConfig;
 	sceneButtons?: ThinqSceneButtonConfig[];
 	productName?: string;
 	washerControl?: ThinqWasherControlConfig;
+	acFilterControl?: ThinqAcFilterControlConfig;
 }
 
 export interface ThinqAuthConfig {
@@ -47,6 +53,7 @@ export interface ThinqAuthConfig {
 	country: string;
 	language: string;
 	refreshIntervalSeconds?: number;
+	filterMonitoringIntervalSeconds?: number;
 	devices: ThinqDeviceConfigEntry[];
 }
 

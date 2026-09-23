@@ -171,4 +171,33 @@ describe('ThinqServiceContainer', () => {
 			expect(listener['logger']).toBe(mockLogger);
 		});
 	});
+
+	describe('getFilterMonitoringService', () => {
+		it('should return a ThinqFilterMonitoringService instance', () => {
+			const service = container.getFilterMonitoringService();
+
+			expect(service).toBeDefined();
+			expect(service).toHaveProperty('startPolling');
+			expect(service).toHaveProperty('stopPolling');
+		});
+
+		it('should return the same instance on repeated calls (singleton)', () => {
+			const service1 = container.getFilterMonitoringService();
+			const service2 = container.getFilterMonitoringService();
+
+			expect(service1).toBe(service2);
+		});
+
+		it('should use the apiClient instance', () => {
+			const service = container.getFilterMonitoringService();
+
+			expect(service['apiClient']).toBe(container.apiClient);
+		});
+
+		it('should use the correct logger', () => {
+			const service = container.getFilterMonitoringService();
+
+			expect(service['logger']).toBe(mockLogger);
+		});
+	});
 });

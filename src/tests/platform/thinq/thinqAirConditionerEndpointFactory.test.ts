@@ -57,6 +57,7 @@ function createChainableMock() {
 		createDefaultPm10ConcentrationMeasurementClusterServer: vi.fn().mockReturnThis(),
 		createDefaultPowerTopologyClusterServer: vi.fn().mockReturnThis(),
 		createDefaultElectricalPowerMeasurementClusterServer: vi.fn().mockReturnThis(),
+		createDefaultHepaFilterMonitoringClusterServer: vi.fn().mockReturnThis(),
 		createDefaultMomentarySwitchClusterServer: vi.fn().mockReturnThis(),
 	};
 }
@@ -856,6 +857,90 @@ describe('buildAirConditionerEndpoint', () => {
 			const firstArg = (MatterbridgeEndpointMockFn as any).mock.calls[0][0];
 			const deviceTypeIds = firstArg.map((dt: any) => dt.id);
 			expect(deviceTypeIds).not.toContain('onOffPlugInUnit');
+		});
+	});
+
+	describe('filter monitoring cluster on AC endpoint', () => {
+		it('should call createDefaultHepaFilterMonitoringClusterServer when supportsFilterMonitoring is true', () => {
+			// Arrange
+			const capabilities = asPartial<AirConditionerCapabilities>({
+				supportsHeat: true,
+				supportsFanSpeedControl: true,
+				supportsFilterMonitoring: true,
+			});
+
+			// Act
+			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
+
+			// Assert
+			expect(mockEndpoint.createDefaultHepaFilterMonitoringClusterServer).toHaveBeenCalledTimes(1);
+		});
+
+		it('should not call createDefaultHepaFilterMonitoringClusterServer when supportsFilterMonitoring is false', () => {
+			// Arrange
+			const capabilities = asPartial<AirConditionerCapabilities>({
+				supportsHeat: true,
+				supportsFanSpeedControl: true,
+				supportsFilterMonitoring: false,
+			});
+
+			// Act
+			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
+
+			// Assert
+			expect(mockEndpoint.createDefaultHepaFilterMonitoringClusterServer).not.toHaveBeenCalled();
+		});
+
+		it('should maintain regression parity when filter monitoring capability is false (default)', () => {
+			// Arrange
+			const capabilities = { ...DEFAULT_AIR_CONDITIONER_CAPABILITIES };
+
+			// Act
+			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
+
+			// Assert
+			expect(mockEndpoint.createDefaultHepaFilterMonitoringClusterServer).not.toHaveBeenCalled();
+		});
+
+		it('should coexist with energy monitoring when both capabilities are enabled', () => {
+			// Arrange
+			const capabilities = asPartial<AirConditionerCapabilities>({
+				supportsHeat: true,
+				supportsFanSpeedControl: true,
+				supportsEnergyMonitoring: true,
+				supportsFilterMonitoring: true,
+			});
+
+			// Act
+			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
+
+			// Assert
+			expect(mockEndpoint.createDefaultPowerTopologyClusterServer).toHaveBeenCalled();
+			expect(mockEndpoint.createDefaultElectricalPowerMeasurementClusterServer).toHaveBeenCalled();
+			expect(mockEndpoint.createDefaultHepaFilterMonitoringClusterServer).toHaveBeenCalled();
+		});
+
+		it('should coexist with humidity and air quality sensors when all capabilities are enabled', () => {
+			// Arrange
+			const capabilities = asPartial<AirConditionerCapabilities>({
+				supportsHeat: true,
+				supportsFanSpeedControl: true,
+				supportsHumiditySensor: true,
+				supportsAirQualitySensor: true,
+				supportsFilterMonitoring: true,
+			});
+
+			// Act
+			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
+
+			// Assert
+			const calls = (mockEndpoint.addChildDeviceType as any).mock.calls;
+			const childNames = calls.map((call: any[]) => call[0]);
+			expect(childNames).toContain('HumiditySensor');
+			expect(childNames).toContain('AirQualitySensor');
+			// Filter monitoring is on the AC endpoint itself, not a child
+			expect(childNames).not.toContain('FilterMonitor');
+			expect(mockEndpoint.createDefaultHepaFilterMonitoringClusterServer).toHaveBeenCalled();
 		});
 	});
 
