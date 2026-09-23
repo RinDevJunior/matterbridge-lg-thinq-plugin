@@ -56,7 +56,11 @@ export function mapWindStrengthToPercent(windStrength: number | undefined): numb
 	return WIND_STRENGTH_HIGH_PERCENT;
 }
 
-/** Maps ThinQ power-state + `airState.opMode` to a Matter `Thermostat.SystemMode`. */
+/**
+ * Maps ThinQ power-state + `airState.opMode` to a Matter `Thermostat.SystemMode`.
+ * Apple Home's Thermostat UI only exposes Off/Heat/Cool/Auto, so Dry and Fan-only opModes
+ * (which have no equivalent Apple-visible slot) collapse into Cool.
+ */
 export function mapOperationModeToSystemMode(
 	operationMode: number | undefined,
 	isPowerOn: boolean,
@@ -74,9 +78,9 @@ export function mapOperationModeToSystemMode(
 		case THINQ_OP_MODE_HEAT:
 			return capabilities.supportsHeat ? Thermostat.SystemMode.Heat : Thermostat.SystemMode.Cool;
 		case THINQ_OP_MODE_FAN:
-			return Thermostat.SystemMode.FanOnly;
+			return Thermostat.SystemMode.Cool;
 		case THINQ_OP_MODE_DRY:
-			return capabilities.supportsDry ? Thermostat.SystemMode.Dry : Thermostat.SystemMode.Cool;
+			return Thermostat.SystemMode.Cool;
 		case THINQ_OP_MODE_AIR_CLEAN:
 		default:
 			return capabilities.supportsHeat ? Thermostat.SystemMode.Auto : Thermostat.SystemMode.Cool;

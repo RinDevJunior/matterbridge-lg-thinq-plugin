@@ -245,27 +245,15 @@ describe('mapOperationModeToSystemMode', () => {
 		expect(mapOperationModeToSystemMode(0, true, capabilities)).toBe(Thermostat.SystemMode.Cool);
 	});
 
-	it('should map opMode 1 (DRY) to SystemMode.Dry when supported', () => {
+	it('should map opMode 1 (DRY) to SystemMode.Cool (Apple Home has no Dry slot)', () => {
 		// Act & Assert
-		const dryCapabilities: AirConditionerCapabilities = {
-			...DEFAULT_AIR_CONDITIONER_CAPABILITIES,
-			supportsDry: true,
-		};
-		expect(mapOperationModeToSystemMode(1, true, dryCapabilities)).toBe(Thermostat.SystemMode.Dry);
+		// Note: supportsDry is irrelevant; Dry always collapses to Cool for Apple Home compatibility
+		expect(mapOperationModeToSystemMode(1, true, capabilities)).toBe(Thermostat.SystemMode.Cool);
 	});
 
-	it('should map opMode 1 (DRY) to SystemMode.Cool when not supported', () => {
+	it('should map opMode 2 (FAN) to SystemMode.Cool (Apple Home has no FanOnly slot)', () => {
 		// Act & Assert
-		const noDryCapabilities: AirConditionerCapabilities = {
-			...DEFAULT_AIR_CONDITIONER_CAPABILITIES,
-			supportsDry: false,
-		};
-		expect(mapOperationModeToSystemMode(1, true, noDryCapabilities)).toBe(Thermostat.SystemMode.Cool);
-	});
-
-	it('should map opMode 2 (FAN) to SystemMode.FanOnly', () => {
-		// Act & Assert
-		expect(mapOperationModeToSystemMode(2, true, capabilities)).toBe(Thermostat.SystemMode.FanOnly);
+		expect(mapOperationModeToSystemMode(2, true, capabilities)).toBe(Thermostat.SystemMode.Cool);
 	});
 
 	it('should map opMode 4 (HEAT) to SystemMode.Heat when supported', () => {
