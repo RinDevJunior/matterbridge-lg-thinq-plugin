@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.0-rc11] - 2026-09-23
+
+### Changed
+
+- **Removed AC auxiliary toggle child devices** — Jet, Quiet, Energy Save, Air Clean, and LED no longer create separate child switch/light devices attached to the AC in Apple Home; this is a deliberate feature removal, with no replacement control surface, so users who had these enabled will see the corresponding entities disappear from Apple Home after upgrading (PR #17).
+
+### Refactored
+
+- **Removed dead `supportsDry` capability flag** — the field used to gate whether Dry opMode reported Matter SystemMode.Dry vs Cool, but that branch was already removed in the rc10 cleanup, leaving the capability field, config field, and schema toggle as inert plumbing; all three are now removed (PR #16).
+
+<a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
+
+---
+
 ## [0.1.0-rc10] - 2026-09-23
 
 ### Added
