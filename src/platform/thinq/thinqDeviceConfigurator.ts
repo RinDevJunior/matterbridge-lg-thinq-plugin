@@ -13,7 +13,6 @@ import {
 } from './thinqAirConditionerCommandHandlers.js';
 import { buildAirConditionerEndpoint } from './thinqAirConditionerEndpointFactory.js';
 import { registerFilterResetCommandHandler } from './thinqAirConditionerFilterResetCommandHandler.js';
-import { registerSceneButtonCommandHandlers } from './thinqAirConditionerSceneButtons.js';
 import { registerWasherCommandHandlers } from './thinqWasherCommandHandlers.js';
 import { buildWasherEndpoint } from './thinqWasherEndpointFactory.js';
 import { extractWasherStopCommand, type WasherStopCommandPayload } from './thinqWasherStopCommandResolver.js';
@@ -55,7 +54,6 @@ export class ThinqDeviceConfigurator {
 		const currentTemperature = snapshot.currentTemperatureCelsius ?? DEFAULT_TEMPERATURE_CELSIUS;
 		const targetTemperature = snapshot.targetTemperatureCelsius ?? DEFAULT_TEMPERATURE_CELSIUS;
 		const capabilities = this.configManager.getDeviceCapabilities(device.id);
-		const sceneButtons = this.configManager.getSceneButtons(device.id);
 
 		this.logger.debug(`registerAirConditioner: entry for deviceId=${device.id}`);
 		this.logger.info(`Registering ThinQ AirConditioner: ${device.name} (${device.id})`);
@@ -82,7 +80,6 @@ export class ThinqDeviceConfigurator {
 			},
 			initialFanMode,
 			{
-				sceneButtons,
 				vendorId: matterOverride?.matterVendorId,
 				vendorName: matterOverride?.matterVendorName,
 				productId: matterOverride?.matterProductId,
@@ -92,8 +89,11 @@ export class ThinqDeviceConfigurator {
 			.createDefaultTemperatureMeasurementClusterServer(currentTemperature * 100)
 			.addRequiredClusterServers();
 
+		// Hardcoded: the AC is always exposed as its own standalone Matter node (server mode) so it can get its own
+		// power tile in Apple Home. Not user-configurable.
+		airConditioner.mode = 'server';
+
 		registerAirConditionerCommandHandlers(airConditioner, device, this.apiClient, this.logger, capabilities);
-		registerSceneButtonCommandHandlers(airConditioner, sceneButtons, device, this.apiClient, this.logger);
 
 		const filterResetControl = this.configManager.getAcFilterControlConfig(device.id);
 		registerFilterResetCommandHandler(
@@ -114,6 +114,10 @@ export class ThinqDeviceConfigurator {
 		this.logger.info(`Registering ThinQ Washer: ${device.name} (${device.id})`);
 
 		const washer = buildWasherEndpoint(device);
+
+		// Hardcoded: the washer is always exposed as its own standalone Matter node (server mode), matching the AC.
+		washer.mode = 'server';
+
 		const washerControl = this.configManager.getWasherControlConfig(device.id);
 		const stopCommandPayload = await this.resolveWasherStopCommandPayload(device);
 		registerWasherCommandHandlers(washer, device, this.apiClient, this.logger, washerControl, stopCommandPayload);

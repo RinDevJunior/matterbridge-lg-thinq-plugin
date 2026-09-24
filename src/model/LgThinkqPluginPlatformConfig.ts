@@ -10,11 +10,6 @@ export interface ThinqDeviceCapabilityConfig {
 	supportsFilterMonitoring?: boolean;
 }
 
-export interface ThinqSceneButtonConfig {
-	name: string;
-	opMode: number;
-}
-
 export interface MatterOverrideSettings {
 	matterVendorName: string;
 	matterVendorId: number;
@@ -33,7 +28,6 @@ export interface ThinqAcFilterControlConfig {
 export interface ThinqDeviceConfigEntry {
 	deviceId: string;
 	capabilities?: ThinqDeviceCapabilityConfig;
-	sceneButtons?: ThinqSceneButtonConfig[];
 	productName?: string;
 	washerControl?: ThinqWasherControlConfig;
 	acFilterControl?: ThinqAcFilterControlConfig;

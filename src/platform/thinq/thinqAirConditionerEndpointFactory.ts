@@ -6,11 +6,10 @@ import {
 	powerSource,
 	roomAirConditioner,
 } from 'matterbridge';
-import { AirQuality, FanControl } from 'matterbridge/matter/clusters';
+import { AirQuality, FanControl, PowerTopology } from 'matterbridge/matter/clusters';
 
 import type { ThinqAirConditionerDevice } from '../../core/domain/entities/ThinqDevice.js';
 import type { AirConditionerCapabilities } from '../../core/domain/value-objects/AirConditionerCapabilities.js';
-import { addSceneButtonEndpoints } from './thinqAirConditionerSceneButtons.js';
 
 export interface AirConditionerEndpointSetpoints {
 	currentTemperature: number;
@@ -29,7 +28,6 @@ export interface AirConditionerEndpointSetpoints {
  * set must be chosen up-front — see `.claude/memory.md`).
  */
 export interface BuildAirConditionerEndpointOptions {
-	sceneButtons?: { name: string; opMode: number }[];
 	vendorId?: number;
 	vendorName?: string;
 	productId?: number;
@@ -112,6 +110,9 @@ export function buildAirConditionerEndpoint(
 	}
 
 	if (capabilities.supportsHumiditySensor) {
+		// RelativeHumidityMeasurement is spec-legal directly on roomAirConditioner, but Apple Home only builds a
+		// Humidity service from an endpoint actually typed humiditySensor (confirmed by regression: moving this
+		// onto the AC's own endpoint made the reading disappear from Apple Home entirely). Keep as a child.
 		endpoint
 			.addChildDeviceType('HumiditySensor', [humiditySensor])
 			.createDefaultIdentifyClusterServer()
@@ -129,18 +130,15 @@ export function buildAirConditionerEndpoint(
 
 	if (capabilities.supportsEnergyMonitoring) {
 		// Electrical measurement lives on the AC endpoint itself (electricalSensor device type). PowerTopology is
-		// mandatory for electricalSensor; activePower starts at 0 (not null) because Apple may hide null.
+		// mandatory for electricalSensor; NodeTopology because the AC is now its own standalone Matter node (server
+		// mode), not shared with a bridge. activePower starts at 0 (not null) because Apple may hide null.
 		endpoint
-			.createDefaultPowerTopologyClusterServer()
+			.createDefaultPowerTopologyClusterServer(PowerTopology.Feature.NodeTopology)
 			.createDefaultElectricalPowerMeasurementClusterServer(null, null, 0, null);
 	}
 
 	if (capabilities.supportsFilterMonitoring) {
 		endpoint.createDefaultHepaFilterMonitoringClusterServer();
-	}
-
-	if (options?.sceneButtons) {
-		addSceneButtonEndpoints(endpoint, options.sceneButtons);
 	}
 
 	return endpoint;

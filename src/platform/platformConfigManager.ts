@@ -13,7 +13,6 @@ import {
 	LgThinkqPluginPlatformConfig,
 	type MatterOverrideSettings,
 	type ThinqAcFilterControlConfig,
-	type ThinqSceneButtonConfig,
 	type ThinqWasherControlConfig,
 } from '../model/LgThinkqPluginPlatformConfig.js';
 
@@ -94,10 +93,6 @@ export class PlatformConfigManager {
 
 	public getDeviceCapabilities(deviceId: string): AirConditionerCapabilities {
 		return resolveAirConditionerCapabilities(this.config.thinq.devices, deviceId);
-	}
-
-	public getSceneButtons(deviceId: string): ThinqSceneButtonConfig[] {
-		return this.config.thinq.devices?.find((d) => d.deviceId === deviceId)?.sceneButtons ?? [];
 	}
 
 	public getWasherControlConfig(deviceId: string): ThinqWasherControlConfig {
