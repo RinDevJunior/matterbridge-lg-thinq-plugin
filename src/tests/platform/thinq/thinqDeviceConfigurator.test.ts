@@ -82,10 +82,9 @@ function createMockConfigManager(): PlatformConfigManager {
 		matterOverrideSettings: {
 			matterVendorName: 'Matterbridge',
 			matterVendorId: 0xfff1,
-			matterProductName: 'LG Air Conditioner',
-			matterProductId: 0x8000,
 		},
 		getProductNameForDevice: vi.fn().mockReturnValue(undefined),
+		getProductIdForDevice: vi.fn().mockReturnValue(undefined),
 	});
 }
 
@@ -218,7 +217,7 @@ describe('ThinqDeviceConfigurator', () => {
 			);
 		});
 
-		it('should pass options with undefined override fields when overrideMatterConfiguration is false', async () => {
+		it('should pass options with default product identity when overrideMatterConfiguration is false', async () => {
 			// Arrange
 			const device = createMockThinqAirConditionerDevice();
 			const buildEndpointSpy = vi.mocked(buildAirConditionerEndpoint);
@@ -235,8 +234,8 @@ describe('ThinqDeviceConfigurator', () => {
 				expect.objectContaining({
 					vendorId: undefined,
 					vendorName: undefined,
-					productId: undefined,
-					productName: undefined,
+					productId: 0x8000,
+					productName: 'LG Air Conditioner',
 				}),
 			);
 		});
@@ -247,8 +246,6 @@ describe('ThinqDeviceConfigurator', () => {
 			const customSettings = {
 				matterVendorName: 'Custom Vendor',
 				matterVendorId: 0xabcd,
-				matterProductName: 'Premium AC',
-				matterProductId: 0xef01,
 			};
 			mockConfigManager = asPartial<PlatformConfigManager>({
 				getDeviceCapabilities: vi.fn().mockReturnValue(DEFAULT_AIR_CONDITIONER_CAPABILITIES),
@@ -256,6 +253,7 @@ describe('ThinqDeviceConfigurator', () => {
 				overrideMatterConfiguration: true,
 				matterOverrideSettings: customSettings,
 				getProductNameForDevice: vi.fn().mockReturnValue(undefined),
+				getProductIdForDevice: vi.fn().mockReturnValue(undefined),
 			});
 			configurator = new ThinqDeviceConfigurator(mockLogger, mockApiClient, mockConfigManager);
 			const buildEndpointSpy = vi.mocked(buildAirConditionerEndpoint);
@@ -272,8 +270,6 @@ describe('ThinqDeviceConfigurator', () => {
 				expect.objectContaining({
 					vendorId: 0xabcd,
 					vendorName: 'Custom Vendor',
-					productId: 0xef01,
-					productName: 'Premium AC', // Falls back to matterProductName
 				}),
 			);
 		});
@@ -284,8 +280,6 @@ describe('ThinqDeviceConfigurator', () => {
 			const customSettings = {
 				matterVendorName: 'Custom Vendor',
 				matterVendorId: 0xabcd,
-				matterProductName: 'Premium AC',
-				matterProductId: 0xef01,
 			};
 			mockConfigManager = asPartial<PlatformConfigManager>({
 				getDeviceCapabilities: vi.fn().mockReturnValue(DEFAULT_AIR_CONDITIONER_CAPABILITIES),
@@ -293,6 +287,7 @@ describe('ThinqDeviceConfigurator', () => {
 				overrideMatterConfiguration: true,
 				matterOverrideSettings: customSettings,
 				getProductNameForDevice: vi.fn().mockReturnValue('Device-Specific AC'),
+				getProductIdForDevice: vi.fn().mockReturnValue(0xef01),
 			});
 			configurator = new ThinqDeviceConfigurator(mockLogger, mockApiClient, mockConfigManager);
 			const buildEndpointSpy = vi.mocked(buildAirConditionerEndpoint);
@@ -321,8 +316,6 @@ describe('ThinqDeviceConfigurator', () => {
 			const customSettings = {
 				matterVendorName: 'Matterbridge',
 				matterVendorId: 0xfff1,
-				matterProductName: 'LG Air Conditioner',
-				matterProductId: 0x8000,
 			};
 			mockConfigManager = asPartial<PlatformConfigManager>({
 				getDeviceCapabilities: vi.fn().mockReturnValue(DEFAULT_AIR_CONDITIONER_CAPABILITIES),
@@ -330,6 +323,7 @@ describe('ThinqDeviceConfigurator', () => {
 				overrideMatterConfiguration: true,
 				matterOverrideSettings: customSettings,
 				getProductNameForDevice: vi.fn().mockReturnValue(undefined),
+				getProductIdForDevice: vi.fn().mockReturnValue(undefined),
 			});
 			configurator = new ThinqDeviceConfigurator(mockLogger, mockApiClient, mockConfigManager);
 			const getProductNameSpy = vi.mocked(mockConfigManager.getProductNameForDevice);
@@ -406,7 +400,7 @@ describe('ThinqDeviceConfigurator', () => {
 			);
 		});
 
-		it('should call buildWasherEndpoint with the device', async () => {
+		it('should call buildWasherEndpoint with the device and options', async () => {
 			// Arrange
 			const device = createMockWasherDevice();
 			const buildEndpointSpy = vi.mocked(buildWasherEndpoint);
@@ -415,7 +409,15 @@ describe('ThinqDeviceConfigurator', () => {
 			await configurator.registerWasher(device);
 
 			// Assert
-			expect(buildEndpointSpy).toHaveBeenCalledWith(device);
+			expect(buildEndpointSpy).toHaveBeenCalledWith(
+				device,
+				expect.objectContaining({
+					vendorId: undefined,
+					vendorName: undefined,
+					productId: 0x8001,
+					productName: 'LG Washer',
+				}),
+			);
 		});
 
 		it('should call registerWasherCommandHandlers with correct parameters', async () => {

@@ -21,6 +21,11 @@ const DEFAULT_TEMPERATURE_CELSIUS = 20;
 const MAX_HEAT_SETPOINT_LIMIT_CELSIUS = 30;
 const MIN_COOL_SETPOINT_LIMIT_CELSIUS = 18;
 
+const DEFAULT_PRODUCT_IDENTITY: Record<'AC' | 'WASHER', { productId: number; productName: string }> = {
+	AC: { productId: 0x8000, productName: 'LG Air Conditioner' },
+	WASHER: { productId: 0x8001, productName: 'LG Washer' },
+};
+
 export function mapWindStrengthToFanMode(windStrength: number | undefined): FanControl.FanMode {
 	if (windStrength === undefined || windStrength === THINQ_FAN_SPEED_AUTO) {
 		return FanControl.FanMode.Auto;
@@ -49,6 +54,20 @@ export class ThinqDeviceConfigurator {
 		private readonly configManager: PlatformConfigManager,
 	) {}
 
+	private resolveProductIdentity(device: ThinqAirConditionerDevice | ThinqWasherDevice): {
+		productId: number;
+		productName: string;
+	} {
+		const productIdOverride = this.configManager.getProductIdForDevice(device.id);
+		const productNameOverride = this.configManager.getProductNameForDevice(device.id);
+		const defaultIdentity = DEFAULT_PRODUCT_IDENTITY[device.type];
+
+		return {
+			productId: productIdOverride ?? defaultIdentity.productId,
+			productName: productNameOverride ?? defaultIdentity.productName,
+		};
+	}
+
 	public async registerAirConditioner(device: ThinqAirConditionerDevice): Promise<MatterbridgeEndpoint> {
 		const snapshot = device.snapshot;
 		const currentTemperature = snapshot.currentTemperatureCelsius ?? DEFAULT_TEMPERATURE_CELSIUS;
@@ -65,7 +84,7 @@ export class ThinqDeviceConfigurator {
 		const matterOverride = this.configManager.overrideMatterConfiguration
 			? this.configManager.matterOverrideSettings
 			: undefined;
-		const productNameOverride = this.configManager.getProductNameForDevice(device.id);
+		const productIdentity = this.resolveProductIdentity(device);
 
 		const airConditioner = buildAirConditionerEndpoint(
 			device,
@@ -82,8 +101,8 @@ export class ThinqDeviceConfigurator {
 			{
 				vendorId: matterOverride?.matterVendorId,
 				vendorName: matterOverride?.matterVendorName,
-				productId: matterOverride?.matterProductId,
-				productName: productNameOverride ?? matterOverride?.matterProductName,
+				productId: productIdentity.productId,
+				productName: productIdentity.productName,
 			},
 		)
 			.createDefaultTemperatureMeasurementClusterServer(currentTemperature * 100)
@@ -113,7 +132,17 @@ export class ThinqDeviceConfigurator {
 		this.logger.debug(`registerWasher: entry for deviceId=${device.id}`);
 		this.logger.info(`Registering ThinQ Washer: ${device.name} (${device.id})`);
 
-		const washer = buildWasherEndpoint(device);
+		const matterOverride = this.configManager.overrideMatterConfiguration
+			? this.configManager.matterOverrideSettings
+			: undefined;
+		const productIdentity = this.resolveProductIdentity(device);
+
+		const washer = buildWasherEndpoint(device, {
+			vendorId: matterOverride?.matterVendorId,
+			vendorName: matterOverride?.matterVendorName,
+			productId: productIdentity.productId,
+			productName: productIdentity.productName,
+		});
 
 		// Hardcoded: the washer is always exposed as its own standalone Matter node (server mode), matching the AC.
 		washer.mode = 'server';

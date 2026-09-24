@@ -14,6 +14,7 @@ import { PlatformConfigManager } from './platform/platformConfigManager.js';
 import { PlatformState } from './platform/platformState.js';
 import { applyThinqFilterStateToAirConditioner } from './platform/thinq/thinqAirConditionerFilterStateSync.js';
 import { applyThinqSnapshotToAirConditioner } from './platform/thinq/thinqAirConditionerStateSync.js';
+import { reconcileThinqDeviceConfigEntries } from './platform/thinq/thinqDeviceConfigReconciler.js';
 import { applyThinqSnapshotToWasher } from './platform/thinq/thinqWasherStateSync.js';
 import { ThinqServiceContainer } from './services/thinq/serviceContainer.js';
 import { ThinqSession } from './services/thinq/session.js';
@@ -253,6 +254,18 @@ export class LgThinkqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 		await userDataRepository.saveUserData(userData);
 
 		const devices = await this.thinqServices.getDeviceDiscovery().discoverDevices();
+
+		const configChanged = reconcileThinqDeviceConfigEntries(this.config.thinq.devices, devices);
+		if (configChanged) {
+			try {
+				this.saveConfig(this.config);
+			} catch (error) {
+				this.log.error(
+					`Failed to persist auto-populated ThinQ device config: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			}
+		}
+
 		const configurator = this.thinqServices.getDeviceConfigurator();
 
 		for (const device of devices) {

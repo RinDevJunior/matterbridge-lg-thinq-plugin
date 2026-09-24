@@ -116,6 +116,11 @@ export class PlatformConfigManager {
 		return this.config.thinq.devices?.find((d) => d.deviceId === deviceId)?.productName;
 	}
 
+	public getProductIdForDevice(deviceId: string): number | undefined {
+		if (!this.overrideMatterConfiguration) return undefined;
+		return this.config.thinq.devices?.find((d) => d.deviceId === deviceId)?.productId;
+	}
+
 	public validateConfig(): boolean {
 		this.log.debug('Validating platform config');
 
