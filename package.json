@@ -1,7 +1,7 @@
 {
 	"name": "matterbridge-lg-thinq-plugin",
 	"version": "0.1.0",
-	"description": "Matterbridge LG ThinQ + webOS TV Plugin",
+	"description": "Matterbridge LG ThinQ Plugin",
 	"author": "https://github.com/RinDevJunior",
 	"license": "MIT",
 	"homepage": "https://github.com/RinDevJunior/matterbridge-lg-thinq-plugin",

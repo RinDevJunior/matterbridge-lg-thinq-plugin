@@ -31,7 +31,7 @@ export default function initializePlugin(
 }
 
 /**
- * LG ThinQ + webOS TV platform for Matterbridge.
+ * LG ThinQ platform for Matterbridge (webOS TV lands in a later phase, see below).
  * Empty lifecycle skeleton (Phase 0) — device discovery/configuration lands in Phase 1 (ThinQ) and Phase 3 (webOS).
  */
 export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {

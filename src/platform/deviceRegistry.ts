@@ -1,5 +1,5 @@
 /**
- * Registry for managing plugin devices (ThinQ + webOS families).
+ * Registry for managing plugin devices (ThinQ now, webOS in a later phase).
  * Provides centralized storage and lookup for registered device handles, keyed by device id.
  * Empty skeleton for Phase 0 — device shapes land alongside their family's discovery/configurator (Phase 1/3).
  */
