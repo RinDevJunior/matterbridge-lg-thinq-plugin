@@ -17,6 +17,7 @@ export interface MatterOverrideSettings {
 
 export interface ThinqWasherControlConfig {
 	allowRemoteStop?: boolean;
+	allowRemoteStart?: boolean;
 }
 
 export interface ThinqAcFilterControlConfig {

@@ -367,6 +367,12 @@
 																			"description": "Turning this on lets Apple Home send a real stop/cancel command to the physical washer. Off by default.",
 																			"type": "boolean",
 																			"default": false
+																		},
+																		"allowRemoteStart": {
+																			"title": "Allow Remote Start (Washer)",
+																			"description": "Turning this on lets Apple Home send a real Start command to the physical washer, using the washer's own model-declared default wash course. This is materially higher risk than Stop (it can start a wash cycle with water/detergent/power). Off by default — enable only when you are ready to verify it yourself.",
+																			"type": "boolean",
+																			"default": false
 																		}
 																	}
 																}

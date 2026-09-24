@@ -13,8 +13,12 @@ import {
 } from './thinqAirConditionerCommandHandlers.js';
 import { buildAirConditionerEndpoint } from './thinqAirConditionerEndpointFactory.js';
 import { registerFilterResetCommandHandler } from './thinqAirConditionerFilterResetCommandHandler.js';
-import { registerWasherCommandHandlers } from './thinqWasherCommandHandlers.js';
-import { buildWasherEndpoint } from './thinqWasherEndpointFactory.js';
+import {
+	registerWasherCommandHandlers,
+	registerWasherRemoteStartStopSwitchCommandHandlers,
+} from './thinqWasherCommandHandlers.js';
+import { buildWasherEndpoint, WASHER_REMOTE_START_STOP_SWITCH_ID } from './thinqWasherEndpointFactory.js';
+import { extractWasherStartCommand, type WasherStartCommandPayload } from './thinqWasherStartCommandResolver.js';
 import { extractWasherStopCommand, type WasherStopCommandPayload } from './thinqWasherStopCommandResolver.js';
 
 const DEFAULT_TEMPERATURE_CELSIUS = 20;
@@ -151,6 +155,25 @@ export class ThinqDeviceConfigurator {
 		const stopCommandPayload = await this.resolveWasherStopCommandPayload(device);
 		registerWasherCommandHandlers(washer, device, this.apiClient, this.logger, washerControl, stopCommandPayload);
 
+		const startCommandPayload = await this.resolveWasherStartCommandPayload(device);
+		const remoteStartStopSwitch = washer.getChildEndpointById(WASHER_REMOTE_START_STOP_SWITCH_ID);
+		if (remoteStartStopSwitch) {
+			registerWasherRemoteStartStopSwitchCommandHandlers(
+				remoteStartStopSwitch,
+				washer,
+				device,
+				this.apiClient,
+				this.logger,
+				washerControl,
+				startCommandPayload,
+				stopCommandPayload,
+			);
+		} else {
+			this.logger.error(
+				`ThinQ Washer ${device.id}: ${WASHER_REMOTE_START_STOP_SWITCH_ID} child endpoint missing at registration — remote start/stop switch will not respond.`,
+			);
+		}
+
 		this.logger.debug(`registerWasher: completed for deviceId=${device.id}`);
 		return washer;
 	}
@@ -184,6 +207,41 @@ export class ThinqDeviceConfigurator {
 		} catch (error) {
 			this.logger.debug(
 				`ThinQ Washer ${device.id}: failed to resolve stop-command payload from device model: ${error instanceof Error ? error.message : String(error)}`,
+			);
+			return undefined;
+		}
+	}
+
+	/**
+	 * Resolves a real `WMStart` command payload from the device's own downloaded model JSON.
+	 * Runs unconditionally at registration (read-only GET, no washer state mutated) regardless of
+	 * whether `washerControl.allowRemoteStart` is set, so the resolved payload is visible in the logs
+	 * for manual sanity-checking before the opt-in flag is ever turned on. Never throws — any
+	 * fetch/parse failure resolves to `undefined`, so a broken model-JSON URL can never block washer
+	 * registration. Deliberately performs its own independent `getDeviceModel()` fetch rather than
+	 * sharing the model already fetched by `resolveWasherStopCommandPayload()`.
+	 */
+	private async resolveWasherStartCommandPayload(
+		device: ThinqWasherDevice,
+	): Promise<WasherStartCommandPayload | undefined> {
+		if (!device.modelJsonUri) {
+			return undefined;
+		}
+
+		try {
+			const model = await this.apiClient.getDeviceModel(device.modelJsonUri);
+			const payload = extractWasherStartCommand(model);
+			if (payload) {
+				this.logger.info(
+					`ThinQ Washer ${device.id}: resolved start-command payload from device model: ${JSON.stringify(payload)}`,
+				);
+			} else {
+				this.logger.info(`ThinQ Washer ${device.id}: device model has no usable WMStart/default-course entry.`);
+			}
+			return payload;
+		} catch (error) {
+			this.logger.debug(
+				`ThinQ Washer ${device.id}: failed to resolve start-command payload from device model: ${error instanceof Error ? error.message : String(error)}`,
 			);
 			return undefined;
 		}
