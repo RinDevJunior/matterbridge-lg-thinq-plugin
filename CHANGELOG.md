@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.1.0-rc13] - 2026-09-24
+
+### Added
+
+- **Per-device `deviceType` field** — a new read-only field, auto-detected from LG's own device type code, is now shown per device in the config UI; not user-editable (PR #19).
+- **Automatic `deviceType` population at startup** — the plugin now actually writes `deviceType` into the saved config for every discovered device at startup (new devices get an entry created, existing entries get backfilled); previously the schema claimed this was "Auto-populated on discovery" but nothing implemented it (PR #19).
+- **Per-device product identity override** — product identity (name/id shown in Apple Home) moves from a single global, AC-only override to a per-device override with type-specific defaults: AC uses 32768/"LG Air Conditioner", washer uses 32769/"LG Washer" (the washer never had a real product identity wired up before this) (PR #19).
+
+### Changed
+
+- **Config UI now scoped by device type** — each device's settings only show what's relevant to its actual type: `Capabilities` and `AC Filter Control` now only appear for AC devices (`AC Filter Control` additionally requires `Supports Filter Monitoring` to be on), and `Washer Control` only appears for washer devices (PR #19).
+- **`ThinQ Devices` list moved below credentials** — the device list now renders after the credential fields (password/refresh token) in the config UI instead of before them, for better visual flow (PR #19).
+- **Vendor identity stays global** — vendor identity (name/id) remains a single global setting, since it applies to one Matterbridge install (PR #19).
+
+**Upgrade note:** existing users who had customized the old shared `matterOverrideSettings.matterProductName`/`matterProductId` will see those fields disappear from the config UI on upgrade — there is no migration, this was an accepted, explicit decision — and will need to re-set a product name/ID per device if they want that customization again.
+
+<a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
+
+---
+
 ## [0.1.0-rc12] - 2026-09-24
 
 ### Changed
