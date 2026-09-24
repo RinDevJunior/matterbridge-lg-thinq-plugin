@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { createDefaultAdvancedFeature, createDefaultThinqConfig } from '../../model/LgThinkqPluginPlatformConfig.js';
+import { createDefaultAdvancedFeature, createDefaultThinqConfig } from '../../model/LgThinqPluginPlatformConfig.js';
 
-describe('LgThinkqPluginPlatformConfig', () => {
+describe('LgThinqPluginPlatformConfig', () => {
 	describe('createDefaultAdvancedFeature', () => {
 		it('should return expected default values', () => {
 			const result = createDefaultAdvancedFeature();

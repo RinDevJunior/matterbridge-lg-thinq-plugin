@@ -1,4 +1,4 @@
-import type { ThinqDeviceConfigEntry } from '../../../model/LgThinkqPluginPlatformConfig.js';
+import type { ThinqDeviceConfigEntry } from '../../../model/LgThinqPluginPlatformConfig.js';
 
 /** Resolved per-device Matter capability set for a ThinQ AirConditioner endpoint. */
 export interface AirConditionerCapabilities {

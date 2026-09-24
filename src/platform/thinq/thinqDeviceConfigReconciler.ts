@@ -1,5 +1,5 @@
 import { isAirConditionerDevice, isWasherDevice, type ThinqDevice } from '../../core/domain/entities/ThinqDevice.js';
-import type { ThinqDeviceConfigEntry } from '../../model/LgThinkqPluginPlatformConfig.js';
+import type { ThinqDeviceConfigEntry } from '../../model/LgThinqPluginPlatformConfig.js';
 
 /**
  * Reconciles the config device entries with discovered devices by auto-populating/backfilling

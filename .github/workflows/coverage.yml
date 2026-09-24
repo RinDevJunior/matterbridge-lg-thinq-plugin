@@ -64,7 +64,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: RinDevJunior/matterbridge-lg-thinkq-plugin
+          slug: RinDevJunior/matterbridge-lg-thinq-plugin
 
       - name: Build (optional)
         run: npm run build

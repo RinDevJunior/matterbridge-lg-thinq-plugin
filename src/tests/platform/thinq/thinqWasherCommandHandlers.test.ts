@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ThinqWasherDevice } from '../../../core/domain/entities/ThinqDevice.js';
 import { ThinqSnapshot } from '../../../core/domain/value-objects/ThinqSnapshot.js';
-import type { ThinqWasherControlConfig } from '../../../model/LgThinkqPluginPlatformConfig.js';
+import type { ThinqWasherControlConfig } from '../../../model/LgThinqPluginPlatformConfig.js';
 import { registerWasherCommandHandlers } from '../../../platform/thinq/thinqWasherCommandHandlers.js';
 import type { WasherStopCommandPayload } from '../../../platform/thinq/thinqWasherStopCommandResolver.js';
 import type { ThinqApiClient } from '../../../services/thinq/thinqApiClient.js';

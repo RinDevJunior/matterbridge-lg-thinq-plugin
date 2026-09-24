@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { LgThinkqPluginPlatformConfig } from '../../model/LgThinkqPluginPlatformConfig.js';
+import type { LgThinqPluginPlatformConfig } from '../../model/LgThinqPluginPlatformConfig.js';
 import { PlatformConfigManager } from '../../platform/platformConfigManager.js';
 import { asPartial, createMockLogger } from '../helpers/testUtils.js';
 
@@ -14,7 +14,7 @@ describe('PlatformConfigManager', () => {
 
 	describe('create', () => {
 		it('should apply defaults when thinq/webos/advancedFeature are undefined', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({});
+			const config = asPartial<LgThinqPluginPlatformConfig>({});
 			const manager = PlatformConfigManager.create(config, mockLogger);
 
 			expect(manager.rawConfig.thinq).toEqual({
@@ -40,7 +40,7 @@ describe('PlatformConfigManager', () => {
 		});
 
 		it('should preserve existing values and not overwrite them', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: {
 					loginType: 'token',
 					country: 'KR',
@@ -74,7 +74,7 @@ describe('PlatformConfigManager', () => {
 
 	describe('rawConfig getter', () => {
 		it('should return the raw config object', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: { loginType: 'token', country: 'US', language: 'en-US', refreshToken: 'token', devices: [] },
 			});
 			const manager = PlatformConfigManager.create(config, mockLogger);
@@ -85,7 +85,7 @@ describe('PlatformConfigManager', () => {
 
 	describe('debug getter', () => {
 		it('should return debug setting from advancedFeature', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				advancedFeature: {
 					settings: {
 						debug: true,
@@ -108,7 +108,7 @@ describe('PlatformConfigManager', () => {
 
 	describe('isClearStorageOnStartupEnabled getter', () => {
 		it('should return clearStorageOnStartup setting', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				advancedFeature: {
 					settings: {
 						debug: false,
@@ -131,7 +131,7 @@ describe('PlatformConfigManager', () => {
 
 	describe('isForceAuthenticationEnabled getter', () => {
 		it('should return forceAuthentication setting', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				advancedFeature: {
 					settings: {
 						debug: false,
@@ -154,7 +154,7 @@ describe('PlatformConfigManager', () => {
 
 	describe('unregisterOnShutdown getter', () => {
 		it('should return unregisterOnShutdown setting', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				advancedFeature: {
 					settings: {
 						debug: false,
@@ -177,7 +177,7 @@ describe('PlatformConfigManager', () => {
 
 	describe('thinqLoginType getter', () => {
 		it('should return loginType from thinq config', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: { loginType: 'token', country: 'US', language: 'en-US', devices: [] },
 			});
 			const manager = PlatformConfigManager.create(config, mockLogger);
@@ -188,7 +188,7 @@ describe('PlatformConfigManager', () => {
 
 	describe('thinqUsername getter', () => {
 		it('should return username from thinq config', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: { loginType: 'account', username: 'test@example.com', country: 'US', language: 'en-US', devices: [] },
 			});
 			const manager = PlatformConfigManager.create(config, mockLogger);
@@ -199,7 +199,7 @@ describe('PlatformConfigManager', () => {
 
 	describe('thinqPassword getter', () => {
 		it('should return password from thinq config', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: { loginType: 'account', password: 'secret', country: 'US', language: 'en-US', devices: [] },
 			});
 			const manager = PlatformConfigManager.create(config, mockLogger);
@@ -210,7 +210,7 @@ describe('PlatformConfigManager', () => {
 
 	describe('thinqRefreshToken getter', () => {
 		it('should return refreshToken from thinq config', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: { loginType: 'token', refreshToken: 'refresh-token', country: 'US', language: 'en-US', devices: [] },
 			});
 			const manager = PlatformConfigManager.create(config, mockLogger);
@@ -221,7 +221,7 @@ describe('PlatformConfigManager', () => {
 
 	describe('country getter', () => {
 		it('should return country from thinq config', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: { loginType: 'account', country: 'KR', language: 'en-US', devices: [] },
 			});
 			const manager = PlatformConfigManager.create(config, mockLogger);
@@ -232,7 +232,7 @@ describe('PlatformConfigManager', () => {
 
 	describe('language getter', () => {
 		it('should return language from thinq config', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: { loginType: 'account', country: 'US', language: 'ko-KR', devices: [] },
 			});
 			const manager = PlatformConfigManager.create(config, mockLogger);
@@ -243,7 +243,7 @@ describe('PlatformConfigManager', () => {
 
 	describe('thinqRefreshIntervalSeconds getter', () => {
 		it('should return configured refresh interval when set', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: { loginType: 'account', country: 'US', language: 'en-US', refreshIntervalSeconds: 10, devices: [] },
 			});
 			const manager = PlatformConfigManager.create(config, mockLogger);
@@ -252,7 +252,7 @@ describe('PlatformConfigManager', () => {
 		});
 
 		it('should return default refresh interval when not configured', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: { loginType: 'account', country: 'US', language: 'en-US', devices: [] },
 			});
 			const manager = PlatformConfigManager.create(config, mockLogger);
@@ -263,7 +263,7 @@ describe('PlatformConfigManager', () => {
 
 	describe('thinqFilterMonitoringIntervalSeconds getter', () => {
 		it('should return configured filter monitoring interval when set', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: {
 					loginType: 'account',
 					country: 'US',
@@ -278,7 +278,7 @@ describe('PlatformConfigManager', () => {
 		});
 
 		it('should return default filter monitoring interval when not configured', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: { loginType: 'account', country: 'US', language: 'en-US', devices: [] },
 			});
 			const manager = PlatformConfigManager.create(config, mockLogger);
@@ -287,7 +287,7 @@ describe('PlatformConfigManager', () => {
 		});
 
 		it('should allow custom interval independent of refresh interval', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: {
 					loginType: 'account',
 					country: 'US',
@@ -306,7 +306,7 @@ describe('PlatformConfigManager', () => {
 
 	describe('validateConfig', () => {
 		it('should return true when loginType is token and refreshToken is set', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: { loginType: 'token', refreshToken: 'token', country: 'US', language: 'en-US', devices: [] },
 			});
 			const manager = PlatformConfigManager.create(config, mockLogger);
@@ -315,7 +315,7 @@ describe('PlatformConfigManager', () => {
 		});
 
 		it('should return false when loginType is token and refreshToken is not set', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: { loginType: 'token', country: 'US', language: 'en-US', devices: [] },
 			});
 			const manager = PlatformConfigManager.create(config, mockLogger);
@@ -324,7 +324,7 @@ describe('PlatformConfigManager', () => {
 		});
 
 		it('should return true when loginType is account and both username and password are set', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: {
 					loginType: 'account',
 					username: 'test@example.com',
@@ -340,7 +340,7 @@ describe('PlatformConfigManager', () => {
 		});
 
 		it('should return false when loginType is account and username is missing', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: { loginType: 'account', password: 'secret', country: 'US', language: 'en-US', devices: [] },
 			});
 			const manager = PlatformConfigManager.create(config, mockLogger);
@@ -349,7 +349,7 @@ describe('PlatformConfigManager', () => {
 		});
 
 		it('should return false when loginType is account and password is missing', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: { loginType: 'account', username: 'test@example.com', country: 'US', language: 'en-US', devices: [] },
 			});
 			const manager = PlatformConfigManager.create(config, mockLogger);
@@ -360,7 +360,7 @@ describe('PlatformConfigManager', () => {
 
 	describe('getDeviceCapabilities', () => {
 		it('should delegate to resolveAirConditionerCapabilities', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: {
 					loginType: 'account',
 					country: 'US',
@@ -381,7 +381,7 @@ describe('PlatformConfigManager', () => {
 		});
 
 		it('should return defaults for device not in config', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: { loginType: 'account', country: 'US', language: 'en-US', devices: [] },
 			});
 			const manager = PlatformConfigManager.create(config, mockLogger);
@@ -394,7 +394,7 @@ describe('PlatformConfigManager', () => {
 
 	describe('overrideMatterConfiguration getter', () => {
 		it('should return true when configured', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				advancedFeature: {
 					settings: {
 						debug: false,
@@ -415,7 +415,7 @@ describe('PlatformConfigManager', () => {
 		});
 
 		it('should return false when configured', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				advancedFeature: {
 					settings: {
 						debug: false,
@@ -444,7 +444,7 @@ describe('PlatformConfigManager', () => {
 				matterProductName: 'Premium AC',
 				matterProductId: 0xef01,
 			};
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				advancedFeature: {
 					settings: {
 						debug: false,
@@ -462,7 +462,7 @@ describe('PlatformConfigManager', () => {
 		});
 
 		it('should return default settings when not explicitly configured', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({});
+			const config = asPartial<LgThinqPluginPlatformConfig>({});
 			const manager = PlatformConfigManager.create(config, mockLogger);
 
 			expect(manager.matterOverrideSettings).toEqual({
@@ -474,7 +474,7 @@ describe('PlatformConfigManager', () => {
 
 	describe('getProductNameForDevice', () => {
 		it('should return undefined when overrideMatterConfiguration is false', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: {
 					loginType: 'account',
 					country: 'US',
@@ -506,7 +506,7 @@ describe('PlatformConfigManager', () => {
 		});
 
 		it('should return undefined when device not found', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: {
 					loginType: 'account',
 					country: 'US',
@@ -533,7 +533,7 @@ describe('PlatformConfigManager', () => {
 		});
 
 		it('should return undefined when device found but productName is unset', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: {
 					loginType: 'account',
 					country: 'US',
@@ -564,7 +564,7 @@ describe('PlatformConfigManager', () => {
 		});
 
 		it('should return product name when device found with productName set and override enabled', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: {
 					loginType: 'account',
 					country: 'US',
@@ -598,7 +598,7 @@ describe('PlatformConfigManager', () => {
 
 	describe('getWasherControlConfig', () => {
 		it('should return washerControl config when device found with washerControl set', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: {
 					loginType: 'account',
 					country: 'US',
@@ -619,7 +619,7 @@ describe('PlatformConfigManager', () => {
 		});
 
 		it('should return empty object when device found but washerControl not set', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: {
 					loginType: 'account',
 					country: 'US',
@@ -639,7 +639,7 @@ describe('PlatformConfigManager', () => {
 		});
 
 		it('should return empty object when device not found', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: {
 					loginType: 'account',
 					country: 'US',
@@ -655,7 +655,7 @@ describe('PlatformConfigManager', () => {
 		});
 
 		it('should return empty object when thinq.devices is undefined', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: {
 					loginType: 'account',
 					country: 'US',
@@ -671,7 +671,7 @@ describe('PlatformConfigManager', () => {
 		});
 
 		it('should return allowRemoteStop false when explicitly set', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: {
 					loginType: 'account',
 					country: 'US',
@@ -694,7 +694,7 @@ describe('PlatformConfigManager', () => {
 
 	describe('getAcFilterControlConfig', () => {
 		it('should return acFilterControl config when device found with acFilterControl set', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: {
 					loginType: 'account',
 					country: 'US',
@@ -715,7 +715,7 @@ describe('PlatformConfigManager', () => {
 		});
 
 		it('should return empty object when device found but acFilterControl not set', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: {
 					loginType: 'account',
 					country: 'US',
@@ -735,7 +735,7 @@ describe('PlatformConfigManager', () => {
 		});
 
 		it('should return empty object when device not found', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: {
 					loginType: 'account',
 					country: 'US',
@@ -751,7 +751,7 @@ describe('PlatformConfigManager', () => {
 		});
 
 		it('should return empty object when thinq.devices is undefined', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: {
 					loginType: 'account',
 					country: 'US',
@@ -767,7 +767,7 @@ describe('PlatformConfigManager', () => {
 		});
 
 		it('should return allowFilterReset false when explicitly set', () => {
-			const config = asPartial<LgThinkqPluginPlatformConfig>({
+			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: {
 					loginType: 'account',
 					country: 'US',

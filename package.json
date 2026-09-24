@@ -1,10 +1,10 @@
 {
-	"name": "matterbridge-lg-thinkq-plugin",
+	"name": "matterbridge-lg-thinq-plugin",
 	"version": "0.1.0-rc13",
 	"description": "Matterbridge LG ThinQ + webOS TV Plugin",
 	"author": "https://github.com/RinDevJunior",
 	"license": "MIT",
-	"homepage": "https://github.com/RinDevJunior/matterbridge-lg-thinkq-plugin",
+	"homepage": "https://github.com/RinDevJunior/matterbridge-lg-thinq-plugin",
 	"type": "module",
 	"main": "dist/module.js",
 	"types": "dist/module.d.ts",
@@ -13,10 +13,10 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/RinDevJunior/matterbridge-lg-thinkq-plugin.git"
+		"url": "git+https://github.com/RinDevJunior/matterbridge-lg-thinq-plugin.git"
 	},
 	"bugs": {
-		"url": "https://github.com/RinDevJunior/matterbridge-lg-thinkq-plugin/issues"
+		"url": "https://github.com/RinDevJunior/matterbridge-lg-thinq-plugin/issues"
 	},
 	"keywords": [
 		"matterbridge",

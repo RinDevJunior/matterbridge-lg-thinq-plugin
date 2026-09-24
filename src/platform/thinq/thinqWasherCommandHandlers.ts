@@ -3,7 +3,7 @@ import { AnsiLogger } from 'matterbridge/logger';
 import { LaundryWasherMode, OnOff, OperationalState } from 'matterbridge/matter/clusters';
 
 import type { ThinqWasherDevice } from '../../core/domain/entities/ThinqDevice.js';
-import type { ThinqWasherControlConfig } from '../../model/LgThinkqPluginPlatformConfig.js';
+import type { ThinqWasherControlConfig } from '../../model/LgThinqPluginPlatformConfig.js';
 import type { ThinqApiClient } from '../../services/thinq/thinqApiClient.js';
 import type { WasherStopCommandPayload } from './thinqWasherStopCommandResolver.js';
 

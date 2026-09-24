@@ -8,7 +8,7 @@ maxTurns: 20
 tools: Read, Edit, Bash, mcp__discord-send__DiscordSend, mcp__github-release__GitHubRelease, AskUserQuestion
 ---
 
-You are the **Release Manager** agent for the matterbridge-lg-thinkq-plugin project.
+You are the **Release Manager** agent for the matterbridge-lg-thinq-plugin project.
 
 Read `.claude/instructions/shared-rules.md` before running any command.
 
@@ -55,11 +55,11 @@ If the user specifies a new major version (e.g., `1.1.8`), use `1.1.8-rc01`.
 - `version` field → new version
 - `buildpackage` script → update `.tgz` filename to match new version (strip the `-rcYY` suffix for the tgz name if it already exists, keep as-is otherwise — match existing pattern)
 
-**`matterbridge-lg-thinkq-plugin.schema.json`**
+**`matterbridge-lg-thinq-plugin.schema.json`**
 
 - `description` field → update version string
 
-**`matterbridge-lg-thinkq-plugin.config.json`**
+**`matterbridge-lg-thinq-plugin.config.json`**
 
 - `version` field → new version
 
@@ -133,7 +133,7 @@ Echo only script stdout. Must PASS before consistency check.
 ### Step 7 — Verify Consistency
 
 ```bash
-grep -rn "1\.1\." package.json matterbridge-lg-thinkq-plugin.schema.json matterbridge-lg-thinkq-plugin.config.json
+grep -rn "1\.1\." package.json matterbridge-lg-thinq-plugin.schema.json matterbridge-lg-thinq-plugin.config.json
 ```
 
 Confirm all version references match (only these files carry a version string in this repo — `src/module.ts` and `README.md` do not, see Step 3). Report any mismatch.
@@ -142,7 +142,7 @@ Confirm all version references match (only these files carry a version string in
 
 Call `mcp__discord-send__DiscordSend` with:
 
-- `channelId`: **TODO — no Discord channel ID configured for matterbridge-lg-thinkq-plugin yet.** The previous value (`1473176310401732700`) belonged to a different project (matterbridge-roborock-vacuum-plugin) and has been removed. Ask the user for this project's own Discord channel ID before running Step 8; do not guess or reuse another project's ID.
+- `channelId`: **TODO — no Discord channel ID configured for matterbridge-lg-thinq-plugin yet.** The previous value (`1473176310401732700`) belonged to a different project (matterbridge-roborock-vacuum-plugin) and has been removed. Ask the user for this project's own Discord channel ID before running Step 8; do not guess or reuse another project's ID.
 - `message`: the new CHANGELOG entry written in Step 5 (from the `## [<new-version>] - <date>` heading down through the section bullets — omit the Buy Me a Coffee link and the trailing `---` separator).
 
 If the tool call fails (e.g. Discord API error), note the failure in the final report but do not block the release on it — the release itself is already complete at this point.
@@ -170,7 +170,7 @@ git fetch origin <targetBranch>
 
 ```bash
 git status -sb
-git log origin/<targetBranch>..HEAD --oneline -- package.json CHANGELOG.md matterbridge-lg-thinkq-plugin.config.json matterbridge-lg-thinkq-plugin.schema.json
+git log origin/<targetBranch>..HEAD --oneline -- package.json CHANGELOG.md matterbridge-lg-thinq-plugin.config.json matterbridge-lg-thinq-plugin.schema.json
 ```
 
 If `git status` shows the branch is ahead of `origin/<targetBranch>`, or the log above is non-empty → **stop** (bump not pushed).

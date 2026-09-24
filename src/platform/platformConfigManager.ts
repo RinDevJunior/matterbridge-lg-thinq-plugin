@@ -10,11 +10,11 @@ import { resolveAirConditionerCapabilities } from '../core/domain/value-objects/
 import {
 	createDefaultAdvancedFeature,
 	createDefaultThinqConfig,
-	LgThinkqPluginPlatformConfig,
+	LgThinqPluginPlatformConfig,
 	type MatterOverrideSettings,
 	type ThinqAcFilterControlConfig,
 	type ThinqWasherControlConfig,
-} from '../model/LgThinkqPluginPlatformConfig.js';
+} from '../model/LgThinqPluginPlatformConfig.js';
 
 const DEFAULT_THINQ_REFRESH_INTERVAL_SECONDS = 60;
 const DEFAULT_FILTER_MONITORING_INTERVAL_SECONDS = 3600;
@@ -24,7 +24,7 @@ const DEFAULT_FILTER_MONITORING_INTERVAL_SECONDS = 3600;
  */
 export class PlatformConfigManager {
 	private constructor(
-		private readonly config: LgThinkqPluginPlatformConfig,
+		private readonly config: LgThinqPluginPlatformConfig,
 		private readonly log: AnsiLogger,
 	) {
 		this.config.thinq ??= createDefaultThinqConfig();
@@ -35,11 +35,11 @@ export class PlatformConfigManager {
 	/**
 	 * Create a PlatformConfigManager with defaults applied.
 	 */
-	public static create(config: LgThinkqPluginPlatformConfig, log: AnsiLogger): PlatformConfigManager {
+	public static create(config: LgThinqPluginPlatformConfig, log: AnsiLogger): PlatformConfigManager {
 		return new PlatformConfigManager(config, log);
 	}
 
-	public get rawConfig(): LgThinkqPluginPlatformConfig {
+	public get rawConfig(): LgThinqPluginPlatformConfig {
 		return this.config;
 	}
 

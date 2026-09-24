@@ -62,7 +62,7 @@ export interface AdvancedFeatureConfiguration {
 	settings: AdvancedFeatureSetting;
 }
 
-export interface LgThinkqPluginPlatformConfig extends PlatformConfig {
+export interface LgThinqPluginPlatformConfig extends PlatformConfig {
 	thinq: ThinqAuthConfig;
 	webos: WebosPluginConfig;
 	advancedFeature: AdvancedFeatureConfiguration;

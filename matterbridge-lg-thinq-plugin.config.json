@@ -1,5 +1,5 @@
 {
-	"name": "matterbridge-lg-thinkq-plugin",
+	"name": "matterbridge-lg-thinq-plugin",
 	"type": "DynamicPlatform",
 	"version": "0.1.0-rc13",
 	"thinq": {

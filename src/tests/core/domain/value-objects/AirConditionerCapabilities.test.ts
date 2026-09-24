@@ -4,7 +4,7 @@ import {
 	DEFAULT_AIR_CONDITIONER_CAPABILITIES,
 	resolveAirConditionerCapabilities,
 } from '../../../../core/domain/value-objects/AirConditionerCapabilities.js';
-import type { ThinqDeviceConfigEntry } from '../../../../model/LgThinkqPluginPlatformConfig.js';
+import type { ThinqDeviceConfigEntry } from '../../../../model/LgThinqPluginPlatformConfig.js';
 
 describe('AirConditionerCapabilities', () => {
 	describe('DEFAULT_AIR_CONDITIONER_CAPABILITIES', () => {

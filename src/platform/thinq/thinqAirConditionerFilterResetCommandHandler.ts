@@ -4,7 +4,7 @@ import { AnsiLogger } from 'matterbridge/logger';
 import type { ThinqAirConditionerDevice } from '../../core/domain/entities/ThinqDevice.js';
 import type { AirConditionerCapabilities } from '../../core/domain/value-objects/AirConditionerCapabilities.js';
 import { ThinqFilterState } from '../../core/domain/value-objects/ThinqFilterState.js';
-import type { ThinqAcFilterControlConfig } from '../../model/LgThinkqPluginPlatformConfig.js';
+import type { ThinqAcFilterControlConfig } from '../../model/LgThinqPluginPlatformConfig.js';
 import type { ThinqApiClient } from '../../services/thinq/thinqApiClient.js';
 
 const KEY_USE_TIME = 'airState.filterMngState.useTime';

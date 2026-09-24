@@ -7,7 +7,7 @@ import NodePersist from 'node-persist';
 import { UNREGISTER_DEVICES_DELAY_MS } from './constants/index.js';
 import { isAirConditionerDevice, isWasherDevice } from './core/domain/entities/ThinqDevice.js';
 import { ManualProcessNeededError } from './errors/index.js';
-import { LgThinkqPluginPlatformConfig } from './model/LgThinkqPluginPlatformConfig.js';
+import { LgThinqPluginPlatformConfig } from './model/LgThinqPluginPlatformConfig.js';
 // Platform layer imports
 import { DeviceRegistry } from './platform/deviceRegistry.js';
 import { PlatformConfigManager } from './platform/platformConfigManager.js';
@@ -26,15 +26,15 @@ export default function initializePlugin(
 	matterbridge: PlatformMatterbridge,
 	log: AnsiLogger,
 	config: PlatformConfig,
-): LgThinkqMatterbridgePlatform {
-	return new LgThinkqMatterbridgePlatform(matterbridge, log, config as LgThinkqPluginPlatformConfig);
+): LgThinqMatterbridgePlatform {
+	return new LgThinqMatterbridgePlatform(matterbridge, log, config as LgThinqPluginPlatformConfig);
 }
 
 /**
  * LG ThinQ + webOS TV platform for Matterbridge.
  * Empty lifecycle skeleton (Phase 0) — device discovery/configuration lands in Phase 1 (ThinQ) and Phase 3 (webOS).
  */
-export class LgThinkqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
+export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 	public persist: NodePersist.LocalStorage;
 
 	// Platform layer
@@ -52,7 +52,7 @@ export class LgThinkqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 	constructor(
 		matterbridge: PlatformMatterbridge,
 		logger: AnsiLogger,
-		override config: LgThinkqPluginPlatformConfig,
+		override config: LgThinqPluginPlatformConfig,
 	) {
 		super(matterbridge, logger, config);
 		logger.logLevel = this.config.advancedFeature.settings.debug ? LogLevel.DEBUG : LogLevel.INFO;

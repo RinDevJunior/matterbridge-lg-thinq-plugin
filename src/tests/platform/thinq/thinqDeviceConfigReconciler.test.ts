@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ThinqAirConditionerDevice, ThinqWasherDevice } from '../../../core/domain/entities/ThinqDevice.js';
-import type { ThinqDeviceConfigEntry } from '../../../model/LgThinkqPluginPlatformConfig.js';
+import type { ThinqDeviceConfigEntry } from '../../../model/LgThinqPluginPlatformConfig.js';
 import { reconcileThinqDeviceConfigEntries } from '../../../platform/thinq/thinqDeviceConfigReconciler.js';
 import { asPartial } from '../../helpers/testUtils.js';
 
