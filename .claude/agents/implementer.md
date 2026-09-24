@@ -4,7 +4,7 @@ description: Use this agent to write implementation code based on an approved wo
 model: haiku
 color: green
 effort: medium
-maxTurns: 40
+maxTurns: 100
 tools: Read, Write, Edit, Glob, Grep, mcp__glob-grep__Glob, mcp__glob-grep__Grep, Bash, AskUserQuestion
 ---
 
