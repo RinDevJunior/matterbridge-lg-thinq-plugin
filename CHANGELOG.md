@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.0-rc12] - 2026-09-24
+
+### Changed
+
+- **AC and washer now pair as standalone Matter nodes** — both device endpoints are hardcoded to `server` mode, so each pairs to Apple Home as its own node with its own pairing code instead of being bridged; not user-configurable, no schema/config option (PR #18). This is experimental: whether `server` mode actually produces a per-device Apple Home power tile for the AC is unconfirmed, since properly testing it requires a real Matter Device Attestation Certificate — self-signed dev certs show "not certified" in Apple Home and may not unlock the full UI.
+- **PowerTopology now uses NodeTopology** — the AC's energy-monitoring `PowerTopology` cluster switched from the `TreeTopology` feature to `NodeTopology`, matching the endpoint no longer being shared with a bridge (PR #18).
+- **AC scene buttons removed** — the custom quick-access buttons that created a separate `genericSwitch` child Matter endpoint next to the AC have been removed entirely, following the same no-extra-devices-on-the-AC policy as the earlier removal of the Jet/Quiet/Energy-Save/Air-Clean/LED auxiliary toggles (PR #18).
+
+<a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
+
+---
+
 ## [0.1.0-rc11] - 2026-09-23
 
 ### Changed
