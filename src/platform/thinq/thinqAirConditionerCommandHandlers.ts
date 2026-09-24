@@ -96,6 +96,9 @@ export function registerAirConditionerCommandHandlers(
 	airConditioner.addCommandHandler(
 		'on',
 		withErrorHandling('on', logger, async () => {
+			logger.debug(
+				`ThinQ AirConditioner ${device.id}: 'on' command handler invoked, capabilities=${JSON.stringify(capabilities)}`,
+			);
 			await apiClient.sendCommand(device.id, {
 				command: 'Operation',
 				dataKey: 'airState.operation',
@@ -107,6 +110,9 @@ export function registerAirConditionerCommandHandlers(
 	airConditioner.addCommandHandler(
 		'off',
 		withErrorHandling('off', logger, async () => {
+			logger.debug(
+				`ThinQ AirConditioner ${device.id}: 'off' command handler invoked, capabilities=${JSON.stringify(capabilities)}`,
+			);
 			await apiClient.sendCommand(device.id, {
 				command: 'Operation',
 				dataKey: 'airState.operation',
@@ -122,6 +128,9 @@ export function registerAirConditionerCommandHandlers(
 			if (context.fabric === undefined) {
 				return;
 			}
+			logger.debug(
+				`ThinQ AirConditioner ${device.id}: 'occupiedCoolingSetpoint' command handler invoked, newValue=${newValue}, capabilities=${JSON.stringify(capabilities)}`,
+			);
 			void withErrorHandling('occupiedCoolingSetpoint', logger, async () => {
 				await apiClient.sendCommand(device.id, {
 					dataKey: 'airState.tempState.target',
@@ -140,6 +149,9 @@ export function registerAirConditionerCommandHandlers(
 				if (context.fabric === undefined) {
 					return;
 				}
+				logger.debug(
+					`ThinQ AirConditioner ${device.id}: 'occupiedHeatingSetpoint' command handler invoked, newValue=${newValue}, capabilities=${JSON.stringify(capabilities)}`,
+				);
 				void withErrorHandling('occupiedHeatingSetpoint', logger, async () => {
 					await apiClient.sendCommand(device.id, {
 						dataKey: 'airState.tempState.target',
@@ -158,6 +170,9 @@ export function registerAirConditionerCommandHandlers(
 			if (context.fabric === undefined) {
 				return;
 			}
+			logger.debug(
+				`ThinQ AirConditioner ${device.id}: 'percentSetting' command handler invoked, newValue=${newValue}, capabilities=${JSON.stringify(capabilities)}`,
+			);
 			if (!capabilities.supportsFanSpeedControl) {
 				logger.debug(
 					`ThinQ AirConditioner ${device.id}: ignoring percentSetting change — fan speed control not supported per configured capabilities.`,
@@ -189,6 +204,9 @@ export function registerAirConditionerCommandHandlers(
 			if (context.fabric === undefined) {
 				return;
 			}
+			logger.debug(
+				`ThinQ AirConditioner ${device.id}: 'fanMode' command handler invoked, newValue=${FanControl.FanMode[newValue]}, capabilities=${JSON.stringify(capabilities)}`,
+			);
 			if (!capabilities.supportsFanSpeedControl) {
 				logger.debug(
 					`ThinQ AirConditioner ${device.id}: ignoring fanMode change — fan speed control not supported per configured capabilities.`,
@@ -211,4 +229,63 @@ export function registerAirConditionerCommandHandlers(
 		},
 		airConditioner.log,
 	);
+
+	if (capabilities.supportsSwingMode) {
+		airConditioner.subscribeAttribute(
+			FanControl,
+			'rockSetting',
+			(newValue: unknown, oldValue: unknown, context) => {
+				if (context.fabric === undefined) {
+					return;
+				}
+
+				const newRock = newValue as Record<string, boolean> | undefined;
+				const oldRock = oldValue as Record<string, boolean> | undefined;
+
+				logger.debug(
+					`ThinQ AirConditioner ${device.id}: 'rockSetting' command handler invoked, newValue=${JSON.stringify(newRock)}, capabilities=${JSON.stringify(capabilities)}`,
+				);
+
+				if (!newRock || !oldRock) {
+					return;
+				}
+
+				const verticalChanged = newRock.rockUpDown !== oldRock.rockUpDown;
+				const horizontalChanged = newRock.rockLeftRight !== oldRock.rockLeftRight;
+
+				if (!verticalChanged && !horizontalChanged) {
+					return;
+				}
+
+				void withErrorHandling('rockSetting', logger, async () => {
+					if (verticalChanged && horizontalChanged && newRock.rockUpDown && newRock.rockLeftRight) {
+						await apiClient.sendCommand(device.id, {
+							dataKey: null,
+							dataValue: null,
+							command: 'Set',
+							ctrlKey: 'favoriteCtrl',
+							dataSetList: {
+								'airState.wDir.vStep': '100',
+								'airState.wDir.hStep': '100',
+							},
+						});
+					} else {
+						if (verticalChanged) {
+							await apiClient.sendCommand(device.id, {
+								dataKey: 'airState.wDir.vStep',
+								dataValue: newRock.rockUpDown ? '100' : '0',
+							});
+						}
+						if (horizontalChanged) {
+							await apiClient.sendCommand(device.id, {
+								dataKey: 'airState.wDir.hStep',
+								dataValue: newRock.rockLeftRight ? '100' : '0',
+							});
+						}
+					}
+				})();
+			},
+			airConditioner.log,
+		);
+	}
 }

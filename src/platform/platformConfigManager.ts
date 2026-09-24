@@ -10,17 +10,21 @@ import { resolveAirConditionerCapabilities } from '../core/domain/value-objects/
 import {
 	createDefaultAdvancedFeature,
 	createDefaultThinqConfig,
-	LgThinkqPluginPlatformConfig,
-} from '../model/LgThinkqPluginPlatformConfig.js';
+	LgThinqPluginPlatformConfig,
+	type MatterOverrideSettings,
+	type ThinqAcFilterControlConfig,
+	type ThinqWasherControlConfig,
+} from '../model/LgThinqPluginPlatformConfig.js';
 
-const DEFAULT_THINQ_REFRESH_INTERVAL_SECONDS = 5;
+const DEFAULT_THINQ_REFRESH_INTERVAL_SECONDS = 60;
+const DEFAULT_FILTER_MONITORING_INTERVAL_SECONDS = 3600;
 
 /**
  * Manages platform configuration with validation and defaults.
  */
 export class PlatformConfigManager {
 	private constructor(
-		private readonly config: LgThinkqPluginPlatformConfig,
+		private readonly config: LgThinqPluginPlatformConfig,
 		private readonly log: AnsiLogger,
 	) {
 		this.config.thinq ??= createDefaultThinqConfig();
@@ -31,11 +35,11 @@ export class PlatformConfigManager {
 	/**
 	 * Create a PlatformConfigManager with defaults applied.
 	 */
-	public static create(config: LgThinkqPluginPlatformConfig, log: AnsiLogger): PlatformConfigManager {
+	public static create(config: LgThinqPluginPlatformConfig, log: AnsiLogger): PlatformConfigManager {
 		return new PlatformConfigManager(config, log);
 	}
 
-	public get rawConfig(): LgThinkqPluginPlatformConfig {
+	public get rawConfig(): LgThinqPluginPlatformConfig {
 		return this.config;
 	}
 
@@ -83,8 +87,38 @@ export class PlatformConfigManager {
 		return this.config.thinq.refreshIntervalSeconds ?? DEFAULT_THINQ_REFRESH_INTERVAL_SECONDS;
 	}
 
+	public get thinqFilterMonitoringIntervalSeconds(): number {
+		return this.config.thinq.filterMonitoringIntervalSeconds ?? DEFAULT_FILTER_MONITORING_INTERVAL_SECONDS;
+	}
+
 	public getDeviceCapabilities(deviceId: string): AirConditionerCapabilities {
 		return resolveAirConditionerCapabilities(this.config.thinq.devices, deviceId);
+	}
+
+	public getWasherControlConfig(deviceId: string): ThinqWasherControlConfig {
+		return this.config.thinq.devices?.find((d) => d.deviceId === deviceId)?.washerControl ?? {};
+	}
+
+	public getAcFilterControlConfig(deviceId: string): ThinqAcFilterControlConfig {
+		return this.config.thinq.devices?.find((d) => d.deviceId === deviceId)?.acFilterControl ?? {};
+	}
+
+	public get overrideMatterConfiguration(): boolean {
+		return this.config.advancedFeature.settings.overrideMatterConfiguration;
+	}
+
+	public get matterOverrideSettings(): MatterOverrideSettings {
+		return this.config.advancedFeature.settings.matterOverrideSettings;
+	}
+
+	public getProductNameForDevice(deviceId: string): string | undefined {
+		if (!this.overrideMatterConfiguration) return undefined;
+		return this.config.thinq.devices?.find((d) => d.deviceId === deviceId)?.productName;
+	}
+
+	public getProductIdForDevice(deviceId: string): number | undefined {
+		if (!this.overrideMatterConfiguration) return undefined;
+		return this.config.thinq.devices?.find((d) => d.deviceId === deviceId)?.productId;
 	}
 
 	public validateConfig(): boolean {

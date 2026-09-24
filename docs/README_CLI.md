@@ -1,6 +1,6 @@
 # ThinQ CLI Login Helper
 
-A standalone command-line tool for authenticating with LG ThinQ and saving your session for use with the Matterbridge LG ThinQ plugin.
+A standalone command-line tool for authenticating with LG ThinQ, saving your session, and listing discovered devices for use with the Matterbridge LG ThinQ plugin.
 
 ## Setup
 
@@ -22,10 +22,11 @@ npm run cli -- --command <command> [options]
 
 ## Commands
 
-| Command | Options                             | Description                   |
-| ------- | ----------------------------------- | ----------------------------- |
-| `login` | `--type`, `--country`, `--language` | Authenticate and save session |
-| `help`  |                                     | Show help message             |
+| Command   | Options                             | Description                                          |
+| --------- | ----------------------------------- | ---------------------------------------------------- |
+| `login`   | `--type`, `--country`, `--language` | Authenticate and save session                        |
+| `devices` |                                     | List all discovered ThinQ devices (requires `login`) |
+| `help`    |                                     | Show help message                                    |
 
 ## Login Command
 
@@ -84,6 +85,44 @@ Session Summary:
 
 Note: All tokens are masked in the output for security.
 
+## Devices Command
+
+The `devices` command lists all ThinQ devices discovered in your account, using the session saved by a prior `login` command.
+
+### Options
+
+- `--debug`: Enable debug logging
+
+### Prerequisites
+
+You must run `--command login` successfully first. If no session file is found, the command prints an error and exits.
+
+### Example
+
+```bash
+npm run cli -- --command devices
+```
+
+### Example Output
+
+```
+Found 2 device(s):
+
+1. Living Room AC
+   Device ID:     a1b2c3d4-e5f6-7890-abcd-ef1234567890
+   Type:          AC
+   Platform Type: thinq2
+   Model Name:    RAC-1234
+   Online:        true
+
+2. Kitchen Fridge
+   Device ID:     b2c3d4e5-f6a7-8901-bcde-f12345678901
+   Type:          REFRIGERATOR
+   Platform Type: thinq2
+   Model Name:    LRF-5678
+   Online:        false
+```
+
 ## Session File
 
 After successful login, your session is saved to `.cli-session.json` in your working directory:
@@ -118,7 +157,7 @@ Third-party SSO (Google, Apple, Facebook, Amazon) is not yet supported in this C
 
 ### Device Control
 
-This CLI is currently limited to authentication (`login` command). Device discovery and control are not yet available. Those features are handled by the full Matterbridge runtime instead.
+This CLI supports authentication (`login`) and device discovery/listing (`devices`). Device control is not yet available and is handled by the full Matterbridge runtime instead.
 
 ### Credentials Security
 

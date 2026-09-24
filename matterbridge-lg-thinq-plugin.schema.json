@@ -1,0 +1,520 @@
+{
+	"title": "Matterbridge LG ThinQ Plugin",
+	"description": "matterbridge-lg-thinq-plugin v. 0.1.0-rc13 by https://github.com/RinDevJunior",
+	"type": "object",
+	"properties": {
+		"name": {
+			"description": "Plugin name",
+			"type": "string",
+			"readOnly": true,
+			"ui:widget": "hidden"
+		},
+		"type": {
+			"description": "Plugin type",
+			"type": "string",
+			"readOnly": true,
+			"ui:widget": "hidden"
+		},
+		"thinq": {
+			"title": "LG ThinQ (cloud)",
+			"type": "object",
+			"properties": {
+				"loginType": {
+					"title": "Login Type",
+					"description": "Authenticate with a ThinQ account (username/password) or a pre-issued refresh token.",
+					"type": "string",
+					"enum": ["account", "token"],
+					"default": "account"
+				},
+				"country": {
+					"title": "Country",
+					"description": "ThinQ account country code (e.g. US, KR, GB).",
+					"type": "string",
+					"default": "US"
+				},
+				"language": {
+					"title": "Language",
+					"description": "ThinQ account language/locale (e.g. en-US, ko-KR).",
+					"type": "string",
+					"default": "en-US"
+				},
+				"refreshIntervalSeconds": {
+					"title": "Refresh Interval",
+					"description": "Device state refresh interval in seconds.",
+					"type": "number",
+					"default": 60,
+					"minimum": 1,
+					"maximum": 3600
+				},
+				"filterMonitoringIntervalSeconds": {
+					"title": "Filter Monitoring Interval",
+					"description": "Filter life state refresh interval in seconds (low frequency, filter life changes over days/weeks).",
+					"type": "number",
+					"default": 3600,
+					"minimum": 300,
+					"maximum": 86400
+				}
+			},
+			"required": ["loginType", "country", "language"],
+			"dependencies": {
+				"loginType": {
+					"if": {
+						"properties": {
+							"loginType": {
+								"const": "account"
+							}
+						}
+					},
+					"then": {
+						"properties": {
+							"username": {
+								"title": "ThinQ Account Username",
+								"description": "Email address or phone number used to sign in to LG ThinQ.",
+								"type": "string",
+								"minLength": 3
+							},
+							"password": {
+								"title": "ThinQ Account Password",
+								"description": "Password for your LG ThinQ account.",
+								"type": "string",
+								"ui:widget": "password"
+							},
+							"devices": {
+								"title": "ThinQ Devices",
+								"description": "Auto-populated on discovery. Per-device capability flags gate which Matter features are advertised.",
+								"type": "array",
+								"items": {
+									"type": "object",
+									"properties": {
+										"deviceId": {
+											"title": "Device ID",
+											"type": "string"
+										},
+										"deviceType": {
+											"title": "Device Type",
+											"type": "string",
+											"enum": ["AC", "WASHER"],
+											"readOnly": true
+										},
+										"productName": {
+											"title": "Product Name Override",
+											"description": "Override the Matter product name shown for this device. Only applied when Override Matter Configuration is enabled in Advanced Features.",
+											"type": "string"
+										},
+										"productId": {
+											"title": "Product ID Override",
+											"description": "Override the Matter product id shown for this device. Only applied when Override Matter Configuration is enabled in Advanced Features.",
+											"type": "number"
+										}
+									},
+									"required": ["deviceId"],
+									"dependencies": {
+										"deviceType": {
+											"allOf": [
+												{
+													"if": {
+														"properties": {
+															"deviceType": {
+																"const": "AC"
+															}
+														}
+													},
+													"then": {
+														"properties": {
+															"capabilities": {
+																"title": "Capabilities",
+																"type": "object",
+																"properties": {
+																	"supportsHeat": {
+																		"title": "Supports Heat",
+																		"description": "Whether this device supports heating mode.",
+																		"type": "boolean",
+																		"default": true
+																	},
+																	"supportsFanSpeedControl": {
+																		"title": "Supports Fan Speed Control",
+																		"description": "Whether this device supports adjustable fan speed.",
+																		"type": "boolean",
+																		"default": true
+																	},
+																	"supportsSwingMode": {
+																		"title": "Supports Swing Mode",
+																		"description": "Whether this device supports swing mode (vertical/horizontal vane control).",
+																		"type": "boolean",
+																		"default": false
+																	},
+																	"supportsHumiditySensor": {
+																		"title": "Supports Humidity Sensor",
+																		"description": "Whether this device reports humidity data.",
+																		"type": "boolean",
+																		"default": false
+																	},
+																	"supportsAirQualitySensor": {
+																		"title": "Supports Air-Quality Sensor",
+																		"description": "Whether this device reports air-quality (AQI, PM2.5, PM10) data.",
+																		"type": "boolean",
+																		"default": false
+																	},
+																	"supportsEnergyMonitoring": {
+																		"title": "Supports Energy Monitoring",
+																		"description": "Whether this device reports instantaneous power consumption data.",
+																		"type": "boolean",
+																		"default": false
+																	},
+																	"supportsFilterMonitoring": {
+																		"title": "Supports Filter Monitoring",
+																		"description": "Whether this device reports air-filter life/remaining-percent data.",
+																		"type": "boolean",
+																		"default": false
+																	}
+																}
+															}
+														}
+													}
+												},
+												{
+													"if": {
+														"properties": {
+															"deviceType": {
+																"const": "WASHER"
+															}
+														}
+													},
+													"then": {
+														"properties": {
+															"washerControl": {
+																"title": "Washer Control",
+																"type": "object",
+																"properties": {
+																	"allowRemoteStop": {
+																		"title": "Allow Remote Stop (Washer)",
+																		"description": "Turning this on lets Apple Home send a real stop/cancel command to the physical washer. Off by default.",
+																		"type": "boolean",
+																		"default": false
+																	}
+																}
+															}
+														}
+													}
+												},
+												{
+													"if": {
+														"properties": {
+															"deviceType": {
+																"const": "AC"
+															},
+															"capabilities": {
+																"required": ["supportsFilterMonitoring"],
+																"properties": {
+																	"supportsFilterMonitoring": {
+																		"const": true
+																	}
+																}
+															}
+														},
+														"required": ["capabilities"]
+													},
+													"then": {
+														"properties": {
+															"acFilterControl": {
+																"title": "AC Filter Control",
+																"type": "object",
+																"properties": {
+																	"allowFilterReset": {
+																		"title": "Allow Filter Reset (AC)",
+																		"description": "Turning this on lets Apple Home send a real filter-counter reset command to the physical air conditioner, after you've replaced/cleaned the filter. Off by default. This command has not been live-tested yet — enable only when you are ready to verify it yourself.",
+																		"type": "boolean",
+																		"default": false
+																	}
+																}
+															}
+														}
+													}
+												}
+											]
+										}
+									}
+								}
+							}
+						},
+						"required": ["username", "password"]
+					},
+					"else": {
+						"if": {
+							"properties": {
+								"loginType": {
+									"const": "token"
+								}
+							}
+						},
+						"then": {
+							"properties": {
+								"refreshToken": {
+									"title": "Refresh Token",
+									"description": "Pre-issued ThinQ refresh token, used instead of username/password.",
+									"type": "string",
+									"ui:widget": "password"
+								},
+								"devices": {
+									"title": "ThinQ Devices",
+									"description": "Auto-populated on discovery. Per-device capability flags gate which Matter features are advertised.",
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"deviceId": {
+												"title": "Device ID",
+												"type": "string"
+											},
+											"deviceType": {
+												"title": "Device Type",
+												"type": "string",
+												"enum": ["AC", "WASHER"],
+												"readOnly": true
+											},
+											"productName": {
+												"title": "Product Name Override",
+												"description": "Override the Matter product name shown for this device. Only applied when Override Matter Configuration is enabled in Advanced Features.",
+												"type": "string"
+											},
+											"productId": {
+												"title": "Product ID Override",
+												"description": "Override the Matter product id shown for this device. Only applied when Override Matter Configuration is enabled in Advanced Features.",
+												"type": "number"
+											}
+										},
+										"required": ["deviceId"],
+										"dependencies": {
+											"deviceType": {
+												"allOf": [
+													{
+														"if": {
+															"properties": {
+																"deviceType": {
+																	"const": "AC"
+																}
+															}
+														},
+														"then": {
+															"properties": {
+																"capabilities": {
+																	"title": "Capabilities",
+																	"type": "object",
+																	"properties": {
+																		"supportsHeat": {
+																			"title": "Supports Heat",
+																			"description": "Whether this device supports heating mode.",
+																			"type": "boolean",
+																			"default": true
+																		},
+																		"supportsFanSpeedControl": {
+																			"title": "Supports Fan Speed Control",
+																			"description": "Whether this device supports adjustable fan speed.",
+																			"type": "boolean",
+																			"default": true
+																		},
+																		"supportsSwingMode": {
+																			"title": "Supports Swing Mode",
+																			"description": "Whether this device supports swing mode (vertical/horizontal vane control).",
+																			"type": "boolean",
+																			"default": false
+																		},
+																		"supportsHumiditySensor": {
+																			"title": "Supports Humidity Sensor",
+																			"description": "Whether this device reports humidity data.",
+																			"type": "boolean",
+																			"default": false
+																		},
+																		"supportsAirQualitySensor": {
+																			"title": "Supports Air-Quality Sensor",
+																			"description": "Whether this device reports air-quality (AQI, PM2.5, PM10) data.",
+																			"type": "boolean",
+																			"default": false
+																		},
+																		"supportsEnergyMonitoring": {
+																			"title": "Supports Energy Monitoring",
+																			"description": "Whether this device reports instantaneous power consumption data.",
+																			"type": "boolean",
+																			"default": false
+																		},
+																		"supportsFilterMonitoring": {
+																			"title": "Supports Filter Monitoring",
+																			"description": "Whether this device reports air-filter life/remaining-percent data.",
+																			"type": "boolean",
+																			"default": false
+																		}
+																	}
+																}
+															}
+														}
+													},
+													{
+														"if": {
+															"properties": {
+																"deviceType": {
+																	"const": "WASHER"
+																}
+															}
+														},
+														"then": {
+															"properties": {
+																"washerControl": {
+																	"title": "Washer Control",
+																	"type": "object",
+																	"properties": {
+																		"allowRemoteStop": {
+																			"title": "Allow Remote Stop (Washer)",
+																			"description": "Turning this on lets Apple Home send a real stop/cancel command to the physical washer. Off by default.",
+																			"type": "boolean",
+																			"default": false
+																		}
+																	}
+																}
+															}
+														}
+													},
+													{
+														"if": {
+															"properties": {
+																"deviceType": {
+																	"const": "AC"
+																},
+																"capabilities": {
+																	"required": ["supportsFilterMonitoring"],
+																	"properties": {
+																		"supportsFilterMonitoring": {
+																			"const": true
+																		}
+																	}
+																}
+															},
+															"required": ["capabilities"]
+														},
+														"then": {
+															"properties": {
+																"acFilterControl": {
+																	"title": "AC Filter Control",
+																	"type": "object",
+																	"properties": {
+																		"allowFilterReset": {
+																			"title": "Allow Filter Reset (AC)",
+																			"description": "Turning this on lets Apple Home send a real filter-counter reset command to the physical air conditioner, after you've replaced/cleaned the filter. Off by default. This command has not been live-tested yet — enable only when you are ready to verify it yourself.",
+																			"type": "boolean",
+																			"default": false
+																		}
+																	}
+																}
+															}
+														}
+													}
+												]
+											}
+										}
+									}
+								}
+							},
+							"required": ["refreshToken"]
+						}
+					}
+				}
+			}
+		},
+		"webos": {
+			"title": "LG webOS TV (local network)",
+			"type": "object",
+			"properties": {
+				"devices": {
+					"title": "webOS TV Devices",
+					"description": "Populated once webOS pairing/control lands (Phase 3+).",
+					"type": "array",
+					"items": {
+						"type": "object"
+					}
+				}
+			}
+		},
+		"advancedFeature": {
+			"title": "Advanced features",
+			"type": "object",
+			"properties": {
+				"settings": {
+					"title": "Advanced Features Configuration",
+					"type": "object",
+					"properties": {
+						"debug": {
+							"title": "Enable Debug Mode",
+							"description": "Enable the debug for the plugin (development only)",
+							"type": "boolean",
+							"default": false
+						},
+						"clearStorageOnStartup": {
+							"title": "Clear Storage On Startup",
+							"description": "Clear persistence storage and re-initialize the plugin on next startup.",
+							"type": "boolean",
+							"default": false
+						},
+						"forceAuthentication": {
+							"title": "Force Authentication",
+							"description": "Ignore any cached/saved login session and always authenticate fresh on every start.",
+							"type": "boolean",
+							"default": false
+						},
+						"unregisterOnShutdown": {
+							"title": "Unregister On Shutdown",
+							"description": "Unregister all devices on shutdown (development only)",
+							"type": "boolean",
+							"default": false
+						},
+						"overrideMatterConfiguration": {
+							"title": "Override Matter Configuration",
+							"description": "Override the Matter vendor/product identity (vendor name, vendor id, product name, product id) shown for AC devices in Apple Home / any Matter controller.",
+							"type": "boolean",
+							"default": false
+						}
+					},
+					"required": [
+						"debug",
+						"clearStorageOnStartup",
+						"forceAuthentication",
+						"unregisterOnShutdown",
+						"overrideMatterConfiguration"
+					],
+					"dependencies": {
+						"overrideMatterConfiguration": {
+							"if": {
+								"properties": {
+									"overrideMatterConfiguration": {
+										"const": true
+									}
+								}
+							},
+							"then": {
+								"properties": {
+									"matterOverrideSettings": {
+										"title": "Matter Override Settings",
+										"type": "object",
+										"properties": {
+											"matterVendorName": {
+												"title": "Vendor Name",
+												"type": "string",
+												"default": "Matterbridge"
+											},
+											"matterVendorId": {
+												"title": "Vendor ID",
+												"type": "number",
+												"default": 65521
+											}
+										},
+										"required": ["matterVendorName", "matterVendorId"]
+									}
+								},
+								"required": ["matterOverrideSettings"]
+							}
+						}
+					}
+				}
+			}
+		}
+	},
+	"required": ["thinq", "webos", "advancedFeature"]
+}

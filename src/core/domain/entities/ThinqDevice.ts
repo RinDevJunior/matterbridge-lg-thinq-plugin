@@ -34,11 +34,17 @@ export interface ThinqDevice {
 	readonly platformType: string | undefined;
 	readonly online: boolean;
 	readonly snapshot: ThinqSnapshot;
+	readonly modelJsonUri?: string;
 }
 
 /** ThinQ device narrowed to the AirConditioner type (`deviceType === 401`, `type === 'AC'`). */
 export interface ThinqAirConditionerDevice extends ThinqDevice {
 	readonly type: 'AC';
+}
+
+/** ThinQ device narrowed to the Washer type (`deviceType === 201`, `type === 'WASHER'`). */
+export interface ThinqWasherDevice extends ThinqDevice {
+	readonly type: 'WASHER';
 }
 
 export function isValidThinqDeviceId(id: unknown): id is string {
@@ -47,6 +53,10 @@ export function isValidThinqDeviceId(id: unknown): id is string {
 
 export function isAirConditionerDevice(device: ThinqDevice): device is ThinqAirConditionerDevice {
 	return device.type === 'AC';
+}
+
+export function isWasherDevice(device: ThinqDevice): device is ThinqWasherDevice {
+	return device.type === 'WASHER';
 }
 
 /** Maps a raw `ThinqDeviceData` REST response into the generic `ThinqDevice` domain entity. */
@@ -59,5 +69,6 @@ export function toThinqDevice(data: ThinqDeviceData): ThinqDevice {
 		platformType: data.platformType,
 		online: data.online ?? data.snapshot.online ?? false,
 		snapshot: new ThinqSnapshot(data.snapshot),
+		modelJsonUri: data.modelJsonUri,
 	};
 }

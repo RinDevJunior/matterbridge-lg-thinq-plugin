@@ -17,8 +17,15 @@ import {
 import { ThinqSession } from './session.js';
 
 const GATEWAY_URL = 'https://route.lgthinq.com:46030/v1/service/application/gateway-uri';
+export const MQTT_ROUTE_URL = 'https://common.lgthinq.com/route';
 const API_KEY = 'VGhpblEyLjAgU0VSVklDRQ==';
 const API_CLIENT_ID = 'c713ea8e50f657534ff8b9d373dfebfc2ed70b88285c26b8ade49868c0b164d9';
+/**
+ * LG's own signal that the ThinQ access token has expired, returned as HTTP 400 with this `resultCode`
+ * on some endpoints (e.g. `control-sync`) instead of a true 401. Mirrors `homebridge-lg-thinq`'s
+ * `TokenExpiredErrorCode` (`errors/TokenExpiredError.ts:1`).
+ */
+const THINQ_TOKEN_EXPIRED_RESULT_CODE = '0102';
 
 export interface ThinqHome {
 	homeId: string;
@@ -50,8 +57,12 @@ export interface ThinqCommandPayload {
 	dataKey?: string | null;
 	dataValue?: unknown;
 	dataSetList?: Record<string, unknown>;
+	/** Field list for `Get` commands, e.g. `filterMngStateCtrl`'s `dataGetList`. */
+	dataGetList?: string[];
 	/** Overrides `sendCommand`'s default `'Set'`, e.g. `'Operation'` for AC power (homebridge-lg-thinq parity). */
 	command?: string;
+	/** Overrides `sendCommand`'s default `'basicCtrl'`, e.g. `'favoriteCtrl'` for swing mode compound writes (homebridge-lg-thinq parity). */
+	ctrlKey?: string;
 }
 
 function randomMessageId(length = 22): string {
@@ -110,6 +121,17 @@ export class ThinqApiClient {
 		return this.gateway.data;
 	}
 
+	/**
+	 * Fetches a device's model JSON from its own CDN `modelJsonUri` (an absolute URL, not gateway-relative),
+	 * so this bypasses the private `request()` helper entirely — direct unauthenticated `axios.get`, mirroring
+	 * how both reference implementations fetch model JSON.
+	 */
+	public async getDeviceModel(modelJsonUri: string): Promise<Record<string, unknown>> {
+		this.logger.debug(`ThinQ getDeviceModel request -> GET ${modelJsonUri}`);
+		const response = await axios.get<Record<string, unknown>>(modelJsonUri);
+		return response.data;
+	}
+
 	public async getListHomes(): Promise<ThinqHome[]> {
 		if (!this.homesCache) {
 			const data = await this.request<{ result: { item: ThinqHome[] } }>('get', 'service/homes');
@@ -143,6 +165,66 @@ export class ThinqApiClient {
 			ctrlKey: 'basicCtrl',
 			command: 'Set',
 			...payload,
+		});
+	}
+
+	/**
+	 * Same wire shape as `sendCommand`, but returns the raw response body instead of discarding it. Used both
+	 * for diagnostic probes (e.g. `--probe-filter`) and real production polling (e.g. `getFilterState`) that
+	 * need to inspect what the cloud actually returns for a given `Get` command, rather than fire-and-forget
+	 * `Set` commands.
+	 */
+	public async sendCommandAndGetResponse<T = unknown>(deviceId: string, payload: ThinqCommandPayload): Promise<T> {
+		if (!deviceId.trim()) {
+			throw new Error('Invalid deviceId: must be a non-empty string.');
+		}
+
+		return this.request<T>('post', `service/devices/${deviceId}/control-sync`, {
+			ctrlKey: 'basicCtrl',
+			command: 'Set',
+			...payload,
+		});
+	}
+
+	/**
+	 * Fetches the filter-life state for an AC device (`filterMngStateCtrl` `Get`). Returns
+	 * `undefined` if the response contains no data (e.g. devices with no filter sensor).
+	 */
+	public async getFilterState(deviceId: string): Promise<Record<string, unknown> | undefined> {
+		if (!deviceId.trim()) {
+			throw new Error('Invalid deviceId: must be a non-empty string.');
+		}
+
+		const response = await this.sendCommandAndGetResponse<{ result?: { data?: Record<string, unknown> } }>(deviceId, {
+			ctrlKey: 'filterMngStateCtrl',
+			command: 'Get',
+			dataGetList: [
+				'airState.filterMngState.useTime',
+				'airState.filterMngState.remainTime',
+				'airState.filterMngState.maxTime',
+				'airState.filterMngState.changeDate',
+				'airState.filterMngState.type',
+			],
+		});
+
+		return response.result?.data;
+	}
+
+	/**
+	 * Sends a keep-alive command to an AC device to maintain MQTT push updates from LG's cloud.
+	 * POSTs to `service/devices/{id}/control` (not `control-sync`) with `ctrlKey: 'allEventEnable'`
+	 * to refresh the 70-second MQTT event window.
+	 */
+	public async sendKeepAlive(deviceId: string): Promise<void> {
+		if (!deviceId.trim()) {
+			throw new Error('Invalid deviceId: must be a non-empty string.');
+		}
+
+		await this.request('post', `service/devices/${deviceId}/control`, {
+			ctrlKey: 'allEventEnable',
+			command: 'Set',
+			dataKey: 'airState.mon.timeout',
+			dataValue: '70',
 		});
 	}
 
@@ -225,6 +307,32 @@ export class ThinqApiClient {
 		}
 	}
 
+	/** Fetches the MQTT broker route (`GET https://common.lgthinq.com/route`), first step of MQTT cert setup. */
+	public async getMqttRouteInfo(): Promise<{ mqttServer: string }> {
+		const data = await this.request<{ result: { mqttServer: string } }>('get', MQTT_ROUTE_URL);
+		return data.result;
+	}
+
+	/** Registers this account as an MQTT client (`POST service/users/client`), required before requesting a certificate. */
+	public async registerMqttClient(): Promise<void> {
+		await this.request('post', 'service/users/client', {});
+	}
+
+	/** Submits the CSR body and returns the signed client certificate + broker subscription topics. */
+	public async requestMqttCertificate(csrBody: string): Promise<{ certificatePem: string; subscriptions: string[] }> {
+		const data = await this.request<{ result: { certificatePem: string; subscriptions: string[] } }>(
+			'post',
+			'service/users/client/certificate',
+			{ csr: csrBody },
+		);
+		return data.result;
+	}
+
+	/** Returns the per-session client id (`x-client-id`), falling back to the static default like `defaultHeaders`. */
+	public getClientId(): string {
+		return this.clientId ?? API_CLIENT_ID;
+	}
+
 	private get defaultHeaders(): Record<string, string> {
 		const authHeaders: Record<string, string> = {};
 		if (this.session.accessToken) {
@@ -256,6 +364,22 @@ export class ThinqApiClient {
 		};
 	}
 
+	/**
+	 * True when `error` signals an expired ThinQ access token — either a real HTTP 401, or LG's own
+	 * `resultCode: '0102'` expiry signal returned as HTTP 400 by some endpoints (e.g. `control-sync`).
+	 * Mirrors homebridge-lg-thinq's dual check (`request.ts:80-97`).
+	 */
+	private isTokenExpiredError(error: unknown): boolean {
+		if (!axios.isAxiosError(error)) {
+			return false;
+		}
+		if (error.response?.status === 401) {
+			return true;
+		}
+		const data = error.response?.data as Record<string, unknown> | undefined;
+		return typeof data?.resultCode === 'string' && data.resultCode === THINQ_TOKEN_EXPIRED_RESULT_CODE;
+	}
+
 	private async request<T>(method: 'get' | 'post', uri: string, data?: unknown, retry = false): Promise<T> {
 		await this.getGateway();
 		const gateway = this.gateway;
@@ -273,13 +397,19 @@ export class ThinqApiClient {
 			const response = await axios.request<T>({ method, url, data, headers });
 			return response.data;
 		} catch (error) {
-			if (axios.isAxiosError(error) && error.response?.status === 401) {
+			if (this.isTokenExpiredError(error)) {
 				if (retry) {
 					throw new TokenExpiredError();
 				}
 
 				await this.refreshToken(this.session);
 				return this.request<T>(method, uri, data, true);
+			}
+
+			if (axios.isAxiosError(error)) {
+				this.logger.debug(
+					`ThinQ request failed <- ${method.toUpperCase()} ${url} status=${error.response?.status} data=${JSON.stringify(error.response?.data)}`,
+				);
 			}
 
 			throw error;

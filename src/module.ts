@@ -5,31 +5,36 @@ import { AnsiLogger, LogLevel } from 'matterbridge/logger';
 import NodePersist from 'node-persist';
 
 import { UNREGISTER_DEVICES_DELAY_MS } from './constants/index.js';
-import { isAirConditionerDevice } from './core/domain/entities/ThinqDevice.js';
+import { isAirConditionerDevice, isWasherDevice } from './core/domain/entities/ThinqDevice.js';
 import { ManualProcessNeededError } from './errors/index.js';
-import { LgThinkqPluginPlatformConfig } from './model/LgThinkqPluginPlatformConfig.js';
+import { LgThinqPluginPlatformConfig } from './model/LgThinqPluginPlatformConfig.js';
 // Platform layer imports
 import { DeviceRegistry } from './platform/deviceRegistry.js';
 import { PlatformConfigManager } from './platform/platformConfigManager.js';
 import { PlatformState } from './platform/platformState.js';
+import { applyThinqFilterStateToAirConditioner } from './platform/thinq/thinqAirConditionerFilterStateSync.js';
 import { applyThinqSnapshotToAirConditioner } from './platform/thinq/thinqAirConditionerStateSync.js';
+import { reconcileThinqDeviceConfigEntries } from './platform/thinq/thinqDeviceConfigReconciler.js';
+import { applyThinqSnapshotToWasher } from './platform/thinq/thinqWasherStateSync.js';
 import { ThinqServiceContainer } from './services/thinq/serviceContainer.js';
 import { ThinqSession } from './services/thinq/session.js';
+import { ThinqDeviceUpdateListener } from './services/thinq/thinqDeviceService.js';
+import type { ThinqFilterUpdateListener } from './services/thinq/thinqFilterMonitoringService.js';
 import { PLUGIN_NAME } from './settings.js';
 
 export default function initializePlugin(
 	matterbridge: PlatformMatterbridge,
 	log: AnsiLogger,
 	config: PlatformConfig,
-): LgThinkqMatterbridgePlatform {
-	return new LgThinkqMatterbridgePlatform(matterbridge, log, config as LgThinkqPluginPlatformConfig);
+): LgThinqMatterbridgePlatform {
+	return new LgThinqMatterbridgePlatform(matterbridge, log, config as LgThinqPluginPlatformConfig);
 }
 
 /**
  * LG ThinQ + webOS TV platform for Matterbridge.
  * Empty lifecycle skeleton (Phase 0) — device discovery/configuration lands in Phase 1 (ThinQ) and Phase 3 (webOS).
  */
-export class LgThinkqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
+export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 	public persist: NodePersist.LocalStorage;
 
 	// Platform layer
@@ -41,11 +46,13 @@ export class LgThinkqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 	public readonly thinqServices: ThinqServiceContainer;
 
 	private thinqPollingIntervalMs: number | undefined;
+	private readonly thinqDeviceKindById = new Map<string, 'AC' | 'WASHER'>();
+	private readonly filterMonitoringDeviceIds: string[] = [];
 
 	constructor(
 		matterbridge: PlatformMatterbridge,
 		logger: AnsiLogger,
-		override config: LgThinkqPluginPlatformConfig,
+		override config: LgThinqPluginPlatformConfig,
 	) {
 		super(matterbridge, logger, config);
 		logger.logLevel = this.config.advancedFeature.settings.debug ? LogLevel.DEBUG : LogLevel.INFO;
@@ -60,11 +67,17 @@ export class LgThinkqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 		this.configManager = PlatformConfigManager.create(config, this.log);
 		this.registry = new DeviceRegistry();
 		this.state = new PlatformState();
-		this.thinqServices = new ThinqServiceContainer(this.log, this.persist, this.configManager);
+		this.thinqServices = new ThinqServiceContainer(
+			this.log,
+			this.persist,
+			this.configManager,
+			Path.join(this.matterbridge.matterbridgePluginDirectory, PLUGIN_NAME, 'mqtt-certs'),
+		);
 	}
 
 	// #region Lifecycle
 	public override async onStart(reason?: string): Promise<void> {
+		this.log.debug(`onStart: entry (reason=${reason ?? 'none'})`);
 		this.log.notice('onStart called with reason:', reason ?? 'none');
 
 		await this.ready;
@@ -72,12 +85,14 @@ export class LgThinkqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 		await this.persist.init();
 
 		if (this.configManager.isClearStorageOnStartupEnabled) {
+			this.log.debug('onStart: exit early — clear-storage-on-startup enabled, skipping device startup');
 			return;
 		}
 
 		if (!this.configManager.validateConfig()) {
 			this.log.error('Platform configuration is invalid.');
 			this.state.setStartupCompleted(false);
+			this.log.debug('onStart: exit — invalid platform configuration');
 			return;
 		}
 
@@ -86,15 +101,18 @@ export class LgThinkqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 		} catch (error) {
 			this.log.error(`ThinQ startup failed: ${error instanceof Error ? error.message : String(error)}`);
 			this.state.setStartupCompleted(false);
+			this.log.debug('onStart: exit — ThinQ startup threw');
 			return;
 		}
 
 		this.log.notice('onStart finished');
 		this.state.setStartupCompleted(true);
+		this.log.debug('onStart: exit — startup completed successfully');
 	}
 
 	public override async onConfigure(): Promise<void> {
 		await super.onConfigure();
+		this.log.debug('onConfigure: entry');
 		this.log.notice('onConfigure called');
 
 		if (this.configManager.isClearStorageOnStartupEnabled) {
@@ -109,22 +127,33 @@ export class LgThinkqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 				.catch((error: unknown) => {
 					this.log.error(`Error clearing persistence storage: ${error}`);
 				});
+			this.log.debug('onConfigure: exit early — clear-storage-on-startup enabled');
 			return;
 		}
 
 		if (!this.state.isStartupCompleted) {
+			this.log.debug('onConfigure: exit early — startup did not complete, skipping polling setup');
 			return;
 		}
 
-		this.thinqPollingIntervalMs = this.configManager.thinqRefreshIntervalSeconds * 1000;
-		this.thinqServices.getDeviceService().startPolling(this.thinqPollingIntervalMs, (deviceId, snapshot) => {
-			const airConditioner = this.registry.getDevice(deviceId) as MatterbridgeEndpoint | undefined;
-			if (!airConditioner) {
+		const applyDeviceUpdate: ThinqDeviceUpdateListener = (deviceId, snapshot) => {
+			const endpoint = this.registry.getDevice(deviceId) as MatterbridgeEndpoint | undefined;
+			if (!endpoint) {
 				this.log.debug(`ThinQ device update received for unregistered device ${deviceId}, skipping.`);
 				return;
 			}
+
+			if (this.thinqDeviceKindById.get(deviceId) === 'WASHER') {
+				void applyThinqSnapshotToWasher(endpoint, snapshot, this.log).catch((error: unknown) => {
+					this.log.error(
+						`Failed to apply ThinQ state update for ${deviceId}: ${error instanceof Error ? error.message : String(error)}`,
+					);
+				});
+				return;
+			}
+
 			void applyThinqSnapshotToAirConditioner(
-				airConditioner,
+				endpoint,
 				snapshot,
 				this.configManager.getDeviceCapabilities(deviceId),
 				this.log,
@@ -133,20 +162,58 @@ export class LgThinkqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 					`Failed to apply ThinQ state update for ${deviceId}: ${error instanceof Error ? error.message : String(error)}`,
 				);
 			});
-		});
+		};
+
+		this.thinqPollingIntervalMs = this.configManager.thinqRefreshIntervalSeconds * 1000;
+		this.thinqServices.getDeviceService().startPolling(this.thinqPollingIntervalMs, applyDeviceUpdate);
+		this.thinqServices.getDeviceService().startKeepAlive();
+		void this.thinqServices
+			.getMqttListener()
+			.start(applyDeviceUpdate)
+			.catch((error: unknown) => {
+				this.log.error(
+					`ThinQ MQTT listener failed to start: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			});
+
+		if (this.filterMonitoringDeviceIds.length > 0) {
+			const applyFilterUpdate: ThinqFilterUpdateListener = (deviceId, filterState) => {
+				const endpoint = this.registry.getDevice(deviceId) as MatterbridgeEndpoint | undefined;
+				if (!endpoint) {
+					this.log.debug(`ThinQ filter update received for unregistered device ${deviceId}, skipping.`);
+					return;
+				}
+				void applyThinqFilterStateToAirConditioner(endpoint, filterState, this.log).catch((error: unknown) => {
+					this.log.error(
+						`Failed to apply ThinQ filter state update for ${deviceId}: ${error instanceof Error ? error.message : String(error)}`,
+					);
+				});
+			};
+			const filterMonitoringIntervalMs = this.configManager.thinqFilterMonitoringIntervalSeconds * 1000;
+			this.thinqServices
+				.getFilterMonitoringService()
+				.startPolling(filterMonitoringIntervalMs, this.filterMonitoringDeviceIds, applyFilterUpdate);
+		}
+
+		this.log.debug(`onConfigure: exit — polling started at ${this.thinqPollingIntervalMs}ms interval`);
 	}
 
 	public override async onShutdown(reason?: string): Promise<void> {
 		await super.onShutdown(reason);
+		this.log.debug(`onShutdown: entry (reason=${reason ?? 'none'})`);
 		this.log.notice('onShutdown called with reason:', reason ?? 'none');
 
 		this.thinqServices.getDeviceService().stopPolling();
+		this.thinqServices.getDeviceService().stopKeepAlive();
+		this.thinqServices.getMqttListener().stop();
+		this.thinqServices.getFilterMonitoringService().stopPolling();
 
 		if (this.configManager.unregisterOnShutdown) {
 			await this.unregisterAllDevices(UNREGISTER_DEVICES_DELAY_MS);
 		}
 
 		this.state.setStartupCompleted(false);
+		this.log.debug('onShutdown: exit');
 	}
 
 	/**
@@ -187,16 +254,39 @@ export class LgThinkqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 		await userDataRepository.saveUserData(userData);
 
 		const devices = await this.thinqServices.getDeviceDiscovery().discoverDevices();
+
+		const configChanged = reconcileThinqDeviceConfigEntries(this.config.thinq.devices, devices);
+		if (configChanged) {
+			try {
+				this.saveConfig(this.config);
+			} catch (error) {
+				this.log.error(
+					`Failed to persist auto-populated ThinQ device config: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			}
+		}
+
 		const configurator = this.thinqServices.getDeviceConfigurator();
 
 		for (const device of devices) {
-			if (!isAirConditionerDevice(device)) {
+			if (isAirConditionerDevice(device)) {
+				const airConditioner = await configurator.registerAirConditioner(device);
+				await this.registerDevice(airConditioner);
+				this.registry.register(device.id, airConditioner);
+				this.thinqDeviceKindById.set(device.id, 'AC');
+				if (this.configManager.getDeviceCapabilities(device.id).supportsFilterMonitoring) {
+					this.filterMonitoringDeviceIds.push(device.id);
+				}
 				continue;
 			}
 
-			const airConditioner = await configurator.registerAirConditioner(device);
-			await this.registerDevice(airConditioner);
-			this.registry.register(device.id, airConditioner);
+			if (isWasherDevice(device)) {
+				const washer = await configurator.registerWasher(device);
+				await this.registerDevice(washer);
+				this.registry.register(device.id, washer);
+				this.thinqDeviceKindById.set(device.id, 'WASHER');
+				continue;
+			}
 		}
 	}
 
