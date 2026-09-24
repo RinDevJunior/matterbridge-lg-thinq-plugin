@@ -8,7 +8,11 @@ import { asPartial } from '../../helpers/testUtils.js';
 
 vi.mock('matterbridge/devices', () => ({
 	LaundryWasher: vi.fn(function (name: string, id: string) {
-		return { name, id };
+		return {
+			name,
+			id,
+			createDefaultBasicInformationClusterServer: vi.fn().mockReturnThis(),
+		};
 	}),
 }));
 

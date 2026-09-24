@@ -13,8 +13,6 @@ export interface ThinqDeviceCapabilityConfig {
 export interface MatterOverrideSettings {
 	matterVendorName: string;
 	matterVendorId: number;
-	matterProductName: string;
-	matterProductId: number;
 }
 
 export interface ThinqWasherControlConfig {
@@ -27,8 +25,10 @@ export interface ThinqAcFilterControlConfig {
 
 export interface ThinqDeviceConfigEntry {
 	deviceId: string;
+	deviceType?: 'AC' | 'WASHER';
 	capabilities?: ThinqDeviceCapabilityConfig;
 	productName?: string;
+	productId?: number;
 	washerControl?: ThinqWasherControlConfig;
 	acFilterControl?: ThinqAcFilterControlConfig;
 }
@@ -79,8 +79,6 @@ export function createDefaultAdvancedFeature(): AdvancedFeatureConfiguration {
 			matterOverrideSettings: {
 				matterVendorName: 'Matterbridge',
 				matterVendorId: 0xfff1,
-				matterProductName: 'LG Air Conditioner',
-				matterProductId: 0x8000,
 			},
 		},
 	};

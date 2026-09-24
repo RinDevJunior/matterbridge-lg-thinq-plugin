@@ -34,8 +34,6 @@ describe('PlatformConfigManager', () => {
 					matterOverrideSettings: {
 						matterVendorName: 'Matterbridge',
 						matterVendorId: 0xfff1,
-						matterProductName: 'LG Air Conditioner',
-						matterProductId: 0x8000,
 					},
 				},
 			});
@@ -61,8 +59,6 @@ describe('PlatformConfigManager', () => {
 						matterOverrideSettings: {
 							matterVendorName: 'Matterbridge',
 							matterVendorId: 0xfff1,
-							matterProductName: 'LG Air Conditioner',
-							matterProductId: 0x8000,
 						},
 					},
 				},
@@ -100,8 +96,6 @@ describe('PlatformConfigManager', () => {
 						matterOverrideSettings: {
 							matterVendorName: 'Matterbridge',
 							matterVendorId: 0xfff1,
-							matterProductName: 'LG Air Conditioner',
-							matterProductId: 0x8000,
 						},
 					},
 				},
@@ -125,8 +119,6 @@ describe('PlatformConfigManager', () => {
 						matterOverrideSettings: {
 							matterVendorName: 'Matterbridge',
 							matterVendorId: 0xfff1,
-							matterProductName: 'LG Air Conditioner',
-							matterProductId: 0x8000,
 						},
 					},
 				},
@@ -150,8 +142,6 @@ describe('PlatformConfigManager', () => {
 						matterOverrideSettings: {
 							matterVendorName: 'Matterbridge',
 							matterVendorId: 0xfff1,
-							matterProductName: 'LG Air Conditioner',
-							matterProductId: 0x8000,
 						},
 					},
 				},
@@ -175,8 +165,6 @@ describe('PlatformConfigManager', () => {
 						matterOverrideSettings: {
 							matterVendorName: 'Matterbridge',
 							matterVendorId: 0xfff1,
-							matterProductName: 'LG Air Conditioner',
-							matterProductId: 0x8000,
 						},
 					},
 				},
@@ -417,8 +405,6 @@ describe('PlatformConfigManager', () => {
 						matterOverrideSettings: {
 							matterVendorName: 'LG',
 							matterVendorId: 0x1234,
-							matterProductName: 'Custom AC',
-							matterProductId: 0x5678,
 						},
 					},
 				},
@@ -440,8 +426,6 @@ describe('PlatformConfigManager', () => {
 						matterOverrideSettings: {
 							matterVendorName: 'Matterbridge',
 							matterVendorId: 0xfff1,
-							matterProductName: 'LG Air Conditioner',
-							matterProductId: 0x8000,
 						},
 					},
 				},
@@ -484,8 +468,6 @@ describe('PlatformConfigManager', () => {
 			expect(manager.matterOverrideSettings).toEqual({
 				matterVendorName: 'Matterbridge',
 				matterVendorId: 0xfff1,
-				matterProductName: 'LG Air Conditioner',
-				matterProductId: 0x8000,
 			});
 		});
 	});
@@ -514,8 +496,6 @@ describe('PlatformConfigManager', () => {
 						matterOverrideSettings: {
 							matterVendorName: 'Matterbridge',
 							matterVendorId: 0xfff1,
-							matterProductName: 'LG Air Conditioner',
-							matterProductId: 0x8000,
 						},
 					},
 				},
@@ -543,8 +523,6 @@ describe('PlatformConfigManager', () => {
 						matterOverrideSettings: {
 							matterVendorName: 'Matterbridge',
 							matterVendorId: 0xfff1,
-							matterProductName: 'LG Air Conditioner',
-							matterProductId: 0x8000,
 						},
 					},
 				},
@@ -576,8 +554,6 @@ describe('PlatformConfigManager', () => {
 						matterOverrideSettings: {
 							matterVendorName: 'Matterbridge',
 							matterVendorId: 0xfff1,
-							matterProductName: 'LG Air Conditioner',
-							matterProductId: 0x8000,
 						},
 					},
 				},
@@ -610,8 +586,6 @@ describe('PlatformConfigManager', () => {
 						matterOverrideSettings: {
 							matterVendorName: 'Matterbridge',
 							matterVendorId: 0xfff1,
-							matterProductName: 'LG Air Conditioner',
-							matterProductId: 0x8000,
 						},
 					},
 				},
