@@ -13,9 +13,6 @@
 		"filterMonitoringIntervalSeconds": 3600,
 		"devices": []
 	},
-	"webos": {
-		"devices": []
-	},
 	"advancedFeature": {
 		"settings": {
 			"debug": true,

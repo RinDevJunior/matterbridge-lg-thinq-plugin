@@ -419,20 +419,6 @@
 				}
 			}
 		},
-		"webos": {
-			"title": "LG webOS TV (local network)",
-			"type": "object",
-			"properties": {
-				"devices": {
-					"title": "webOS TV Devices",
-					"description": "Populated once webOS pairing/control lands (Phase 3+).",
-					"type": "array",
-					"items": {
-						"type": "object"
-					}
-				}
-			}
-		},
 		"advancedFeature": {
 			"title": "Advanced features",
 			"type": "object",
@@ -516,5 +502,5 @@
 			}
 		}
 	},
-	"required": ["thinq", "webos", "advancedFeature"]
+	"required": ["thinq", "advancedFeature"]
 }

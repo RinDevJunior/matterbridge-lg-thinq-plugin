@@ -45,10 +45,6 @@ export interface ThinqAuthConfig {
 	devices: ThinqDeviceConfigEntry[];
 }
 
-export interface WebosPluginConfig {
-	devices: unknown[];
-}
-
 export interface AdvancedFeatureSetting {
 	debug: boolean;
 	clearStorageOnStartup: boolean;
@@ -64,7 +60,6 @@ export interface AdvancedFeatureConfiguration {
 
 export interface LgThinqPluginPlatformConfig extends PlatformConfig {
 	thinq: ThinqAuthConfig;
-	webos: WebosPluginConfig;
 	advancedFeature: AdvancedFeatureConfiguration;
 }
 
