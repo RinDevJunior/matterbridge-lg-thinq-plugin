@@ -1,0 +1,43 @@
+# .npmignore replaces .gitignore entirely for `npm publish` — keep both lists in sync.
+
+# Node modules
+node_modules/
+
+# TypeScript build output (not dist/ — that's the actual published code)
+build/
+out/
+coverage/
+report/
+.idea/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+
+# Env files
+.env
+npm-shrinkwrap.json
+test-report.junit.xml
+type-check.log
+.cli-session.json
+
+# CodeGraph local index
+.codegraph/
+
+# Ephemeral per-task workspace
+workspace/
+
+# Project tooling/docs not needed at runtime
+.claude
+.github
+docs
+scripts
+wiki
+.mcp.json
