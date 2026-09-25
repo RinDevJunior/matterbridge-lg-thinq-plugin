@@ -1033,5 +1033,423 @@ describe('thinqWasherStartCommandResolver', () => {
 			const inner = result?.dataSetList?.['washerDryer'] as Record<string, unknown>;
 			expect(inner?.['sharedField']).toBe('course-value');
 		});
+
+		it('should use model default course when called without courseSelection argument', () => {
+			// Arrange
+			const deviceModel = {
+				ControlWifi: {
+					WMStart: {
+						command: 'Set',
+						data: {
+							washerDryer: {},
+						},
+					},
+				},
+				Config: {
+					defaultCourse: 'express',
+					courseType: 'course',
+					smartCourseType: 'smartCourse',
+				},
+				Course: {
+					express: {
+						function: [{ value: 'field1', default: 'express-value' }],
+					},
+					delicate: {
+						function: [{ value: 'field1', default: 'delicate-value' }],
+					},
+				},
+			};
+
+			// Act
+			const result = extractWasherStartCommand(deviceModel); // No courseSelection argument
+
+			// Assert
+			expect(result?.resolvedCourseId).toBe('express');
+			const inner = result?.dataSetList?.['washerDryer'] as Record<string, unknown>;
+			expect(inner?.['field1']).toBe('express-value');
+		});
+
+		it('should resolve to requested course when courseSelection.courseId is valid', () => {
+			// Arrange
+			const deviceModel = {
+				ControlWifi: {
+					WMStart: {
+						command: 'Set',
+						data: {
+							washerDryer: {},
+						},
+					},
+				},
+				Config: {
+					defaultCourse: 'express',
+					courseType: 'course',
+					smartCourseType: 'smartCourse',
+				},
+				Course: {
+					express: {
+						function: [{ value: 'spinSpeed', default: 1200 }],
+					},
+					delicate: {
+						function: [{ value: 'spinSpeed', default: 600 }],
+					},
+				},
+			};
+
+			// Act
+			const result = extractWasherStartCommand(deviceModel, {
+				courseId: 'delicate',
+				parameterOverrides: {},
+			});
+
+			// Assert
+			expect(result?.resolvedCourseId).toBe('delicate');
+			const inner = result?.dataSetList?.['washerDryer'] as Record<string, unknown>;
+			expect(inner?.['course']).toBe('delicate'); // Course selector matches resolved
+			expect(inner?.['spinSpeed']).toBe(600); // Delicate course default
+		});
+
+		it('should fall back to default course when requested courseId does not exist', () => {
+			// Arrange
+			const deviceModel = {
+				ControlWifi: {
+					WMStart: {
+						command: 'Set',
+						data: {
+							washerDryer: {},
+						},
+					},
+				},
+				Config: {
+					defaultCourse: 'express',
+					courseType: 'course',
+					smartCourseType: 'smartCourse',
+				},
+				Course: {
+					express: {
+						function: [{ value: 'spinSpeed', default: 1200 }],
+					},
+					delicate: {
+						function: [{ value: 'spinSpeed', default: 600 }],
+					},
+				},
+			};
+
+			// Act
+			const result = extractWasherStartCommand(deviceModel, {
+				courseId: 'nonexistent',
+				parameterOverrides: {},
+			});
+
+			// Assert
+			expect(result?.resolvedCourseId).toBe('express'); // Fell back to default
+			const inner = result?.dataSetList?.['washerDryer'] as Record<string, unknown>;
+			expect(inner?.['spinSpeed']).toBe(1200); // Express course default
+		});
+
+		it('should apply parameterOverrides over course defaults', () => {
+			// Arrange
+			const deviceModel = {
+				ControlWifi: {
+					WMStart: {
+						command: 'Set',
+						data: {
+							washerDryer: {},
+						},
+					},
+				},
+				Config: {
+					defaultCourse: 'express',
+					courseType: 'course',
+					smartCourseType: 'smartCourse',
+				},
+				Course: {
+					express: {
+						function: [
+							{ value: 'spinSpeed', default: 1200 },
+							{ value: 'waterTemp', default: 60 },
+						],
+					},
+				},
+			};
+
+			// Act
+			const result = extractWasherStartCommand(deviceModel, {
+				courseId: 'express',
+				parameterOverrides: {
+					spinSpeed: 900,
+					// waterTemp not overridden, should use course default
+				},
+			});
+
+			// Assert
+			const inner = result?.dataSetList?.['washerDryer'] as Record<string, unknown>;
+			expect(inner?.['spinSpeed']).toBe(900); // Override wins
+			expect(inner?.['waterTemp']).toBe(60); // Course default used
+		});
+
+		it('should not allow parameterOverrides to corrupt course selector field', () => {
+			// Arrange
+			const deviceModel = {
+				ControlWifi: {
+					WMStart: {
+						command: 'Set',
+						data: {
+							washerDryer: {},
+						},
+					},
+				},
+				Config: {
+					defaultCourse: 'express',
+					courseType: 'course',
+					smartCourseType: 'smartCourse',
+				},
+				Course: {
+					express: {
+						function: [{ value: 'field', default: 'value' }],
+					},
+					delicate: {
+						function: [{ value: 'field', default: 'value' }],
+					},
+				},
+			};
+
+			// Act
+			const result = extractWasherStartCommand(deviceModel, {
+				courseId: 'delicate',
+				parameterOverrides: {
+					course: 'malicious-course', // Try to corrupt course selector
+				},
+			});
+
+			// Assert
+			const inner = result?.dataSetList?.['washerDryer'] as Record<string, unknown>;
+			expect(inner?.['course']).toBe('delicate'); // Course selector still correct
+		});
+
+		it('should not allow parameterOverrides to corrupt smartCourse field', () => {
+			// Arrange
+			const deviceModel = {
+				ControlWifi: {
+					WMStart: {
+						command: 'Set',
+						data: {
+							washerDryer: {},
+						},
+					},
+				},
+				Config: {
+					defaultCourse: 'express',
+					courseType: 'course',
+					smartCourseType: 'smartCourse',
+				},
+				Course: {
+					express: {
+						function: [{ value: 'field', default: 'value' }],
+					},
+				},
+			};
+
+			// Act
+			const result = extractWasherStartCommand(deviceModel, {
+				courseId: 'express',
+				parameterOverrides: {
+					smartCourse: 'hacked-smart-course', // Try to corrupt smartCourse field
+				},
+			});
+
+			// Assert
+			const inner = result?.dataSetList?.['washerDryer'] as Record<string, unknown>;
+			expect(inner?.['smartCourse']).toBe('NOT_SELECTED'); // Smart course sentinel still correct
+		});
+
+		it('should be identical to no-argument case when courseSelection is undefined', () => {
+			// Arrange
+			const deviceModel = {
+				ControlWifi: {
+					WMStart: {
+						command: 'Set',
+						data: {
+							washerDryer: {},
+						},
+					},
+				},
+				Config: {
+					defaultCourse: 'express',
+					courseType: 'course',
+					smartCourseType: 'smartCourse',
+				},
+				Course: {
+					express: {
+						function: [{ value: 'field', default: 'value' }],
+					},
+				},
+			};
+
+			// Act
+			const result1 = extractWasherStartCommand(deviceModel);
+			const result2 = extractWasherStartCommand(deviceModel, undefined);
+			const result3 = extractWasherStartCommand(deviceModel, {});
+
+			// Assert
+			expect(result1?.resolvedCourseId).toBe(result2?.resolvedCourseId);
+			expect(result1?.resolvedCourseId).toBe(result3?.resolvedCourseId);
+			expect(result1?.dataSetList).toEqual(result2?.dataSetList);
+			expect(result1?.dataSetList).toEqual(result3?.dataSetList);
+		});
+
+		it('should include resolvedCourseId in result when course is resolved from default', () => {
+			// Arrange
+			const deviceModel = {
+				ControlWifi: {
+					WMStart: {
+						command: 'Set',
+						data: {
+							washerDryer: {},
+						},
+					},
+				},
+				Config: {
+					defaultCourse: 'express',
+					courseType: 'course',
+					smartCourseType: 'smartCourse',
+				},
+				Course: {
+					express: {
+						function: [{ value: 'field', default: 'value' }],
+					},
+				},
+			};
+
+			// Act
+			const result = extractWasherStartCommand(deviceModel);
+
+			// Assert
+			expect(result?.resolvedCourseId).toBe('express');
+		});
+
+		it('should include resolvedCourseId even when courseSelection is provided but omitted courseId', () => {
+			// Arrange
+			const deviceModel = {
+				ControlWifi: {
+					WMStart: {
+						command: 'Set',
+						data: {
+							washerDryer: {},
+						},
+					},
+				},
+				Config: {
+					defaultCourse: 'normal',
+					courseType: 'course',
+					smartCourseType: 'smartCourse',
+				},
+				Course: {
+					normal: {
+						function: [{ value: 'field', default: 'value' }],
+					},
+				},
+			};
+
+			// Act
+			const result = extractWasherStartCommand(deviceModel, { parameterOverrides: {} });
+
+			// Assert
+			expect(result?.resolvedCourseId).toBe('normal');
+		});
+	});
+
+	describe('parameter overrides precedence', () => {
+		it('should prefer parameter override value over course default', () => {
+			// Arrange: course default is 800, but user override is 400
+			const deviceModel = {
+				ControlWifi: {
+					WMStart: { command: 'Set', data: { washerDryer: {} } },
+				},
+				Config: {
+					defaultCourse: 'delicate',
+					courseType: 'course',
+					smartCourseType: 'smartCourse',
+				},
+				Course: {
+					delicate: {
+						function: [{ value: 'spinSpeed', default: 800 }],
+					},
+				},
+			};
+
+			// Act: pass override value 400 via parameterOverrides
+			const result = extractWasherStartCommand(deviceModel, {
+				courseId: 'delicate',
+				parameterOverrides: { spinSpeed: 400 },
+			});
+
+			// Assert: result should contain override value 400, not default 800
+			const washerDryerData = result?.dataSetList?.['washerDryer'] as Record<string, unknown> | undefined;
+			expect(washerDryerData?.['spinSpeed']).toBe(400);
+		});
+
+		it('should use course default when no override provided', () => {
+			// Arrange: no override, only course default
+			const deviceModel = {
+				ControlWifi: {
+					WMStart: { command: 'Set', data: { washerDryer: {} } },
+				},
+				Config: {
+					defaultCourse: 'delicate',
+					courseType: 'course',
+					smartCourseType: 'smartCourse',
+				},
+				Course: {
+					delicate: {
+						function: [{ value: 'spinSpeed', default: 800 }],
+					},
+				},
+			};
+
+			// Act: no parameterOverrides
+			const result = extractWasherStartCommand(deviceModel, {
+				courseId: 'delicate',
+				parameterOverrides: {},
+			});
+
+			// Assert: should use course default 800
+			const washerDryerData = result?.dataSetList?.['washerDryer'] as Record<string, unknown> | undefined;
+			expect(washerDryerData?.['spinSpeed']).toBe(800);
+		});
+
+		it('should merge multiple parameter overrides correctly', () => {
+			// Arrange: multiple defaults with multiple overrides
+			const deviceModel = {
+				ControlWifi: {
+					WMStart: { command: 'Set', data: { washerDryer: {} } },
+				},
+				Config: {
+					defaultCourse: 'delicate',
+					courseType: 'course',
+					smartCourseType: 'smartCourse',
+				},
+				Course: {
+					delicate: {
+						function: [
+							{ value: 'spinSpeed', default: 800 },
+							{ value: 'waterTemp', default: 30 },
+							{ value: 'washDuration', default: 45 },
+						],
+					},
+				},
+			};
+
+			// Act: override spinSpeed and waterTemp, leave washDuration as default
+			const result = extractWasherStartCommand(deviceModel, {
+				courseId: 'delicate',
+				parameterOverrides: { spinSpeed: 400, waterTemp: 20 },
+			});
+
+			// Assert: overrides take precedence, untouched default is preserved
+			const washerDryerData = result?.dataSetList?.['washerDryer'] as Record<string, unknown> | undefined;
+			expect(washerDryerData?.['spinSpeed']).toBe(400);
+			expect(washerDryerData?.['waterTemp']).toBe(20);
+			expect(washerDryerData?.['washDuration']).toBe(45);
+		});
 	});
 });

@@ -288,6 +288,16 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 				continue;
 			}
 		}
+
+		if (configurator.consumeCourseConfigChanged()) {
+			try {
+				this.saveConfig(this.config);
+			} catch (error) {
+				this.log.error(
+					`Failed to persist auto-populated ThinQ washer course config: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			}
+		}
 	}
 
 	public override async onChangeLoggerLevel(logLevel: LogLevel): Promise<void> {

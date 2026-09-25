@@ -191,6 +191,57 @@
 																		"description": "Turning this on lets Apple Home send a real stop/cancel command to the physical washer. Off by default.",
 																		"type": "boolean",
 																		"default": false
+																	},
+																	"allowRemoteStart": {
+																		"title": "Allow Remote Start (Washer)",
+																		"description": "Turning this on lets Apple Home send a real Start command to the physical washer, using the washer's own model-declared default wash course. This is materially higher risk than Stop (it can start a wash cycle with water/detergent/power). Off by default — enable only when you are ready to verify it yourself.",
+																		"type": "boolean",
+																		"default": false
+																	},
+																	"selectedCourse": {
+																		"title": "Selected Wash Course",
+																		"description": "The wash course used when Remote Start is triggered. Auto-filled with the washer's own default course on first discovery. Type the exact Course ID from the list below to change it — this field is plain text and does not validate against the list.",
+																		"type": "string"
+																	},
+																	"courses": {
+																		"title": "Wash Courses (auto-populated)",
+																		"description": "Auto-populated from the washer's own model data on plugin startup. Each course lists its parameters; edit a parameter's Value to override what Remote Start sends for that course. Values are stored as text; number/boolean parameters are converted back automatically when Start is sent.",
+																		"type": "array",
+																		"items": {
+																			"type": "object",
+																			"properties": {
+																				"id": {
+																					"title": "Course ID",
+																					"type": "string",
+																					"readOnly": true
+																				},
+																				"parameters": {
+																					"title": "Parameters",
+																					"type": "array",
+																					"items": {
+																						"type": "object",
+																						"properties": {
+																							"name": {
+																								"title": "Parameter",
+																								"type": "string",
+																								"readOnly": true
+																							},
+																							"value": {
+																								"title": "Value",
+																								"type": "string"
+																							},
+																							"valueType": {
+																								"title": "Original Type",
+																								"type": "string",
+																								"readOnly": true
+																							}
+																						},
+																						"required": ["name", "value"]
+																					}
+																				}
+																			},
+																			"required": ["id"]
+																		}
 																	}
 																}
 															}
@@ -373,6 +424,51 @@
 																			"description": "Turning this on lets Apple Home send a real Start command to the physical washer, using the washer's own model-declared default wash course. This is materially higher risk than Stop (it can start a wash cycle with water/detergent/power). Off by default — enable only when you are ready to verify it yourself.",
 																			"type": "boolean",
 																			"default": false
+																		},
+																		"selectedCourse": {
+																			"title": "Selected Wash Course",
+																			"description": "The wash course used when Remote Start is triggered. Auto-filled with the washer's own default course on first discovery. Type the exact Course ID from the list below to change it — this field is plain text and does not validate against the list.",
+																			"type": "string"
+																		},
+																		"courses": {
+																			"title": "Wash Courses (auto-populated)",
+																			"description": "Auto-populated from the washer's own model data on plugin startup. Each course lists its parameters; edit a parameter's Value to override what Remote Start sends for that course. Values are stored as text; number/boolean parameters are converted back automatically when Start is sent.",
+																			"type": "array",
+																			"items": {
+																				"type": "object",
+																				"properties": {
+																					"id": {
+																						"title": "Course ID",
+																						"type": "string",
+																						"readOnly": true
+																					},
+																					"parameters": {
+																						"title": "Parameters",
+																						"type": "array",
+																						"items": {
+																							"type": "object",
+																							"properties": {
+																								"name": {
+																									"title": "Parameter",
+																									"type": "string",
+																									"readOnly": true
+																								},
+																								"value": {
+																									"title": "Value",
+																									"type": "string"
+																								},
+																								"valueType": {
+																									"title": "Original Type",
+																									"type": "string",
+																									"readOnly": true
+																								}
+																							},
+																							"required": ["name", "value"]
+																						}
+																					}
+																				},
+																				"required": ["id"]
+																			}
 																		}
 																	}
 																}

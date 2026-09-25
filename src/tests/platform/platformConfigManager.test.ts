@@ -785,4 +785,206 @@ describe('PlatformConfigManager', () => {
 			expect(result).toEqual({ allowFilterReset: false });
 		});
 	});
+
+	describe('ensureWasherControlEntry', () => {
+		it('should return a new empty object when device entry has no washerControl', () => {
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'washer-123',
+							// No washerControl property
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const result = manager.ensureWasherControlEntry('washer-123');
+
+			expect(result).toBeDefined();
+			expect(result).toEqual({});
+		});
+
+		it('should attach washerControl to device entry when missing', () => {
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'washer-123',
+							// No washerControl property
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const result = manager.ensureWasherControlEntry('washer-123');
+
+			// Mutate the returned object
+			result.allowRemoteStart = true;
+
+			// Re-read the device entry to verify mutation persists
+			const reread = manager.getWasherControlConfig('washer-123');
+			expect(reread.allowRemoteStart).toBe(true);
+		});
+
+		it('should return existing washerControl when device entry already has one', () => {
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'washer-123',
+							washerControl: { allowRemoteStop: true, allowRemoteStart: false },
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const result = manager.ensureWasherControlEntry('washer-123');
+
+			expect(result).toEqual({ allowRemoteStop: true, allowRemoteStart: false });
+		});
+
+		it('should return same object reference for existing washerControl', () => {
+			const washerControl = { allowRemoteStop: true };
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'washer-123',
+							washerControl,
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const result = manager.ensureWasherControlEntry('washer-123');
+
+			expect(result).toBe(washerControl); // Same reference
+		});
+
+		it('should return empty object when device not found', () => {
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const result = manager.ensureWasherControlEntry('unknown-washer');
+
+			expect(result).toEqual({});
+		});
+
+		it('should not mutate config.thinq.devices when device not found', () => {
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			manager.ensureWasherControlEntry('unknown-washer');
+
+			expect(config.thinq?.devices).toHaveLength(0);
+		});
+
+		it('should preserve existing washerControl fields when ensuring entry', () => {
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'washer-123',
+							washerControl: {
+								allowRemoteStart: true,
+								allowRemoteStop: true,
+								selectedCourse: 'express',
+								courses: [
+									{
+										id: 'express',
+										parameters: [],
+									},
+								],
+							},
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const result = manager.ensureWasherControlEntry('washer-123');
+
+			expect(result.allowRemoteStart).toBe(true);
+			expect(result.selectedCourse).toBe('express');
+			expect(result.courses).toHaveLength(1);
+		});
+
+		it('should not affect getWasherControlConfig existing tests', () => {
+			// Regression test: existing getWasherControlConfig behavior unchanged
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'washer-123',
+							washerControl: { allowRemoteStop: true },
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const getResult = manager.getWasherControlConfig('washer-123');
+
+			expect(getResult).toEqual({ allowRemoteStop: true });
+		});
+
+		it('should not affect getWasherControlConfig when device has no washerControl', () => {
+			// Regression test: getWasherControlConfig returns fresh {} when washerControl absent
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'washer-123',
+							// No washerControl
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const getResult = manager.getWasherControlConfig('washer-123');
+
+			expect(getResult).toEqual({});
+		});
+	});
 });

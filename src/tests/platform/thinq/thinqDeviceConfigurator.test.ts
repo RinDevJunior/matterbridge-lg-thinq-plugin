@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ThinqAirConditionerDevice, ThinqWasherDevice } from '../../../core/domain/entities/ThinqDevice.js';
 import { DEFAULT_AIR_CONDITIONER_CAPABILITIES } from '../../../core/domain/value-objects/AirConditionerCapabilities.js';
 import { ThinqSnapshot } from '../../../core/domain/value-objects/ThinqSnapshot.js';
+import type { ThinqWasherControlConfig } from '../../../model/LgThinqPluginPlatformConfig.js';
 import type { PlatformConfigManager } from '../../../platform/platformConfigManager.js';
 import { registerAirConditionerCommandHandlers } from '../../../platform/thinq/thinqAirConditionerCommandHandlers.js';
 import { buildAirConditionerEndpoint } from '../../../platform/thinq/thinqAirConditionerEndpointFactory.js';
@@ -500,21 +501,50 @@ describe('ThinqDeviceConfigurator', () => {
 			expect(call.length).toBe(6);
 		});
 
-		it('should call getDeviceModel twice (once for stop, once for start)', async () => {
+		it('should call getDeviceModel three times (once for catalog, once for stop, once for start)', async () => {
 			// Arrange
 			const device = createMockWasherDevice();
-			const getDeviceModelSpy = vi.fn().mockResolvedValue({});
+			const getDeviceModelSpy = vi.fn().mockResolvedValue({
+				ControlWifi: {
+					WMStop: { data: { washerDryer: {} } },
+					WMStart: { command: 'Set', data: { washerDryer: {} } },
+				},
+				Config: {
+					defaultCourse: 'express',
+					courseType: 'course',
+					smartCourseType: 'smartCourse',
+				},
+				Course: {
+					express: {
+						function: [{ value: 'spinSpeed', default: 1200 }],
+					},
+				},
+			});
 			const apiClientWithSpy = asPartial<ThinqApiClient>({
 				getDeviceModel: getDeviceModelSpy,
 				sendCommand: vi.fn().mockResolvedValue(undefined),
 			});
-			const configuratorWithSpy = new ThinqDeviceConfigurator(mockLogger, apiClientWithSpy, mockConfigManager);
+			const ensureWasherControlEntrySpy = vi.fn().mockReturnValue({});
+			const mockConfigManagerWithSpy = asPartial<PlatformConfigManager>({
+				getDeviceCapabilities: vi.fn().mockReturnValue(DEFAULT_AIR_CONDITIONER_CAPABILITIES),
+				getWasherControlConfig: vi.fn().mockReturnValue({}),
+				getAcFilterControlConfig: vi.fn().mockReturnValue({}),
+				ensureWasherControlEntry: ensureWasherControlEntrySpy,
+				overrideMatterConfiguration: false,
+				matterOverrideSettings: {
+					matterVendorName: 'Matterbridge',
+					matterVendorId: 0xfff1,
+				},
+				getProductNameForDevice: vi.fn().mockReturnValue(undefined),
+				getProductIdForDevice: vi.fn().mockReturnValue(undefined),
+			});
+			const configuratorWithSpy = new ThinqDeviceConfigurator(mockLogger, apiClientWithSpy, mockConfigManagerWithSpy);
 
 			// Act
 			await configuratorWithSpy.registerWasher(device);
 
 			// Assert
-			expect(getDeviceModelSpy).toHaveBeenCalledTimes(2);
+			expect(getDeviceModelSpy).toHaveBeenCalledTimes(3); // catalog, stop, start
 		});
 
 		it('should register switch handlers when child endpoint exists', async () => {
@@ -584,6 +614,453 @@ describe('ThinqDeviceConfigurator', () => {
 
 			// Assert
 			expect(registerSwitchHandlersSpy).not.toHaveBeenCalled();
+		});
+
+		it('should fetch device model and reconcile course config when catalog available', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const getDeviceModelSpy = vi.fn().mockResolvedValue({
+				Course: { express: { function: [{ value: 'spinSpeed', default: 1200 }] } },
+				Config: { defaultCourse: 'express' },
+			});
+			const apiClientWithSpy = asPartial<ThinqApiClient>({
+				getDeviceModel: getDeviceModelSpy,
+				sendCommand: vi.fn().mockResolvedValue(undefined),
+			});
+			const ensureWasherControlEntrySpy = vi.fn().mockReturnValue({});
+			const mockConfigManagerWithSpy = asPartial<PlatformConfigManager>({
+				getDeviceCapabilities: vi.fn().mockReturnValue(DEFAULT_AIR_CONDITIONER_CAPABILITIES),
+				getWasherControlConfig: vi.fn().mockReturnValue({}),
+				getAcFilterControlConfig: vi.fn().mockReturnValue({}),
+				ensureWasherControlEntry: ensureWasherControlEntrySpy,
+				overrideMatterConfiguration: false,
+				matterOverrideSettings: {
+					matterVendorName: 'Matterbridge',
+					matterVendorId: 0xfff1,
+				},
+				getProductNameForDevice: vi.fn().mockReturnValue(undefined),
+				getProductIdForDevice: vi.fn().mockReturnValue(undefined),
+			});
+			const configuratorWithSpy = new ThinqDeviceConfigurator(mockLogger, apiClientWithSpy, mockConfigManagerWithSpy);
+
+			// Act
+			await configuratorWithSpy.registerWasher(device);
+
+			// Assert
+			expect(ensureWasherControlEntrySpy).toHaveBeenCalledWith('washer-456');
+		});
+
+		it('should not call ensureWasherControlEntry when course catalog is undefined', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const getDeviceModelSpy = vi.fn().mockResolvedValue({
+				// Invalid model - no Course data
+			});
+			const apiClientWithSpy = asPartial<ThinqApiClient>({
+				getDeviceModel: getDeviceModelSpy,
+				sendCommand: vi.fn().mockResolvedValue(undefined),
+			});
+			const ensureWasherControlEntrySpy = vi.fn().mockReturnValue({});
+			const mockConfigManagerWithSpy = asPartial<PlatformConfigManager>({
+				getDeviceCapabilities: vi.fn().mockReturnValue(DEFAULT_AIR_CONDITIONER_CAPABILITIES),
+				getWasherControlConfig: vi.fn().mockReturnValue({}),
+				getAcFilterControlConfig: vi.fn().mockReturnValue({}),
+				ensureWasherControlEntry: ensureWasherControlEntrySpy,
+				overrideMatterConfiguration: false,
+				matterOverrideSettings: {
+					matterVendorName: 'Matterbridge',
+					matterVendorId: 0xfff1,
+				},
+				getProductNameForDevice: vi.fn().mockReturnValue(undefined),
+				getProductIdForDevice: vi.fn().mockReturnValue(undefined),
+			});
+			const configuratorWithSpy = new ThinqDeviceConfigurator(mockLogger, apiClientWithSpy, mockConfigManagerWithSpy);
+
+			// Act
+			await configuratorWithSpy.registerWasher(device);
+
+			// Assert
+			expect(ensureWasherControlEntrySpy).not.toHaveBeenCalled();
+		});
+
+		it('should set courseConfigChanged to true when config was backfilled', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const getDeviceModelSpy = vi.fn().mockResolvedValue({
+				Course: {
+					courseA: {
+						function: [{ value: 'spinSpeed', default: 1200 }],
+					},
+				},
+				Config: { defaultCourse: 'courseA' },
+			});
+			const apiClientWithSpy = asPartial<ThinqApiClient>({
+				getDeviceModel: getDeviceModelSpy,
+				sendCommand: vi.fn().mockResolvedValue(undefined),
+			});
+			const ensureWasherControlEntrySpy = vi.fn().mockReturnValue({}); // Empty, will be backfilled
+			const mockConfigManagerWithSpy = asPartial<PlatformConfigManager>({
+				getDeviceCapabilities: vi.fn().mockReturnValue(DEFAULT_AIR_CONDITIONER_CAPABILITIES),
+				getWasherControlConfig: vi.fn().mockReturnValue({}),
+				getAcFilterControlConfig: vi.fn().mockReturnValue({}),
+				ensureWasherControlEntry: ensureWasherControlEntrySpy,
+				overrideMatterConfiguration: false,
+				matterOverrideSettings: {
+					matterVendorName: 'Matterbridge',
+					matterVendorId: 0xfff1,
+				},
+				getProductNameForDevice: vi.fn().mockReturnValue(undefined),
+				getProductIdForDevice: vi.fn().mockReturnValue(undefined),
+			});
+			const configuratorWithSpy = new ThinqDeviceConfigurator(mockLogger, apiClientWithSpy, mockConfigManagerWithSpy);
+
+			// Act
+			await configuratorWithSpy.registerWasher(device);
+
+			// Assert
+			expect(configuratorWithSpy.consumeCourseConfigChanged()).toBe(true);
+		});
+
+		it('should return false from consumeCourseConfigChanged when no backfill occurred', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const fullWasherControl = {
+				allowRemoteStart: true,
+				allowRemoteStop: true,
+				selectedCourse: 'courseA',
+				courses: [
+					{
+						id: 'courseA',
+						parameters: [{ name: 'spinSpeed', value: '1200', valueType: 'number' }],
+					},
+				],
+			};
+			const getDeviceModelSpy = vi.fn().mockResolvedValue({
+				Course: {
+					courseA: {
+						function: [{ value: 'spinSpeed', default: 1200 }],
+					},
+				},
+				Config: { defaultCourse: 'courseA' },
+			});
+			const apiClientWithSpy = asPartial<ThinqApiClient>({
+				getDeviceModel: getDeviceModelSpy,
+				sendCommand: vi.fn().mockResolvedValue(undefined),
+			});
+			const ensureWasherControlEntrySpy = vi.fn().mockReturnValue(fullWasherControl); // Already full
+			const mockConfigManagerWithSpy = asPartial<PlatformConfigManager>({
+				getDeviceCapabilities: vi.fn().mockReturnValue(DEFAULT_AIR_CONDITIONER_CAPABILITIES),
+				getWasherControlConfig: vi.fn().mockReturnValue(fullWasherControl),
+				getAcFilterControlConfig: vi.fn().mockReturnValue({}),
+				ensureWasherControlEntry: ensureWasherControlEntrySpy,
+				overrideMatterConfiguration: false,
+				matterOverrideSettings: {
+					matterVendorName: 'Matterbridge',
+					matterVendorId: 0xfff1,
+				},
+				getProductNameForDevice: vi.fn().mockReturnValue(undefined),
+				getProductIdForDevice: vi.fn().mockReturnValue(undefined),
+			});
+			const configuratorWithSpy = new ThinqDeviceConfigurator(mockLogger, apiClientWithSpy, mockConfigManagerWithSpy);
+
+			// Act
+			await configuratorWithSpy.registerWasher(device);
+
+			// Assert
+			expect(configuratorWithSpy.consumeCourseConfigChanged()).toBe(false);
+		});
+
+		it('should reset consumeCourseConfigChanged to false after being read', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const getDeviceModelSpy = vi.fn().mockResolvedValue({
+				Course: {
+					courseA: {
+						function: [{ value: 'spinSpeed', default: 1200 }],
+					},
+				},
+				Config: { defaultCourse: 'courseA' },
+			});
+			const apiClientWithSpy = asPartial<ThinqApiClient>({
+				getDeviceModel: getDeviceModelSpy,
+				sendCommand: vi.fn().mockResolvedValue(undefined),
+			});
+			const ensureWasherControlEntrySpy = vi.fn().mockReturnValue({});
+			const mockConfigManagerWithSpy = asPartial<PlatformConfigManager>({
+				getDeviceCapabilities: vi.fn().mockReturnValue(DEFAULT_AIR_CONDITIONER_CAPABILITIES),
+				getWasherControlConfig: vi.fn().mockReturnValue({}),
+				getAcFilterControlConfig: vi.fn().mockReturnValue({}),
+				ensureWasherControlEntry: ensureWasherControlEntrySpy,
+				overrideMatterConfiguration: false,
+				matterOverrideSettings: {
+					matterVendorName: 'Matterbridge',
+					matterVendorId: 0xfff1,
+				},
+				getProductNameForDevice: vi.fn().mockReturnValue(undefined),
+				getProductIdForDevice: vi.fn().mockReturnValue(undefined),
+			});
+			const configuratorWithSpy = new ThinqDeviceConfigurator(mockLogger, apiClientWithSpy, mockConfigManagerWithSpy);
+
+			// Act
+			await configuratorWithSpy.registerWasher(device);
+			const first = configuratorWithSpy.consumeCourseConfigChanged();
+			const second = configuratorWithSpy.consumeCourseConfigChanged();
+
+			// Assert
+			expect(first).toBe(true);
+			expect(second).toBe(false);
+		});
+
+		it('should retrieve backfilled washer control config after reconciliation', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const washerControlWithSelection = {
+				selectedCourse: 'delicate',
+				courses: [
+					{
+						id: 'delicate',
+						parameters: [
+							{ name: 'spinSpeed', value: '600', valueType: 'number' },
+							{ name: 'waterTemp', value: '30', valueType: 'number' },
+						],
+					},
+				],
+			};
+			const validModel = {
+				ControlWifi: {
+					WMStop: { data: { washerDryer: {} } },
+					WMStart: {
+						command: 'Set',
+						data: { washerDryer: {} },
+					},
+				},
+				Config: {
+					defaultCourse: 'express',
+					courseType: 'course',
+					smartCourseType: 'smartCourse',
+				},
+				Course: {
+					express: {
+						function: [
+							{ value: 'spinSpeed', default: 1200 },
+							{ value: 'waterTemp', default: 60 },
+						],
+					},
+					delicate: {
+						function: [
+							{ value: 'spinSpeed', default: 600 },
+							{ value: 'waterTemp', default: 30 },
+						],
+					},
+				},
+			};
+			const getDeviceModelSpy = vi.fn().mockResolvedValue(validModel);
+			const apiClientWithSpy = asPartial<ThinqApiClient>({
+				getDeviceModel: getDeviceModelSpy,
+				sendCommand: vi.fn().mockResolvedValue(undefined),
+			});
+			const ensureWasherControlEntrySpy = vi.fn().mockReturnValue(washerControlWithSelection);
+			const getWasherControlConfigSpy = vi
+				.fn()
+				.mockReturnValueOnce({}) // First call in registerWasher
+				.mockReturnValueOnce(washerControlWithSelection); // Second call after backfill
+			const mockConfigManagerWithSpy = asPartial<PlatformConfigManager>({
+				getDeviceCapabilities: vi.fn().mockReturnValue(DEFAULT_AIR_CONDITIONER_CAPABILITIES),
+				getWasherControlConfig: getWasherControlConfigSpy,
+				getAcFilterControlConfig: vi.fn().mockReturnValue({}),
+				ensureWasherControlEntry: ensureWasherControlEntrySpy,
+				overrideMatterConfiguration: false,
+				matterOverrideSettings: {
+					matterVendorName: 'Matterbridge',
+					matterVendorId: 0xfff1,
+				},
+				getProductNameForDevice: vi.fn().mockReturnValue(undefined),
+				getProductIdForDevice: vi.fn().mockReturnValue(undefined),
+			});
+			const configuratorWithSpy = new ThinqDeviceConfigurator(mockLogger, apiClientWithSpy, mockConfigManagerWithSpy);
+
+			// Act
+			await configuratorWithSpy.registerWasher(device);
+
+			// Assert - verify config was read after backfill with selectedCourse set
+			const calls = vi.mocked(getWasherControlConfigSpy).mock.calls;
+			expect(calls.length).toBeGreaterThanOrEqual(2);
+			// The second call should get the backfilled config
+			expect(calls[1]?.[0]).toBe('washer-456');
+		});
+
+		it('should gracefully skip course backfill when getDeviceModel throws', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const validModel = {
+				ControlWifi: {
+					WMStop: { data: { washerDryer: {} } },
+					WMStart: {
+						command: 'Set',
+						data: { washerDryer: {} },
+					},
+				},
+				Config: {
+					defaultCourse: 'express',
+					courseType: 'course',
+					smartCourseType: 'smartCourse',
+				},
+				Course: {
+					express: {
+						function: [{ value: 'spinSpeed', default: 1200 }],
+					},
+				},
+			};
+			const getDeviceModelSpy = vi
+				.fn()
+				.mockRejectedValueOnce(new Error('Network error')) // Catalog fetch fails
+				.mockResolvedValueOnce(validModel) // Stop fetch succeeds
+				.mockResolvedValueOnce(validModel); // Start fetch succeeds
+			const apiClientWithSpy = asPartial<ThinqApiClient>({
+				getDeviceModel: getDeviceModelSpy,
+				sendCommand: vi.fn().mockResolvedValue(undefined),
+			});
+			const mockConfigManagerWithSpy = asPartial<PlatformConfigManager>({
+				getDeviceCapabilities: vi.fn().mockReturnValue(DEFAULT_AIR_CONDITIONER_CAPABILITIES),
+				getWasherControlConfig: vi.fn().mockReturnValue({}),
+				getAcFilterControlConfig: vi.fn().mockReturnValue({}),
+				ensureWasherControlEntry: vi.fn().mockReturnValue({}),
+				overrideMatterConfiguration: false,
+				matterOverrideSettings: {
+					matterVendorName: 'Matterbridge',
+					matterVendorId: 0xfff1,
+				},
+				getProductNameForDevice: vi.fn().mockReturnValue(undefined),
+				getProductIdForDevice: vi.fn().mockReturnValue(undefined),
+			});
+			const configuratorWithSpy = new ThinqDeviceConfigurator(mockLogger, apiClientWithSpy, mockConfigManagerWithSpy);
+
+			// Act & Assert - should not throw, should gracefully handle error
+			await expect(configuratorWithSpy.registerWasher(device)).resolves.toBeDefined();
+			// Verification: getDeviceModel was called 3 times (catalog fails, stop succeeds, start succeeds)
+			expect(getDeviceModelSpy).toHaveBeenCalledTimes(3);
+		});
+
+		it('should preserve existing washerControl args passed to registerWasherCommandHandlers', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const washerControl = { allowRemoteStop: true, allowRemoteStart: false };
+			const registerHandlersSpy = vi.mocked(registerWasherCommandHandlers);
+			vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue(washerControl);
+
+			// Act
+			await configurator.registerWasher(device);
+
+			// Assert
+			const call = registerHandlersSpy.mock.calls[0];
+			expect(call?.[4]).toEqual(washerControl); // Regression: washerControl param unchanged
+		});
+
+		it('should preserve device id in getWasherControlConfig calls', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const getConfigSpy = vi.mocked(mockConfigManager.getWasherControlConfig);
+
+			// Act
+			await configurator.registerWasher(device);
+
+			// Assert
+			// Should be called twice: once in registerWasher, once after reconcile
+			expect(getConfigSpy).toHaveBeenCalledWith('washer-456');
+		});
+
+		it('end-to-end: config-overridden course parameters reach registerWasherRemoteStartStopSwitchCommandHandlers payload', async () => {
+			// This test proves the complete feature: user-edited config values flow through registerWasher()
+			// into the real start command payload passed to registerWasherRemoteStartStopSwitchCommandHandlers
+			//
+			// Arrange: pre-seed config with washerControl containing user-edited parameter values
+			const device = createMockWasherDevice();
+			const preSeededWasherControl = asPartial<ThinqWasherControlConfig>({
+				selectedCourse: 'delicate',
+				courses: [
+					{
+						id: 'delicate',
+						parameters: [
+							{ name: 'spinSpeed', value: '400', valueType: 'number' }, // User edited value
+						],
+					},
+				],
+			});
+
+			// Device model where delicate course has a DIFFERENT default than config override
+			const deviceModel = {
+				ControlWifi: {
+					WMStop: { data: { washerDryer: {} } },
+					WMStart: { command: 'Set', data: { washerDryer: {} } },
+				},
+				Config: { defaultCourse: 'express', courseType: 'course', smartCourseType: 'smartCourse' },
+				Course: {
+					express: { function: [{ value: 'spinSpeed', default: 1200 }] },
+					delicate: { function: [{ value: 'spinSpeed', default: 800 }] }, // Model default differs: 400 vs 800
+				},
+			};
+
+			// Create fresh mocks for this test
+			const apiClientWithSpy = asPartial<ThinqApiClient>({
+				getDeviceModel: vi
+					.fn()
+					.mockResolvedValueOnce(deviceModel) // catalog fetch
+					.mockResolvedValueOnce(deviceModel) // stop fetch
+					.mockResolvedValueOnce(deviceModel), // start fetch
+				sendCommand: vi.fn().mockResolvedValue(undefined),
+			});
+
+			const mockConfigManagerWithSpy = asPartial<PlatformConfigManager>({
+				getDeviceCapabilities: vi.fn().mockReturnValue(DEFAULT_AIR_CONDITIONER_CAPABILITIES),
+				getWasherControlConfig: vi.fn().mockReturnValue(preSeededWasherControl),
+				getAcFilterControlConfig: vi.fn().mockReturnValue({}),
+				ensureWasherControlEntry: vi.fn().mockReturnValue(preSeededWasherControl),
+				overrideMatterConfiguration: false,
+				matterOverrideSettings: { matterVendorName: 'Matterbridge', matterVendorId: 0xfff1 },
+				getProductNameForDevice: vi.fn().mockReturnValue(undefined),
+				getProductIdForDevice: vi.fn().mockReturnValue(undefined),
+			});
+
+			const configuratorWithSpy = new ThinqDeviceConfigurator(mockLogger, apiClientWithSpy, mockConfigManagerWithSpy);
+
+			// Mock buildWasherEndpoint to return an endpoint with a working child
+			const mockChild = { addCommandHandler: vi.fn() };
+			const mockWasherEndpoint = asPartial<any>({
+				log: { debug: vi.fn(), info: vi.fn(), error: vi.fn() },
+				getChildEndpointById: vi.fn().mockReturnValue(mockChild),
+			});
+			vi.mocked(buildWasherEndpoint).mockReturnValueOnce(mockWasherEndpoint);
+
+			// Get the mocked extractWasherStartCommand to verify call arguments
+			// Return a minimal payload so the code path doesn't crash (actual content is tested in resolver unit tests)
+			const { extractWasherStartCommand: mockedExtractWasherStartCommand } =
+				await import('../../../platform/thinq/thinqWasherStartCommandResolver.js');
+			vi.mocked(mockedExtractWasherStartCommand).mockReturnValue({
+				command: 'Set',
+				dataSetList: { washerDryer: {} },
+				resolvedCourseId: 'delicate',
+			});
+
+			// Act: call registerWasher with the pre-seeded config
+			await configuratorWithSpy.registerWasher(device);
+
+			// Assert: verify registerWasher() processes the config with overridden parameters
+			// Verify registerWasher() successfully runs the course resolution flow with seeded config
+			const getConfigSpy = vi.mocked(mockConfigManagerWithSpy.getWasherControlConfig);
+			expect(getConfigSpy).toHaveBeenCalledWith('washer-456');
+			// Verify the config manager was called at least twice (initial read + after reconcile)
+			expect(getConfigSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+
+			// CRITICAL ASSERTION: Verify that extractWasherStartCommand was called with the resolved courseSelection
+			// argument containing the user-edited override value (400), not the model default (800)
+			// This proves the real config→override resolution logic works end-to-end
+			expect(vi.mocked(mockedExtractWasherStartCommand)).toHaveBeenCalledWith(
+				expect.anything(), // deviceModel
+				expect.objectContaining({
+					courseId: 'delicate',
+					parameterOverrides: expect.objectContaining({ spinSpeed: 400 }),
+				}),
+			);
 		});
 	});
 });
