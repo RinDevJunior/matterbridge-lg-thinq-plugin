@@ -28,7 +28,6 @@ export class PlatformConfigManager {
 		private readonly log: AnsiLogger,
 	) {
 		this.config.thinq ??= createDefaultThinqConfig();
-		this.config.webos ??= { devices: [] };
 		this.config.advancedFeature ??= createDefaultAdvancedFeature();
 	}
 

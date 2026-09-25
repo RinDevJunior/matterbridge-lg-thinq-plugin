@@ -1,4 +1,4 @@
-import { MatterbridgeEndpoint } from 'matterbridge';
+import { MatterbridgeEndpoint, onOffPlugInUnit } from 'matterbridge';
 import { LaundryWasher } from 'matterbridge/devices';
 
 import type { ThinqWasherDevice } from '../../core/domain/entities/ThinqDevice.js';
@@ -13,6 +13,12 @@ export interface BuildWasherEndpointOptions {
 	productId?: number;
 	productName?: string;
 }
+
+/**
+ * Child endpoint name for the washer's remote Start/Stop switch — the only Apple-Home-visible
+ * control surface, since Apple Home renders no UI at all for the native `LaundryWasher` device type.
+ */
+export const WASHER_REMOTE_START_STOP_SWITCH_ID = 'RemoteStartStopSwitch';
 
 /**
  * Builds a Matterbridge `LaundryWasher`-shaped endpoint for a ThinQ Washer device.
@@ -33,5 +39,12 @@ export function buildWasherEndpoint(
 		options?.productId ?? 0x8000,
 		options?.productName ?? 'Matterbridge Laundry Washer',
 	);
+
+	washer
+		.addChildDeviceType(WASHER_REMOTE_START_STOP_SWITCH_ID, [onOffPlugInUnit])
+		.createDefaultIdentifyClusterServer()
+		.createDefaultOnOffClusterServer(false)
+		.addRequiredClusterServers();
+
 	return washer;
 }

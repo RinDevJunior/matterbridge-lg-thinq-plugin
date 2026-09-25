@@ -3,6 +3,7 @@ import { AnsiLogger } from 'matterbridge/logger';
 import { OnOff, OperationalState } from 'matterbridge/matter/clusters';
 
 import type { ThinqSnapshot } from '../../core/domain/value-objects/ThinqSnapshot.js';
+import { WASHER_REMOTE_START_STOP_SWITCH_ID } from './thinqWasherEndpointFactory.js';
 
 /** Maps a ThinQ washer snapshot to a Matter `OperationalState.OperationalStateEnum`. */
 export function mapWasherStateToOperationalState(snapshot: ThinqSnapshot): OperationalState.OperationalStateEnum {
@@ -56,5 +57,10 @@ export async function applyThinqSnapshotToWasher(
 
 	if (snapshot.washerRemainingDurationSeconds !== undefined) {
 		await washer.updateAttribute(OperationalState.id, 'countdownTime', snapshot.washerRemainingDurationSeconds, logger);
+	}
+
+	const remoteStartStopSwitch = washer.getChildEndpointById(WASHER_REMOTE_START_STOP_SWITCH_ID);
+	if (remoteStartStopSwitch) {
+		await remoteStartStopSwitch.updateAttribute(OnOff.id, 'onOff', snapshot.isWasherRunning, logger);
 	}
 }

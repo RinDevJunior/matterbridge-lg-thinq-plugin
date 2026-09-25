@@ -110,6 +110,16 @@ It is version-controlled — commit and push changes so teammates can pull the l
   into `registerAirConditionerCommandHandlers` — that function has 39 existing call sites in its test
   file that a new required param would break. See `workspace/ac-filter-monitoring/plan-v2-reset.md`.
 
+- ThinQ Washer remote Start+switch planned (Sep 24, 2026): `WMStart` ctrlKey is literal `"WMStart"`
+  (NOT `"WMControl"` like Stop). New `thinqWasherStartCommandResolver.ts` merges model's
+  `Course[Config.defaultCourse].function[]` defaults into `ControlWifi.WMStart.data.<dev>` template,
+  keyed by `Config.courseType`/`Config.smartCourseType`'s own string values — no per-device course
+  picker. New `onOffOutlet` child (`WASHER_REMOTE_START_STOP_SWITCH_ID`) is the ONLY Apple-Home-visible
+  washer control (LaundryWasher itself renders no UI). `performWasherStop` extracted verbatim from
+  existing `stop` handler so switch `off` reuses it unchanged; `resolveWasherStartCommandPayload` is a
+  fully separate `getDeviceModel()` fetch, deliberately not sharing Stop's fetch. See
+  `workspace/washer-remote-start-stop-switch/plan.md`.
+
 ## Test Patterns
 
 - **ThinQ partial push presence-gating tests (Sep 19, 2026):** `ThinqSnapshot.has(key)` returns true iff `data[key]` is neither undefined nor null (falsy values like 0, false, '' still count as present). `applyThinqSnapshotToAirConditioner` gates each Matter attribute write on `snapshot.has(sourceKey)`: operation required for OnOff/0-write, operation+opMode for systemMode (or opMode+OnOff-current-true for power-derived mode), windStrength for fanMode, swing axes for rockSetting. systemMode derives from opMode only when: operation=0 (→ Off), operation=1+opMode present (→ mapped), operation=1 only (→ skip), opMode only+OnOff true (→ mapped), else skip. Energy: operation present gates the zero-when-off fallback. Debug log two-line format: first lists pushed attributes, second lists skipped. `applyAuxiliaryToggleSnapshot` skips toggle when spec.dataKey absent from snapshot.
@@ -141,8 +151,6 @@ It is version-controlled — commit and push changes so teammates can pull the l
 
 <!-- Things to avoid — bugs found, anti-patterns, footguns -->
 
-- `handleCleaningWithoutInfo`'s `selectedAreas[0]` pin (`serviceAreaHandler.ts:311`) DOES reuse last-known `currentArea` first (PR #150/ef1efb1) via `robot.getAttribute(ServiceArea.id,'currentArea',...)` — this is the ONLY call site of that read in `src/`; re-verified Aug 3, 2026 against a fresh real-S8 log: all 34 occurrences match the prior write correctly. A prior note claiming this read was unreliable and had an Aug-25 `AreaManagementService.lastKnownAreaCache` fix was WRONG — that field never existed in `src/` (confirmed via grep) — do not rely on it existing.
-- `resolveAreaFromCleaningInfo`'s falsy-zero check is fixed (`mappedArea === undefined`, `serviceAreaHandler.ts:405`) — confirmed correct Jul 25, no gap.
 - `DockStationStatus.isUpdownWaterReady` (bits 0-1 of dss) is parsed/observable but EXCLUDED from `hasError()`/`getMatterOperationalError()` (Jul 22, 2026 fix, `rvc-unable-to-complete-cleaning-error`). Real hardware shows it=1 (Error) as steady-state idle/charging, not transient fault — unreliable error signal, unlike the 5 other dss fields.
 - `modeResolver.ts`'s `createDefaultModeResolver`/`createSmartModeResolver` `customCheckFn` OneTime branch (pre-fix Jul 22) unconditionally returned `VacFollowedByMop` mode (11) regardless of `configs` — real `seq_type` wire field (`v1StatusListener.ts:96`) reaches it on ANY non-B01 device (`connectionService.ts:161`), not just capability-gated ones. Fix: gate on `configs.some(mode===11)`, computed once per factory call (closures already have `configs` in scope, no signature change).
 - CORRECTED (Sep 17, 2026): prior "Phase 1 auth fields not exposed in schema.json" note was stale — fixed same-day by commit `7366426` (`dependencies.if/then/else` block, mirrors roborock's `authenticationMethod` pattern). Schema/config.json now fully sync w/ `LgThinqPluginPlatformConfig.ts`; verified field-by-field Sep 17. See `workspace/schema-config-gap/plan.md`.
@@ -152,6 +160,7 @@ It is version-controlled — commit and push changes so teammates can pull the l
 - ThinQ MQTT message shape confirmed identical to REST snapshot shape: `{ deviceId, data: { state: { reported: {...} } } }`, and `reported` is the same flat `airState.*`-keyed bag `ThinqSnapshot`'s constructor already accepts — zero new mapping logic needed, both polling and MQTT feed the exact same `ThinqDeviceUpdateListener` callback.
 - ThinQ MQTT push implemented (Sep 15, 2026): `services/thinq/mqtt/{mqttCertificate,mqttConnectionEvents,mqttRetry,mqttKeyRepository,thinqMqttListener}.ts` (new) + `thinqApiClient.ts`/`serviceContainer.ts`/`module.ts` wiring, per `workspace/thinq-mqtt-push/plan.md`. `MqttRuntimeDevice.on()` needed `'connect' | 'offline'` combined into ONE overload signature — ESLint `@typescript-eslint/unified-signatures` fails otherwise (2 overloads differing only in event-name literal, same handler shape).
 - `npm install` (plain, no args) SILENTLY REMOVES a prior `npm link matterbridge` symlink from `node_modules/matterbridge` (matterbridge isn't a `package.json` dependency, only linked) — any implementer adding a new npm dependency mid-task must `npm link matterbridge` again afterward, or `type-check:ci`/`tsc` floods with `Cannot find module 'matterbridge'` across the whole repo (false-looking whole-codebase break, actually just the missing link).
+- There is no `onOffOutlet` export in installed matterbridge 3.10.9/`@matterbridge/core` — the 0x010a/`MA-onoffpluginunit` device type's real exported symbol is `onOffPlugInUnit` (`matterbridgeDeviceTypes.js:272`, requires Identify+Groups+ScenesManagement+OnOff). Use that name, not `onOffOutlet`.
 
 ## Module Notes
 

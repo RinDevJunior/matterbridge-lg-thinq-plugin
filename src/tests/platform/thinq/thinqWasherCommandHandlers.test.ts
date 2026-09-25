@@ -4,7 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ThinqWasherDevice } from '../../../core/domain/entities/ThinqDevice.js';
 import { ThinqSnapshot } from '../../../core/domain/value-objects/ThinqSnapshot.js';
 import type { ThinqWasherControlConfig } from '../../../model/LgThinqPluginPlatformConfig.js';
-import { registerWasherCommandHandlers } from '../../../platform/thinq/thinqWasherCommandHandlers.js';
+import {
+	registerWasherCommandHandlers,
+	registerWasherRemoteStartStopSwitchCommandHandlers,
+} from '../../../platform/thinq/thinqWasherCommandHandlers.js';
+import type { WasherStartCommandPayload } from '../../../platform/thinq/thinqWasherStartCommandResolver.js';
 import type { WasherStopCommandPayload } from '../../../platform/thinq/thinqWasherStopCommandResolver.js';
 import type { ThinqApiClient } from '../../../services/thinq/thinqApiClient.js';
 import { asPartial, createMockLogger } from '../../helpers/testUtils.js';
@@ -69,7 +73,7 @@ describe('registerWasherCommandHandlers', () => {
 	});
 
 	describe('v1 read-only commands rejection', () => {
-		it('should register exactly 6 read-only command handlers (v1)', () => {
+		it('should register exactly 5 read-only command handlers (v1)', () => {
 			// Arrange
 			const washerControl: ThinqWasherControlConfig = {};
 			const stopCommandPayload: WasherStopCommandPayload | undefined = undefined;
@@ -87,9 +91,9 @@ describe('registerWasherCommandHandlers', () => {
 			// Assert
 			const calls = vi.mocked(mockEndpoint.addCommandHandler).mock.calls;
 			const readOnlyCommandCalls = calls.filter((call: any[]) =>
-				['on', 'off', 'pause', 'start', 'resume', 'changeToMode'].includes(call[0] as string),
+				['on', 'off', 'pause', 'resume', 'changeToMode'].includes(call[0] as string),
 			);
-			expect(readOnlyCommandCalls).toHaveLength(6);
+			expect(readOnlyCommandCalls).toHaveLength(5);
 		});
 
 		it('should register on command handler', () => {
@@ -147,25 +151,6 @@ describe('registerWasherCommandHandlers', () => {
 
 			// Assert
 			expect(mockEndpoint.addCommandHandler).toHaveBeenCalledWith('pause', expect.any(Function));
-		});
-
-		it('should register start command handler', () => {
-			// Arrange
-			const washerControl: ThinqWasherControlConfig = {};
-			const stopCommandPayload: WasherStopCommandPayload | undefined = undefined;
-
-			// Act
-			registerWasherCommandHandlers(
-				mockEndpoint,
-				mockDevice,
-				mockApiClient,
-				mockLogger,
-				washerControl,
-				stopCommandPayload,
-			);
-
-			// Assert
-			expect(mockEndpoint.addCommandHandler).toHaveBeenCalledWith('start', expect.any(Function));
 		});
 
 		it('should register resume command handler', () => {
@@ -589,6 +574,377 @@ describe('registerWasherCommandHandlers', () => {
 			if (!stopHandler) throw new Error('stop handler not found');
 			await expect(stopHandler()).rejects.toThrow('Network error');
 			// Should still throw the original error, not the revert error
+		});
+	});
+
+	describe('registerWasherRemoteStartStopSwitchCommandHandlers', () => {
+		let mockWasherSwitch: any;
+
+		beforeEach(() => {
+			vi.clearAllMocks();
+			mockLogger = createMockLogger();
+			mockApiClient = createMockApiClient();
+			mockDevice = createMockWasherDevice();
+			mockEndpoint = createMockEndpoint();
+			// Create a separate mock for the switch endpoint
+			mockWasherSwitch = asPartial<any>({
+				log: createMockLogger(),
+				addCommandHandler: vi.fn().mockReturnValue(undefined),
+				getAttribute: vi.fn().mockImplementation((clusterId: unknown, attrName: unknown) => {
+					if (clusterId === OnOff.id && attrName === 'onOff') {
+						return true;
+					}
+					return undefined;
+				}),
+				updateAttribute: vi.fn().mockResolvedValue(false),
+			});
+		});
+
+		it('should register on and off command handlers on the switch', () => {
+			// Arrange
+			const washerControl: ThinqWasherControlConfig = { allowRemoteStart: true, allowRemoteStop: true };
+			const startCommandPayload: WasherStartCommandPayload = {
+				command: 'Set',
+				dataSetList: { washerDryer: { course: 'express' } },
+			};
+			const stopCommandPayload: WasherStopCommandPayload = {
+				dataKey: 'washerDryer.state',
+				dataValue: 'STOP',
+			};
+
+			// Act
+			registerWasherRemoteStartStopSwitchCommandHandlers(
+				mockWasherSwitch,
+				mockEndpoint,
+				mockDevice,
+				mockApiClient,
+				mockLogger,
+				washerControl,
+				startCommandPayload,
+				stopCommandPayload,
+			);
+
+			// Assert
+			expect(mockWasherSwitch.addCommandHandler).toHaveBeenCalledWith('on', expect.any(Function));
+			expect(mockWasherSwitch.addCommandHandler).toHaveBeenCalledWith('off', expect.any(Function));
+		});
+
+		it('on handler should send start command when allowed and payload resolves', async () => {
+			// Arrange
+			const washerControl: ThinqWasherControlConfig = { allowRemoteStart: true, allowRemoteStop: true };
+			const startCommandPayload: WasherStartCommandPayload = {
+				command: 'Set',
+				dataSetList: { washerDryer: { course: 'express' } },
+			};
+			const stopCommandPayload: WasherStopCommandPayload = {
+				dataKey: 'washerDryer.state',
+				dataValue: 'STOP',
+			};
+			registerWasherRemoteStartStopSwitchCommandHandlers(
+				mockWasherSwitch,
+				mockEndpoint,
+				mockDevice,
+				mockApiClient,
+				mockLogger,
+				washerControl,
+				startCommandPayload,
+				stopCommandPayload,
+			);
+			const onCall = vi.mocked(mockWasherSwitch.addCommandHandler).mock.calls.find((call: any[]) => call[0] === 'on');
+			const onHandler = onCall?.[1] as () => Promise<void>;
+
+			// Act
+			await onHandler();
+
+			// Assert
+			expect(mockApiClient.sendCommand).toHaveBeenCalledWith('washer-123', {
+				ctrlKey: 'WMStart',
+				command: 'Set',
+				dataSetList: { washerDryer: { course: 'express' } },
+			});
+		});
+
+		it('on handler should throw when allowRemoteStart is false', async () => {
+			// Arrange
+			const washerControl: ThinqWasherControlConfig = { allowRemoteStart: false, allowRemoteStop: true };
+			const startCommandPayload: WasherStartCommandPayload = {
+				command: 'Set',
+				dataSetList: { washerDryer: { course: 'express' } },
+			};
+			const stopCommandPayload: WasherStopCommandPayload = {
+				dataKey: 'washerDryer.state',
+				dataValue: 'STOP',
+			};
+			registerWasherRemoteStartStopSwitchCommandHandlers(
+				mockWasherSwitch,
+				mockEndpoint,
+				mockDevice,
+				mockApiClient,
+				mockLogger,
+				washerControl,
+				startCommandPayload,
+				stopCommandPayload,
+			);
+			const onCall = vi.mocked(mockWasherSwitch.addCommandHandler).mock.calls.find((call: any[]) => call[0] === 'on');
+			const onHandler = onCall?.[1] as () => Promise<void>;
+
+			// Act & Assert
+			await expect(onHandler()).rejects.toThrow('disabled by configuration');
+			expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining("'start') is disabled by configuration"));
+			expect(mockApiClient.sendCommand).not.toHaveBeenCalled();
+		});
+
+		it('on handler should throw when allowRemoteStart is undefined', async () => {
+			// Arrange
+			const washerControl: ThinqWasherControlConfig = { allowRemoteStart: undefined, allowRemoteStop: true };
+			const startCommandPayload: WasherStartCommandPayload = {
+				command: 'Set',
+				dataSetList: { washerDryer: { course: 'express' } },
+			};
+			const stopCommandPayload: WasherStopCommandPayload = {
+				dataKey: 'washerDryer.state',
+				dataValue: 'STOP',
+			};
+			registerWasherRemoteStartStopSwitchCommandHandlers(
+				mockWasherSwitch,
+				mockEndpoint,
+				mockDevice,
+				mockApiClient,
+				mockLogger,
+				washerControl,
+				startCommandPayload,
+				stopCommandPayload,
+			);
+			const onCall = vi.mocked(mockWasherSwitch.addCommandHandler).mock.calls.find((call: any[]) => call[0] === 'on');
+			const onHandler = onCall?.[1] as () => Promise<void>;
+
+			// Act & Assert
+			await expect(onHandler()).rejects.toThrow('disabled by configuration');
+			expect(mockApiClient.sendCommand).not.toHaveBeenCalled();
+		});
+
+		it('on handler should throw when startCommandPayload is undefined', async () => {
+			// Arrange
+			const washerControl: ThinqWasherControlConfig = { allowRemoteStart: true, allowRemoteStop: true };
+			const startCommandPayload: WasherStartCommandPayload | undefined = undefined;
+			const stopCommandPayload: WasherStopCommandPayload = {
+				dataKey: 'washerDryer.state',
+				dataValue: 'STOP',
+			};
+			registerWasherRemoteStartStopSwitchCommandHandlers(
+				mockWasherSwitch,
+				mockEndpoint,
+				mockDevice,
+				mockApiClient,
+				mockLogger,
+				washerControl,
+				startCommandPayload,
+				stopCommandPayload,
+			);
+			const onCall = vi.mocked(mockWasherSwitch.addCommandHandler).mock.calls.find((call: any[]) => call[0] === 'on');
+			const onHandler = onCall?.[1] as () => Promise<void>;
+
+			// Act & Assert
+			await expect(onHandler()).rejects.toThrow('not available for this device model yet');
+			expect(mockApiClient.sendCommand).not.toHaveBeenCalled();
+		});
+
+		it('on handler should revert switch onOff to prior value on start command failure', async () => {
+			// Arrange
+			const washerControl: ThinqWasherControlConfig = { allowRemoteStart: true, allowRemoteStop: true };
+			const startCommandPayload: WasherStartCommandPayload = {
+				command: 'Set',
+				dataSetList: { washerDryer: { course: 'express' } },
+			};
+			const stopCommandPayload: WasherStopCommandPayload = {
+				dataKey: 'washerDryer.state',
+				dataValue: 'STOP',
+			};
+			mockApiClient.sendCommand = vi.fn().mockRejectedValueOnce(new Error('Network error'));
+			mockWasherSwitch.getAttribute.mockReturnValue(false); // Prior value was false
+			registerWasherRemoteStartStopSwitchCommandHandlers(
+				mockWasherSwitch,
+				mockEndpoint,
+				mockDevice,
+				mockApiClient,
+				mockLogger,
+				washerControl,
+				startCommandPayload,
+				stopCommandPayload,
+			);
+			const onCall = vi.mocked(mockWasherSwitch.addCommandHandler).mock.calls.find((call: any[]) => call[0] === 'on');
+			const onHandler = onCall?.[1] as () => Promise<void>;
+
+			// Act
+			await expect(onHandler()).rejects.toThrow('Network error');
+
+			// Assert
+			expect(mockWasherSwitch.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', false, mockWasherSwitch.log);
+		});
+
+		it('on handler should revert switch onOff to correct prior value on failure', async () => {
+			// Arrange
+			const washerControl: ThinqWasherControlConfig = { allowRemoteStart: true, allowRemoteStop: true };
+			const startCommandPayload: WasherStartCommandPayload = {
+				command: 'Set',
+				dataSetList: { washerDryer: { course: 'express' } },
+			};
+			const stopCommandPayload: WasherStopCommandPayload = {
+				dataKey: 'washerDryer.state',
+				dataValue: 'STOP',
+			};
+			mockApiClient.sendCommand = vi.fn().mockRejectedValueOnce(new Error('Network error'));
+			mockWasherSwitch.getAttribute.mockReturnValue(true); // Prior value was true
+			registerWasherRemoteStartStopSwitchCommandHandlers(
+				mockWasherSwitch,
+				mockEndpoint,
+				mockDevice,
+				mockApiClient,
+				mockLogger,
+				washerControl,
+				startCommandPayload,
+				stopCommandPayload,
+			);
+			const onCall = vi.mocked(mockWasherSwitch.addCommandHandler).mock.calls.find((call: any[]) => call[0] === 'on');
+			const onHandler = onCall?.[1] as () => Promise<void>;
+
+			// Act
+			await expect(onHandler()).rejects.toThrow('Network error');
+
+			// Assert
+			expect(mockWasherSwitch.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', true, mockWasherSwitch.log);
+		});
+
+		it('on handler should not crash if updateAttribute revert fails', async () => {
+			// Arrange
+			const washerControl: ThinqWasherControlConfig = { allowRemoteStart: true, allowRemoteStop: true };
+			const startCommandPayload: WasherStartCommandPayload = {
+				command: 'Set',
+				dataSetList: { washerDryer: { course: 'express' } },
+			};
+			const stopCommandPayload: WasherStopCommandPayload = {
+				dataKey: 'washerDryer.state',
+				dataValue: 'STOP',
+			};
+			mockApiClient.sendCommand = vi.fn().mockRejectedValueOnce(new Error('Network error'));
+			mockWasherSwitch.updateAttribute.mockRejectedValueOnce(new Error('Revert failed'));
+			registerWasherRemoteStartStopSwitchCommandHandlers(
+				mockWasherSwitch,
+				mockEndpoint,
+				mockDevice,
+				mockApiClient,
+				mockLogger,
+				washerControl,
+				startCommandPayload,
+				stopCommandPayload,
+			);
+			const onCall = vi.mocked(mockWasherSwitch.addCommandHandler).mock.calls.find((call: any[]) => call[0] === 'on');
+			const onHandler = onCall?.[1] as () => Promise<void>;
+
+			// Act & Assert
+			await expect(onHandler()).rejects.toThrow('Network error');
+			// Should still throw the original error, not the revert error
+		});
+
+		it('off handler should send stop command via performWasherStop', async () => {
+			// Arrange
+			const washerControl: ThinqWasherControlConfig = { allowRemoteStart: true, allowRemoteStop: true };
+			const startCommandPayload: WasherStartCommandPayload = {
+				command: 'Set',
+				dataSetList: { washerDryer: { course: 'express' } },
+			};
+			const stopCommandPayload: WasherStopCommandPayload = {
+				dataKey: 'washerDryer.state',
+				dataValue: 'STOP',
+			};
+			registerWasherRemoteStartStopSwitchCommandHandlers(
+				mockWasherSwitch,
+				mockEndpoint,
+				mockDevice,
+				mockApiClient,
+				mockLogger,
+				washerControl,
+				startCommandPayload,
+				stopCommandPayload,
+			);
+			const offCall = vi.mocked(mockWasherSwitch.addCommandHandler).mock.calls.find((call: any[]) => call[0] === 'off');
+			const offHandler = offCall?.[1] as () => Promise<void>;
+
+			// Act
+			await offHandler();
+
+			// Assert
+			expect(mockApiClient.sendCommand).toHaveBeenCalledWith('washer-123', {
+				ctrlKey: 'WMControl',
+				dataKey: 'washerDryer.state',
+				dataValue: 'STOP',
+			});
+		});
+
+		it('off handler should revert switch onOff to prior value on stop command failure', async () => {
+			// Arrange
+			const washerControl: ThinqWasherControlConfig = { allowRemoteStart: true, allowRemoteStop: true };
+			const startCommandPayload: WasherStartCommandPayload = {
+				command: 'Set',
+				dataSetList: { washerDryer: { course: 'express' } },
+			};
+			const stopCommandPayload: WasherStopCommandPayload = {
+				dataKey: 'washerDryer.state',
+				dataValue: 'STOP',
+			};
+			mockApiClient.sendCommand = vi.fn().mockRejectedValueOnce(new Error('Network error'));
+			mockWasherSwitch.getAttribute.mockReturnValue(true); // Prior value was true
+			registerWasherRemoteStartStopSwitchCommandHandlers(
+				mockWasherSwitch,
+				mockEndpoint,
+				mockDevice,
+				mockApiClient,
+				mockLogger,
+				washerControl,
+				startCommandPayload,
+				stopCommandPayload,
+			);
+			const offCall = vi.mocked(mockWasherSwitch.addCommandHandler).mock.calls.find((call: any[]) => call[0] === 'off');
+			const offHandler = offCall?.[1] as () => Promise<void>;
+
+			// Act
+			await expect(offHandler()).rejects.toThrow('Network error');
+
+			// Assert
+			expect(mockWasherSwitch.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', true, mockWasherSwitch.log);
+		});
+
+		it('off handler should use true as default prior value when getAttribute returns undefined', async () => {
+			// Arrange
+			const washerControl: ThinqWasherControlConfig = { allowRemoteStart: true, allowRemoteStop: true };
+			const startCommandPayload: WasherStartCommandPayload = {
+				command: 'Set',
+				dataSetList: { washerDryer: { course: 'express' } },
+			};
+			const stopCommandPayload: WasherStopCommandPayload = {
+				dataKey: 'washerDryer.state',
+				dataValue: 'STOP',
+			};
+			mockApiClient.sendCommand = vi.fn().mockRejectedValueOnce(new Error('Network error'));
+			mockWasherSwitch.getAttribute.mockReturnValue(undefined); // Returns undefined
+			registerWasherRemoteStartStopSwitchCommandHandlers(
+				mockWasherSwitch,
+				mockEndpoint,
+				mockDevice,
+				mockApiClient,
+				mockLogger,
+				washerControl,
+				startCommandPayload,
+				stopCommandPayload,
+			);
+			const offCall = vi.mocked(mockWasherSwitch.addCommandHandler).mock.calls.find((call: any[]) => call[0] === 'off');
+			const offHandler = offCall?.[1] as () => Promise<void>;
+
+			// Act
+			await expect(offHandler()).rejects.toThrow('Network error');
+
+			// Assert
+			expect(mockWasherSwitch.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', true, mockWasherSwitch.log);
 		});
 	});
 });
