@@ -13,7 +13,7 @@ describe('PlatformConfigManager', () => {
 	});
 
 	describe('create', () => {
-		it('should apply defaults when thinq/webos/advancedFeature are undefined', () => {
+		it('should apply defaults when thinq/advancedFeature are undefined', () => {
 			const config = asPartial<LgThinqPluginPlatformConfig>({});
 			const manager = PlatformConfigManager.create(config, mockLogger);
 
@@ -23,7 +23,6 @@ describe('PlatformConfigManager', () => {
 				language: 'en-US',
 				devices: [],
 			});
-			expect(manager.rawConfig.webos).toEqual({ devices: [] });
 			expect(manager.rawConfig.advancedFeature).toEqual({
 				settings: {
 					debug: false,
@@ -48,7 +47,6 @@ describe('PlatformConfigManager', () => {
 					refreshToken: 'test-token',
 					devices: [],
 				},
-				webos: { devices: ['device1'] as unknown as unknown[] },
 				advancedFeature: {
 					settings: {
 						debug: true,

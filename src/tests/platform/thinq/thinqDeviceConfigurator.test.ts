@@ -7,7 +7,10 @@ import type { PlatformConfigManager } from '../../../platform/platformConfigMana
 import { registerAirConditionerCommandHandlers } from '../../../platform/thinq/thinqAirConditionerCommandHandlers.js';
 import { buildAirConditionerEndpoint } from '../../../platform/thinq/thinqAirConditionerEndpointFactory.js';
 import { ThinqDeviceConfigurator } from '../../../platform/thinq/thinqDeviceConfigurator.js';
-import { registerWasherCommandHandlers } from '../../../platform/thinq/thinqWasherCommandHandlers.js';
+import {
+	registerWasherCommandHandlers,
+	registerWasherRemoteStartStopSwitchCommandHandlers,
+} from '../../../platform/thinq/thinqWasherCommandHandlers.js';
 import { buildWasherEndpoint } from '../../../platform/thinq/thinqWasherEndpointFactory.js';
 import type { ThinqApiClient } from '../../../services/thinq/thinqApiClient.js';
 import { asPartial, createMockLogger } from '../../helpers/testUtils.js';
@@ -26,9 +29,17 @@ vi.mock('../../../platform/thinq/thinqAirConditionerEndpointFactory.js', () => (
 vi.mock('../../../platform/thinq/thinqWasherEndpointFactory.js', () => ({
 	buildWasherEndpoint: vi.fn(() => ({
 		log: { debug: vi.fn(), info: vi.fn(), error: vi.fn() },
+		getChildEndpointById: vi.fn(),
 	})),
+	WASHER_REMOTE_START_STOP_SWITCH_ID: 'RemoteStartStopSwitch',
 }));
-vi.mock('../../../platform/thinq/thinqWasherCommandHandlers.js');
+vi.mock('../../../platform/thinq/thinqWasherCommandHandlers.js', () => ({
+	registerWasherCommandHandlers: vi.fn(),
+	registerWasherRemoteStartStopSwitchCommandHandlers: vi.fn(),
+}));
+vi.mock('../../../platform/thinq/thinqWasherStartCommandResolver.js', () => ({
+	extractWasherStartCommand: vi.fn(),
+}));
 vi.mock('../../../platform/thinq/thinqWasherStopCommandResolver.js');
 vi.mock('../../../platform/thinq/thinqAirConditionerFilterResetCommandHandler.js', () => ({
 	registerFilterResetCommandHandler: vi.fn(),
@@ -487,6 +498,92 @@ describe('ThinqDeviceConfigurator', () => {
 			// Verify the function is called with 6 parameters:
 			// washer, device, apiClient, logger, washerControl, stopCommandPayload
 			expect(call.length).toBe(6);
+		});
+
+		it('should call getDeviceModel twice (once for stop, once for start)', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const getDeviceModelSpy = vi.fn().mockResolvedValue({});
+			const apiClientWithSpy = asPartial<ThinqApiClient>({
+				getDeviceModel: getDeviceModelSpy,
+				sendCommand: vi.fn().mockResolvedValue(undefined),
+			});
+			const configuratorWithSpy = new ThinqDeviceConfigurator(mockLogger, apiClientWithSpy, mockConfigManager);
+
+			// Act
+			await configuratorWithSpy.registerWasher(device);
+
+			// Assert
+			expect(getDeviceModelSpy).toHaveBeenCalledTimes(2);
+		});
+
+		it('should register switch handlers when child endpoint exists', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const registerSwitchHandlersSpy = vi.mocked(registerWasherRemoteStartStopSwitchCommandHandlers);
+			const mockChild = { addCommandHandler: vi.fn() };
+			const mockWasherEndpoint = asPartial<any>({
+				log: { debug: vi.fn(), info: vi.fn(), error: vi.fn() },
+				getChildEndpointById: vi.fn().mockReturnValue(mockChild),
+			});
+
+			// Reconfigure the mock to return our created endpoint
+			vi.mocked(buildWasherEndpoint).mockImplementationOnce(() => mockWasherEndpoint);
+
+			// Act
+			await configurator.registerWasher(device);
+
+			// Assert
+			const calls = vi.mocked(registerSwitchHandlersSpy).mock.calls;
+			expect(calls.length).toBeGreaterThan(0);
+			const firstCall = calls[0];
+			// Verify first arg is the child endpoint
+			expect(firstCall?.[0]).toBe(mockChild);
+			// Verify second arg is the washer endpoint
+			expect(firstCall?.[1]).toBe(mockWasherEndpoint);
+			// Verify third arg is the device
+			expect(firstCall?.[2]).toBe(device);
+			// Verify fourth arg is the apiClient
+			expect(firstCall?.[3]).toBe(mockApiClient);
+			// Verify fifth arg is the logger
+			expect(firstCall?.[4]).toBe(mockLogger);
+		});
+
+		it('should log error when child endpoint is missing at registration', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const buildEndpointSpy = vi.mocked(buildWasherEndpoint);
+
+			// Setup the mock endpoint to return undefined for child
+			const mockEndpoint = buildEndpointSpy.mock.results[0]?.value;
+			if (mockEndpoint) {
+				(mockEndpoint.getChildEndpointById as any).mockReturnValue(undefined);
+			}
+
+			// Act
+			await configurator.registerWasher(device);
+
+			// Assert
+			expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining('child endpoint missing at registration'));
+		});
+
+		it('should not register switch handlers when getChildEndpointById returns undefined', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const buildEndpointSpy = vi.mocked(buildWasherEndpoint);
+			const registerSwitchHandlersSpy = vi.mocked(registerWasherRemoteStartStopSwitchCommandHandlers);
+
+			// Setup the mock endpoint to return undefined for child
+			const mockEndpoint = buildEndpointSpy.mock.results[0]?.value;
+			if (mockEndpoint) {
+				(mockEndpoint.getChildEndpointById as any).mockReturnValue(undefined);
+			}
+
+			// Act
+			await configurator.registerWasher(device);
+
+			// Assert
+			expect(registerSwitchHandlersSpy).not.toHaveBeenCalled();
 		});
 	});
 });

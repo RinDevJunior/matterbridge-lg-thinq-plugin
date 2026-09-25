@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.1-rc01] - 2026-09-25
+
+### Added
+
+- **Washer remote Start/Stop switch** — an opt-in child on/off switch endpoint on the washer, the only Apple-Home-visible control surface for Start/Stop since the native LaundryWasher device type renders no UI in Apple Home; ON sends a real Start command built from the device's own model-declared default course, OFF reuses the existing Stop path, and switch state syncs from real washer running status on every poll tick. Gated by `allowRemoteStart` (new) and `allowRemoteStop` (existing), both off by default (PR #3).
+
+### Changed
+
+- **BREAKING: webOS TV config section removed** — the never-built webOS placeholder (config UI section, schema property, config model type) has been removed entirely; any existing config with a `webos` property will have it dropped, since Apple Home does not support Matter TV/video-player device types at all, and LG's own native AirPlay 2/HomeKit integration on webOS TVs already covers this (PR #3).
+
+<a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
+
+---
+
 ## [0.1.0-rc13] - 2026-09-24
 
 ### Added
