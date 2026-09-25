@@ -98,6 +98,21 @@ export class PlatformConfigManager {
 		return this.config.thinq.devices?.find((d) => d.deviceId === deviceId)?.washerControl ?? {};
 	}
 
+	/**
+	 * Finds the live device config entry and lazily attaches `washerControl = {}` in place, so
+	 * callers mutating the returned object persist those mutations via `saveConfig()`. Unlike
+	 * `getWasherControlConfig()`, which returns a fresh, unattached `{}` when no entry/config exists,
+	 * this returns `{}` (also unattached) only when the device entry itself cannot be found.
+	 */
+	public ensureWasherControlEntry(deviceId: string): ThinqWasherControlConfig {
+		const entry = this.config.thinq.devices?.find((d) => d.deviceId === deviceId);
+		if (!entry) {
+			return {};
+		}
+		entry.washerControl ??= {};
+		return entry.washerControl;
+	}
+
 	public getAcFilterControlConfig(deviceId: string): ThinqAcFilterControlConfig {
 		return this.config.thinq.devices?.find((d) => d.deviceId === deviceId)?.acFilterControl ?? {};
 	}

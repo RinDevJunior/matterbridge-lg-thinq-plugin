@@ -1,6 +1,12 @@
+export interface WasherCourseSelection {
+	readonly courseId?: string;
+	readonly parameterOverrides?: Record<string, unknown>;
+}
+
 export interface WasherStartCommandPayload {
 	readonly command?: string;
 	readonly dataSetList?: Record<string, unknown>;
+	readonly resolvedCourseId?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -14,7 +20,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * normal (fail-closed) outcome. Always uses the model-declared default course (`Config.defaultCourse`)
  * and its own `function[]` defaults — no per-device course selection.
  */
-export function extractWasherStartCommand(deviceModel: Record<string, unknown>): WasherStartCommandPayload | undefined {
+export function extractWasherStartCommand(
+	deviceModel: Record<string, unknown>,
+	courseSelection?: WasherCourseSelection,
+): WasherStartCommandPayload | undefined {
 	if (!isRecord(deviceModel)) {
 		return undefined;
 	}
@@ -60,12 +69,16 @@ export function extractWasherStartCommand(deviceModel: Record<string, unknown>):
 		return undefined;
 	}
 
-	const defaultCourseEntry = course[defaultCourse];
-	if (!isRecord(defaultCourseEntry)) {
+	const requestedCourseId = courseSelection?.courseId;
+	const resolvedCourseId =
+		typeof requestedCourseId === 'string' && isRecord(course[requestedCourseId]) ? requestedCourseId : defaultCourse;
+
+	const selectedCourseEntry = course[resolvedCourseId];
+	if (!isRecord(selectedCourseEntry)) {
 		return undefined;
 	}
 
-	const functionEntries = defaultCourseEntry.function;
+	const functionEntries = selectedCourseEntry.function;
 	if (!Array.isArray(functionEntries)) {
 		return undefined;
 	}
@@ -84,12 +97,14 @@ export function extractWasherStartCommand(deviceModel: Record<string, unknown>):
 	const mergedInner: Record<string, unknown> = {
 		...templateInner,
 		...courseDefaults,
-		[courseType]: defaultCourse,
+		...courseSelection?.parameterOverrides,
+		[courseType]: resolvedCourseId,
 		[smartCourseType]: 'NOT_SELECTED',
 	};
 
 	return {
 		command: typeof startEntry.command === 'string' ? startEntry.command : undefined,
 		dataSetList: { [dev]: mergedInner },
+		resolvedCourseId,
 	};
 }

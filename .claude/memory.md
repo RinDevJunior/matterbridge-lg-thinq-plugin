@@ -110,6 +110,22 @@ It is version-controlled — commit and push changes so teammates can pull the l
   into `registerAirConditionerCommandHandlers` — that function has 39 existing call sites in its test
   file that a new required param would break. See `workspace/ac-filter-monitoring/plan-v2-reset.md`.
 
+- ThinQ Washer course+parameter config selection planned (Sep 25, 2026): `getWasherControlConfig()` returns
+  a FRESH unattached `{}` when `washerControl` is absent (confirmed `platformConfigManager.test.ts:619`) —
+  mutating it does nothing; new `ensureWasherControlEntry()` lazily attaches `washerControl={}` in place
+  instead. `extractWasherStartCommand()` gains a fully-optional 2nd param (`WasherCourseSelection`) —
+  omitted arg is byte-for-byte identical to today (JS spreads `undefined` as a no-op), keeping all 26
+  existing tests untouched. New sibling `extractWasherCourseCatalog()` reads ALL `Course` entries (not just
+  `Config.defaultCourse`) for config auto-fill; reconciler never overwrites an already-stored parameter
+  value or already-set `selectedCourse` (stricter than device-identity backfill, which does correct stale
+  `deviceType`). See `workspace/washer-course-config-selection/plan.md`.
+- ThinQ Washer course+parameter config selection implemented (Sep 25, 2026): 3 new pure files
+  (`thinqWasherCourseCatalogResolver.ts`/`thinqWasherCourseConfigReconciler.ts`/
+  `thinqWasherCourseSelectionResolver.ts`) + `extractWasherStartCommand()`'s optional `courseSelection`
+  param, all exactly per plan; `registerWasher()` now does a 3rd independent `getDeviceModel()` fetch
+  for catalog auto-fill, then re-reads `getWasherControlConfig()` after `ensureWasherControlEntry()`+
+  reconcile so a first-run backfill is usable same-pass. `module.ts` 2nd guarded `saveConfig()` block
+  added after the device loop, mirrors the existing first block's try/catch verbatim.
 - ThinQ Washer remote Start+switch planned (Sep 24, 2026): `WMStart` ctrlKey is literal `"WMStart"`
   (NOT `"WMControl"` like Stop). New `thinqWasherStartCommandResolver.ts` merges model's
   `Course[Config.defaultCourse].function[]` defaults into `ControlWifi.WMStart.data.<dev>` template,
@@ -146,6 +162,7 @@ It is version-controlled — commit and push changes so teammates can pull the l
 - **ThinQ token-refresh dual-trigger tests (Sep 19, 2026):** `ThinqApiClient.request()` retries on 401 OR HTTP 400 + `resultCode:'0102'` via single `isTokenExpiredError()` predicate. Test 5 parallel cases (vs. existing 401 cases): (1) 0102-retry-succeeds via `getListHomes`, stub refresh, assert resolves to homes; (2) 0102-retry-exhausted throws `TokenExpiredError` both calls return 400+0102; (3) `sendCommand`-to-control-sync 0102 self-heals, verify POST count = 2; (4) different `resultCode` (e.g. 0110) under 400 rejects without retry/refresh attempt; (5) malformed/absent body (400 with no data, or 400 + non-JSON string) doesn't crash, rejects with 1 GET call and 0 refresh calls. Use `mockAxios.history.post.filter((h) => h.url?.includes('oauth2/token'))` length assertion to prove (no-)refresh attempt.
 - **ThinQ Washer command handler extraction pattern (Sep 22, 2026):** Mock handler callbacks from `vi.mocked(mockEndpoint.addCommandHandler).mock.calls` require explicit type annotation `(call: any[])` on `.find()` / `.filter()` callbacks (fixes TS7006 implicit-any errors). Replace non-null assertion `![1]` with optional chaining + explicit cast: `const stopCall = vi.mocked(...).find((call: any[]) => call[0] === 'stop'); const handler = stopCall?.[1] as () => Promise<void>;` — avoids forbidden non-null operator. CLI function argument expansion (3-arg cmdDevices): test both no-flag (third arg = undefined) and with-flag (third arg = flag-value) paths separately.
 - **ThinqDeviceConfigurator.registerAirConditioner regression test (Sep 20, 2026):** No hardcoded `mode: 'server'` assignment — mock endpoint pre-seeded with `mode: 'server'` was removed, test asserting `result.mode === 'server'` was removed. NEW regression test: endpoint returned from `registerAirConditioner` has `mode` undefined (proving the function doesn't set it). Mock endpoint factory removed the seed and only returns chainable mock methods (`createDefaultTemperatureMeasurementClusterServer`, `addRequiredClusterServers`). Existing capability/handler-wiring tests unaffected.
+- **ThinQ Washer start-command payload end-to-end tests (Sep 25, 2026, corrected):** Configurator-level `registerWasher()` test with global `vi.mock('...thinqWasherStartCommandResolver.js')` MUST assert on CALL ARGUMENTS, not hardcoded mock return values (tautological pattern fails: hardcoding spinSpeed:400 in return then asserting proves nothing). Instead: mock returns minimal payload to avoid crash, then assert `expect(vi.mocked(extractWasherStartCommand)).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({courseId:'delicate', parameterOverrides:expect.objectContaining({spinSpeed:400})}))` — proves config resolution threaded override into call. Override-precedence merge logic (400 beats model default 800) must be unit-tested separately in `thinqWasherStartCommandResolver.test.ts` via direct `extractWasherStartCommand()` calls, never via configurator (mocked there).
 
 ## Common Pitfalls
 

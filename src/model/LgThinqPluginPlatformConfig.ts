@@ -15,9 +15,22 @@ export interface MatterOverrideSettings {
 	matterVendorId: number;
 }
 
+export interface ThinqWasherCourseParameterConfig {
+	name: string;
+	value: string;
+	valueType?: 'string' | 'number' | 'boolean' | 'other';
+}
+
+export interface ThinqWasherCourseConfig {
+	id: string;
+	parameters: ThinqWasherCourseParameterConfig[];
+}
+
 export interface ThinqWasherControlConfig {
 	allowRemoteStop?: boolean;
 	allowRemoteStart?: boolean;
+	courses?: ThinqWasherCourseConfig[];
+	selectedCourse?: string;
 }
 
 export interface ThinqAcFilterControlConfig {
