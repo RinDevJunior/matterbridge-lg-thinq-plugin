@@ -3,6 +3,7 @@ import { AnsiLogger } from 'matterbridge/logger';
 import { FanControl } from 'matterbridge/matter/clusters';
 
 import type { ThinqAirConditionerDevice, ThinqWasherDevice } from '../../core/domain/entities/ThinqDevice.js';
+import type { ThinqWasherControlConfig } from '../../model/LgThinqPluginPlatformConfig.js';
 import type { ThinqApiClient } from '../../services/thinq/thinqApiClient.js';
 import { PlatformConfigManager } from '../platformConfigManager.js';
 import {
@@ -17,6 +18,9 @@ import {
 	registerWasherCommandHandlers,
 	registerWasherRemoteStartStopSwitchCommandHandlers,
 } from './thinqWasherCommandHandlers.js';
+import { extractWasherCourseCatalog, type WasherCourseCatalog } from './thinqWasherCourseCatalogResolver.js';
+import { reconcileWasherCourseConfig } from './thinqWasherCourseConfigReconciler.js';
+import { resolveWasherCourseSelectionFromConfig } from './thinqWasherCourseSelectionResolver.js';
 import { buildWasherEndpoint, WASHER_REMOTE_START_STOP_SWITCH_ID } from './thinqWasherEndpointFactory.js';
 import { extractWasherStartCommand, type WasherStartCommandPayload } from './thinqWasherStartCommandResolver.js';
 import { extractWasherStopCommand, type WasherStopCommandPayload } from './thinqWasherStopCommandResolver.js';
@@ -52,11 +56,19 @@ export function mapWindStrengthToFixedFanMode(windStrength: number | undefined):
  * (mirrors `matterbridge-example-dynamic-platform/src/module.ts:2726-2734`).
  */
 export class ThinqDeviceConfigurator {
+	private courseConfigChanged = false;
+
 	constructor(
 		private readonly logger: AnsiLogger,
 		private readonly apiClient: ThinqApiClient,
 		private readonly configManager: PlatformConfigManager,
 	) {}
+
+	public consumeCourseConfigChanged(): boolean {
+		const changed = this.courseConfigChanged;
+		this.courseConfigChanged = false;
+		return changed;
+	}
 
 	private resolveProductIdentity(device: ThinqAirConditionerDevice | ThinqWasherDevice): {
 		productId: number;
@@ -155,7 +167,18 @@ export class ThinqDeviceConfigurator {
 		const stopCommandPayload = await this.resolveWasherStopCommandPayload(device);
 		registerWasherCommandHandlers(washer, device, this.apiClient, this.logger, washerControl, stopCommandPayload);
 
-		const startCommandPayload = await this.resolveWasherStartCommandPayload(device);
+		const courseCatalog = await this.resolveWasherCourseCatalog(device);
+		if (courseCatalog) {
+			const liveWasherControlEntry = this.configManager.ensureWasherControlEntry(device.id);
+			if (reconcileWasherCourseConfig(liveWasherControlEntry, courseCatalog)) {
+				this.courseConfigChanged = true;
+			}
+		}
+
+		const startCommandPayload = await this.resolveWasherStartCommandPayload(
+			device,
+			this.configManager.getWasherControlConfig(device.id),
+		);
 		const remoteStartStopSwitch = washer.getChildEndpointById(WASHER_REMOTE_START_STOP_SWITCH_ID);
 		if (remoteStartStopSwitch) {
 			registerWasherRemoteStartStopSwitchCommandHandlers(
@@ -223,6 +246,7 @@ export class ThinqDeviceConfigurator {
 	 */
 	private async resolveWasherStartCommandPayload(
 		device: ThinqWasherDevice,
+		washerControl: ThinqWasherControlConfig,
 	): Promise<WasherStartCommandPayload | undefined> {
 		if (!device.modelJsonUri) {
 			return undefined;
@@ -230,10 +254,11 @@ export class ThinqDeviceConfigurator {
 
 		try {
 			const model = await this.apiClient.getDeviceModel(device.modelJsonUri);
-			const payload = extractWasherStartCommand(model);
+			const courseSelection = resolveWasherCourseSelectionFromConfig(washerControl);
+			const payload = extractWasherStartCommand(model, courseSelection);
 			if (payload) {
 				this.logger.info(
-					`ThinQ Washer ${device.id}: resolved start-command payload from device model: ${JSON.stringify(payload)}`,
+					`ThinQ Washer ${device.id}: resolved start-command payload from device model: ${JSON.stringify(payload)} (course=${payload.resolvedCourseId})`,
 				);
 			} else {
 				this.logger.info(`ThinQ Washer ${device.id}: device model has no usable WMStart/default-course entry.`);
@@ -242,6 +267,37 @@ export class ThinqDeviceConfigurator {
 		} catch (error) {
 			this.logger.debug(
 				`ThinQ Washer ${device.id}: failed to resolve start-command payload from device model: ${error instanceof Error ? error.message : String(error)}`,
+			);
+			return undefined;
+		}
+	}
+
+	/**
+	 * Resolves the device's full wash-course catalog from its own downloaded model JSON, for config
+	 * auto-fill. Runs unconditionally at registration (read-only GET), never throws — any fetch/parse
+	 * failure resolves to `undefined` so a broken model-JSON URL can never block washer registration.
+	 * Deliberately performs its own independent `getDeviceModel()` fetch rather than sharing the model
+	 * already fetched by the stop/start resolvers.
+	 */
+	private async resolveWasherCourseCatalog(device: ThinqWasherDevice): Promise<WasherCourseCatalog | undefined> {
+		if (!device.modelJsonUri) {
+			return undefined;
+		}
+
+		try {
+			const model = await this.apiClient.getDeviceModel(device.modelJsonUri);
+			const catalog = extractWasherCourseCatalog(model);
+			if (catalog) {
+				this.logger.info(
+					`ThinQ Washer ${device.id}: resolved ${catalog.courses.length} course(s) from device model for config auto-fill.`,
+				);
+			} else {
+				this.logger.info(`ThinQ Washer ${device.id}: device model has no usable Course entries for config auto-fill.`);
+			}
+			return catalog;
+		} catch (error) {
+			this.logger.debug(
+				`ThinQ Washer ${device.id}: failed to resolve course catalog from device model: ${error instanceof Error ? error.message : String(error)}`,
 			);
 			return undefined;
 		}
