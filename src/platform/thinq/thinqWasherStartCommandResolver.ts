@@ -1,6 +1,6 @@
 export interface WasherCourseSelection {
 	readonly courseId?: string;
-	readonly parameterOverrides?: Record<string, unknown>;
+	readonly parameterOverrides?: Record<string, string>;
 }
 
 export interface WasherStartCommandPayload {
@@ -15,10 +15,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * Extracts a real `WMStart` command payload from a device's own downloaded model JSON
- * (`ControlWifi`/`Config`/`Course` slices). Pure, no I/O — returns `undefined` on any
- * missing/malformed shape instead of throwing, so callers can treat "no usable command" as a
- * normal (fail-closed) outcome. Always uses the model-declared default course (`Config.defaultCourse`)
- * and its own `function[]` defaults — no per-device course selection.
+ * (`ControlWifi`/`Config`/`Course` slices). Coerces raw string parameter overrides using the
+ * device's own freshly-resolved course-default types (no persisted `valueType`, no extra fetch).
+ * Drops unknown/stale override names, never injecting raw, uncoerced strings into the payload.
+ * Pure, no I/O — returns `undefined` on any missing/malformed shape instead of throwing, so
+ * callers can treat "no usable command" as a normal (fail-closed) outcome. Always uses the
+ * model-declared default course (`Config.defaultCourse`) and its own `function[]` defaults — no
+ * per-device course selection.
  */
 export function extractWasherStartCommand(
 	deviceModel: Record<string, unknown>,
@@ -94,10 +97,30 @@ export function extractWasherStartCommand(
 		return undefined;
 	}
 
+	const coercedOverrides: Record<string, unknown> = {};
+	for (const [name, rawValue] of Object.entries(courseSelection?.parameterOverrides ?? {})) {
+		if (!(name in courseDefaults)) {
+			continue; // unknown/stale parameter name for this course — fail-closed, never inject raw
+		}
+		const originalType = typeof courseDefaults[name];
+		if (originalType === 'number') {
+			const numericValue = Number(rawValue);
+			if (Number.isFinite(numericValue)) {
+				coercedOverrides[name] = numericValue;
+			}
+			// else: leave it out — courseDefaults[name]'s own value wins via the merge below (matches the old
+			// "skip invalid number override" behavior, just relocated)
+		} else if (originalType === 'boolean') {
+			coercedOverrides[name] = rawValue === 'true';
+		} else {
+			coercedOverrides[name] = rawValue;
+		}
+	}
+
 	const mergedInner: Record<string, unknown> = {
 		...templateInner,
 		...courseDefaults,
-		...courseSelection?.parameterOverrides,
+		...coercedOverrides,
 		[courseType]: resolvedCourseId,
 		[smartCourseType]: 'NOT_SELECTED',
 	};

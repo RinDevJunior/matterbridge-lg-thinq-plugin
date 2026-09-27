@@ -271,6 +271,10 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 		for (const device of devices) {
 			if (isAirConditionerDevice(device)) {
 				const airConditioner = await configurator.registerAirConditioner(device);
+				if (this.configManager.isDeviceIgnored(device.id)) {
+					await this.unregisterIgnoredDevice(device.id, airConditioner);
+					continue;
+				}
 				await this.registerDevice(airConditioner);
 				this.registry.register(device.id, airConditioner);
 				this.thinqDeviceKindById.set(device.id, 'AC');
@@ -282,6 +286,10 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 
 			if (isWasherDevice(device)) {
 				const washer = await configurator.registerWasher(device);
+				if (this.configManager.isDeviceIgnored(device.id)) {
+					await this.unregisterIgnoredDevice(device.id, washer);
+					continue;
+				}
 				await this.registerDevice(washer);
 				this.registry.register(device.id, washer);
 				this.thinqDeviceKindById.set(device.id, 'WASHER');
@@ -298,6 +306,12 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 				);
 			}
 		}
+	}
+
+	private async unregisterIgnoredDevice(deviceId: string, endpoint: MatterbridgeEndpoint): Promise<void> {
+		this.log.notice(`Unregistering ignored device: ${deviceId}`);
+		await this.registerDevice(endpoint);
+		await this.unregisterDevice(endpoint);
 	}
 
 	public override async onChangeLoggerLevel(logLevel: LogLevel): Promise<void> {

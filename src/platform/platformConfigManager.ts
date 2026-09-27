@@ -117,6 +117,10 @@ export class PlatformConfigManager {
 		return this.config.thinq.devices?.find((d) => d.deviceId === deviceId)?.acFilterControl ?? {};
 	}
 
+	public isDeviceIgnored(deviceId: string): boolean {
+		return this.config.thinq.devices?.find((d) => d.deviceId === deviceId)?.ignore ?? false;
+	}
+
 	public get overrideMatterConfiguration(): boolean {
 		return this.config.advancedFeature.settings.overrideMatterConfiguration;
 	}

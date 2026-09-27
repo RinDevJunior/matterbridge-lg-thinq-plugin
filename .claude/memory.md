@@ -126,6 +126,35 @@ It is version-controlled — commit and push changes so teammates can pull the l
   for catalog auto-fill, then re-reads `getWasherControlConfig()` after `ensureWasherControlEntry()`+
   reconcile so a first-run backfill is usable same-pass. `module.ts` 2nd guarded `saveConfig()` block
   added after the device loop, mirrors the existing first block's try/catch verbatim.
+- ThinQ Washer course config AMENDED (Sep 25, 2026, real-device test, ~25-course washer): original
+  `reconcileWasherCourseConfig()` backfilled EVERY catalog course (bloated `courses[]` to ~25 objects,
+  Matterbridge config UI unusably long). Fixed: backfills ONLY the currently-`selectedCourse` entry;
+  switching `selectedCourse` to a different valid course REPLACES `courses[]` with that course's fresh
+  defaults (no cross-course merge); new read-only `availableCourseIds?: string[]` (id-only, no params) is
+  the lightweight "menu" replacement so the user still knows what to type into `selectedCourse`. Kept
+  `courses` as an array (not collapsed to a single object) — free breaking change either way (unreleased),
+  array already schema-proven, forward-compat for a plausible future "remember last N courses." Self-heals
+  pre-fix bloated configs by pruning `courses[]` down to 1 entry on the next reconcile pass.
+- ThinQ Washer course config AMENDED again (Sep 25, 2026, valueType removal): `ThinqWasherCourseConfig.parameters`
+  changed `{name,value,valueType}[]` → `Record<string,string>` (matches Matterbridge's config UI, confirmed
+  `@rjsf/core` v6.10.0 via installed frontend bundle — `additionalProperties:{type:string}` renders 1
+  key+value row/param, no way to freeze the key into a pure label). `valueType` coercion moved from
+  `resolveWasherCourseSelectionFromConfig()` (now a trivial passthrough) into `extractWasherStartCommand()`,
+  which coerces against its own already-parsed `courseDefaults` typed map — zero new fetch, same model
+  already loaded per pass. Unknown override names now dropped (new fail-closed behavior, previously spread
+  unconditionally). `WasherCourseCatalogParameter.valueType` (catalog resolver) deliberately left unused/
+  unremoved — cosmetic-only cleanup of an already-tested file, not worth the diff.
+- Per-device "ignore" config planned (Sep 27, 2026, verified against installed matterbridge core
+  runtime, not just its `.d.ts`): `MatterbridgePlatform.unregisterDevice()` → core
+  `removeBridgedEndpoint()` (`@matterbridge/core/dist/matterbridge.js:2210-2245`) calls
+  `device.delete()` on a LIVE, currently-mounted endpoint — there's no lookup-by-uniqueId against
+  persisted state. To actively remove a device that existed in a PRIOR session but isn't
+  re-registered now, you must `registerDevice()` it THIS session first (reattaches via its stable
+  part-id) then immediately `unregisterDevice()` it — a harmless brief create+delete for
+  never-before-registered devices (deleted before any Matter controller could see it). Reuse the
+  full existing register* endpoint-builder (not a stripped "identity-only" twin) so vendor/product
+  identity resolution can't drift from the normal registration path. See
+  `workspace/ignore-device-config/plan.md`.
 - ThinQ Washer remote Start+switch planned (Sep 24, 2026): `WMStart` ctrlKey is literal `"WMStart"`
   (NOT `"WMControl"` like Stop). New `thinqWasherStartCommandResolver.ts` merges model's
   `Course[Config.defaultCourse].function[]` defaults into `ControlWifi.WMStart.data.<dev>` template,
@@ -163,6 +192,8 @@ It is version-controlled — commit and push changes so teammates can pull the l
 - **ThinQ Washer command handler extraction pattern (Sep 22, 2026):** Mock handler callbacks from `vi.mocked(mockEndpoint.addCommandHandler).mock.calls` require explicit type annotation `(call: any[])` on `.find()` / `.filter()` callbacks (fixes TS7006 implicit-any errors). Replace non-null assertion `![1]` with optional chaining + explicit cast: `const stopCall = vi.mocked(...).find((call: any[]) => call[0] === 'stop'); const handler = stopCall?.[1] as () => Promise<void>;` — avoids forbidden non-null operator. CLI function argument expansion (3-arg cmdDevices): test both no-flag (third arg = undefined) and with-flag (third arg = flag-value) paths separately.
 - **ThinqDeviceConfigurator.registerAirConditioner regression test (Sep 20, 2026):** No hardcoded `mode: 'server'` assignment — mock endpoint pre-seeded with `mode: 'server'` was removed, test asserting `result.mode === 'server'` was removed. NEW regression test: endpoint returned from `registerAirConditioner` has `mode` undefined (proving the function doesn't set it). Mock endpoint factory removed the seed and only returns chainable mock methods (`createDefaultTemperatureMeasurementClusterServer`, `addRequiredClusterServers`). Existing capability/handler-wiring tests unaffected.
 - **ThinQ Washer start-command payload end-to-end tests (Sep 25, 2026, corrected):** Configurator-level `registerWasher()` test with global `vi.mock('...thinqWasherStartCommandResolver.js')` MUST assert on CALL ARGUMENTS, not hardcoded mock return values (tautological pattern fails: hardcoding spinSpeed:400 in return then asserting proves nothing). Instead: mock returns minimal payload to avoid crash, then assert `expect(vi.mocked(extractWasherStartCommand)).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({courseId:'delicate', parameterOverrides:expect.objectContaining({spinSpeed:400})}))` — proves config resolution threaded override into call. Override-precedence merge logic (400 beats model default 800) must be unit-tested separately in `thinqWasherStartCommandResolver.test.ts` via direct `extractWasherStartCommand()` calls, never via configurator (mocked there).
+- **ThinQ Washer course config reconciliation tests (Sep 25, 2026, amendment):** Reconciler backfills only the selected course's parameters (not all catalog courses) and maintains `availableCourseIds` list. Key pattern: `availableCourseIds` updates are tracked separately from substantive config changes — idempotency tests must pre-populate `availableCourseIds` to match the catalog so `changed` flag tests pure config logic, not list syncs. Reference equality checks (`toBe` not `toEqual`) verify arrays not unnecessarily recreated on no-op passes. Edge case: course switch replaces entire `courses[]` array with fresh defaults (not merge), while same-course param additions are append-only. Stale `selectedCourse` fails closed (courses untouched, but `availableCourseIds` still synced). When testing via ThinqDeviceConfigurator.registerWasher, fixture `washerControl` must include `availableCourseIds` to match new schema requirements.
+- **ThinQ Washer parameter config Amendment 2 test rewrite (Sep 25, 2026):** `ThinqWasherCourseConfig.parameters` changed `{name,value,valueType}[]` → `Record<string,string>` (drop valueType, store value as string only). Type coercion relocated from `resolveWasherCourseSelectionFromConfig` (now trivial passthrough, only test defensive copy + optional-return branches) into `extractWasherStartCommand` (test coercion against course-default types: number→parse/finite/else-default, boolean→'true'/else-false, string→passthrough, unknown-key→drop fail-closed). Test file rewrites: (1) reconciler—full rewrite, preserve test groupings, only parameter fixtures change array→object; (2) resolver—full rewrite, delete all coercion/valueType tests, keep passthrough tests (courseId+entry exists, defensive copy, unset/missing/empty-washerControl). Test file edits: (3) extractor—6 existing tests edit input literals (900/400/20→strings), add 10 new coercion tests (number/boolean/string/unknown-name/zero-negative edges); (4–5) configurator/platformConfigManager—parameter fixtures only (array→object). Comments updated reflecting coercion now tested in extractor.
 
 ## Common Pitfalls
 
@@ -178,6 +209,8 @@ It is version-controlled — commit and push changes so teammates can pull the l
 - ThinQ MQTT push implemented (Sep 15, 2026): `services/thinq/mqtt/{mqttCertificate,mqttConnectionEvents,mqttRetry,mqttKeyRepository,thinqMqttListener}.ts` (new) + `thinqApiClient.ts`/`serviceContainer.ts`/`module.ts` wiring, per `workspace/thinq-mqtt-push/plan.md`. `MqttRuntimeDevice.on()` needed `'connect' | 'offline'` combined into ONE overload signature — ESLint `@typescript-eslint/unified-signatures` fails otherwise (2 overloads differing only in event-name literal, same handler shape).
 - `npm install` (plain, no args) SILENTLY REMOVES a prior `npm link matterbridge` symlink from `node_modules/matterbridge` (matterbridge isn't a `package.json` dependency, only linked) — any implementer adding a new npm dependency mid-task must `npm link matterbridge` again afterward, or `type-check:ci`/`tsc` floods with `Cannot find module 'matterbridge'` across the whole repo (false-looking whole-codebase break, actually just the missing link).
 - There is no `onOffOutlet` export in installed matterbridge 3.10.9/`@matterbridge/core` — the 0x010a/`MA-onoffpluginunit` device type's real exported symbol is `onOffPlugInUnit` (`matterbridgeDeviceTypes.js:272`, requires Identify+Groups+ScenesManagement+OnOff). Use that name, not `onOffOutlet`.
+- `matterbridge-lg-thinq-plugin.schema.json`'s real validator is `@rjsf/validator-ajv8`+`ajv`8.20.0 (bundled in Matterbridge frontend, NOT this repo's dev-only `ajv`6.15.0 — check `references/matterbridge/apps/frontend/node_modules/`) with `allErrors:true,verbose:true`. Any leaf failure nested under 3+ if/then levels (e.g. `loginType`×deviceType×capability-gated) surfaces as generic `"must match 'then'/'else' schema"` PER ancestor node, not the real leaf error — cryptic but not a schema bug; find the real cause by compiling the schema with that exact ajv8 config against a constructed instance.
+- RJSF `ArrayField`: setting any `"ui:widget"` directly on an array field (not `items`) makes `isCustomWidget()` true → renders ONE widget for the whole array (`ArrayAsCustomWidget`, `value`=full array) instead of N per-item rows. `"ui:widget":"select"` needs `ui:options.enumOptions` (static, can't hold runtime-dynamic values — renders empty); `"ui:widget":"textarea"` works for any dynamic array (DOM coerces via comma-join) — use for "read-only array, one compact box" instead of a literal dropdown.
 
 ## Module Notes
 

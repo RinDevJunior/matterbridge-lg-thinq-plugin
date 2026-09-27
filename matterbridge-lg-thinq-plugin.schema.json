@@ -96,6 +96,11 @@
 											"enum": ["AC", "WASHER"],
 											"readOnly": true
 										},
+										"ignore": {
+											"title": "Ignore This Device",
+											"description": "Skip this device entirely — it will not be registered as a Matter accessory. If it was previously registered, its existing Matter accessory will be removed.",
+											"type": "boolean"
+										},
 										"productName": {
 											"title": "Product Name Override",
 											"description": "Override the Matter product name shown for this device. Only applied when Override Matter Configuration is enabled in Advanced Features.",
@@ -194,18 +199,31 @@
 																	},
 																	"allowRemoteStart": {
 																		"title": "Allow Remote Start (Washer)",
-																		"description": "Turning this on lets Apple Home send a real Start command to the physical washer, using the washer's own model-declared default wash course. This is materially higher risk than Stop (it can start a wash cycle with water/detergent/power). Off by default — enable only when you are ready to verify it yourself.",
+																		"description": "Turning this on lets Apple Home send a real Start command to the physical washer, using the washer's own model-declared default wash course. This is materially higher risk than Stop (it can start a wash cycle with water/detergent/power). Off by default \u2014 enable only when you are ready to verify it yourself.",
 																		"type": "boolean",
 																		"default": false
 																	},
+																	"availableCourseIds": {
+																		"title": "Available Wash Course IDs (read-only)",
+																		"description": "Every wash course ID this washer reports, refreshed on each plugin restart, shown together in one box below (not one row per ID). Copy one of these exact IDs into \"Selected Wash Course\" below to change which course Remote Start uses.",
+																		"type": "array",
+																		"items": {
+																			"type": "string"
+																		},
+																		"readOnly": true,
+																		"ui:widget": "textarea",
+																		"ui:options": {
+																			"rows": 4
+																		}
+																	},
 																	"selectedCourse": {
 																		"title": "Selected Wash Course",
-																		"description": "The wash course used when Remote Start is triggered. Auto-filled with the washer's own default course on first discovery. Type the exact Course ID from the list below to change it — this field is plain text and does not validate against the list.",
+																		"description": "The wash course used when Remote Start is triggered. Auto-filled with the washer's own default course on first discovery. Type one of the exact Course IDs listed in \"Available Wash Course IDs\" above to change it \u2014 this field is plain text and does not validate against the list.",
 																		"type": "string"
 																	},
 																	"courses": {
-																		"title": "Wash Courses (auto-populated)",
-																		"description": "Auto-populated from the washer's own model data on plugin startup. Each course lists its parameters; edit a parameter's Value to override what Remote Start sends for that course. Values are stored as text; number/boolean parameters are converted back automatically when Start is sent.",
+																		"title": "Selected Course Parameters (auto-populated)",
+																		"description": "Auto-populated with ONLY the currently selected course's own parameters (temperature, spin, rinse, etc.) \u2014 not every course, to keep this settings page short. Each parameter appears as its own field, labeled with the parameter's name \u2014 edit its text box to override what Remote Start sends. If you change \"Selected Wash Course\" above to a different course, this list is replaced with that new course's own defaults on the next plugin restart. Values are stored as text; number/boolean parameters are converted back automatically when Start is sent.",
 																		"type": "array",
 																		"items": {
 																			"type": "object",
@@ -217,26 +235,11 @@
 																				},
 																				"parameters": {
 																					"title": "Parameters",
-																					"type": "array",
-																					"items": {
-																						"type": "object",
-																						"properties": {
-																							"name": {
-																								"title": "Parameter",
-																								"type": "string",
-																								"readOnly": true
-																							},
-																							"value": {
-																								"title": "Value",
-																								"type": "string"
-																							},
-																							"valueType": {
-																								"title": "Original Type",
-																								"type": "string",
-																								"readOnly": true
-																							}
-																						},
-																						"required": ["name", "value"]
+																					"type": "object",
+																					"description": "One field per parameter. The field's own label is the parameter's name \u2014 edit its text box to override the value Remote Start sends for that parameter.",
+																					"additionalProperties": {
+																						"title": "Value",
+																						"type": "string"
 																					}
 																				}
 																			},
@@ -273,7 +276,7 @@
 																"properties": {
 																	"allowFilterReset": {
 																		"title": "Allow Filter Reset (AC)",
-																		"description": "Turning this on lets Apple Home send a real filter-counter reset command to the physical air conditioner, after you've replaced/cleaned the filter. Off by default. This command has not been live-tested yet — enable only when you are ready to verify it yourself.",
+																		"description": "Turning this on lets Apple Home send a real filter-counter reset command to the physical air conditioner, after you've replaced/cleaned the filter. Off by default. This command has not been live-tested yet \u2014 enable only when you are ready to verify it yourself.",
 																		"type": "boolean",
 																		"default": false
 																	}
@@ -322,6 +325,11 @@
 												"type": "string",
 												"enum": ["AC", "WASHER"],
 												"readOnly": true
+											},
+											"ignore": {
+												"title": "Ignore This Device",
+												"description": "Skip this device entirely — it will not be registered as a Matter accessory. If it was previously registered, its existing Matter accessory will be removed.",
+												"type": "boolean"
 											},
 											"productName": {
 												"title": "Product Name Override",
@@ -421,18 +429,31 @@
 																		},
 																		"allowRemoteStart": {
 																			"title": "Allow Remote Start (Washer)",
-																			"description": "Turning this on lets Apple Home send a real Start command to the physical washer, using the washer's own model-declared default wash course. This is materially higher risk than Stop (it can start a wash cycle with water/detergent/power). Off by default — enable only when you are ready to verify it yourself.",
+																			"description": "Turning this on lets Apple Home send a real Start command to the physical washer, using the washer's own model-declared default wash course. This is materially higher risk than Stop (it can start a wash cycle with water/detergent/power). Off by default \u2014 enable only when you are ready to verify it yourself.",
 																			"type": "boolean",
 																			"default": false
 																		},
+																		"availableCourseIds": {
+																			"title": "Available Wash Course IDs (read-only)",
+																			"description": "Every wash course ID this washer reports, refreshed on each plugin restart, shown together in one box below (not one row per ID). Copy one of these exact IDs into \"Selected Wash Course\" below to change which course Remote Start uses.",
+																			"type": "array",
+																			"items": {
+																				"type": "string"
+																			},
+																			"readOnly": true,
+																			"ui:widget": "textarea",
+																			"ui:options": {
+																				"rows": 4
+																			}
+																		},
 																		"selectedCourse": {
 																			"title": "Selected Wash Course",
-																			"description": "The wash course used when Remote Start is triggered. Auto-filled with the washer's own default course on first discovery. Type the exact Course ID from the list below to change it — this field is plain text and does not validate against the list.",
+																			"description": "The wash course used when Remote Start is triggered. Auto-filled with the washer's own default course on first discovery. Type one of the exact Course IDs listed in \"Available Wash Course IDs\" above to change it \u2014 this field is plain text and does not validate against the list.",
 																			"type": "string"
 																		},
 																		"courses": {
-																			"title": "Wash Courses (auto-populated)",
-																			"description": "Auto-populated from the washer's own model data on plugin startup. Each course lists its parameters; edit a parameter's Value to override what Remote Start sends for that course. Values are stored as text; number/boolean parameters are converted back automatically when Start is sent.",
+																			"title": "Selected Course Parameters (auto-populated)",
+																			"description": "Auto-populated with ONLY the currently selected course's own parameters (temperature, spin, rinse, etc.) \u2014 not every course, to keep this settings page short. Each parameter appears as its own field, labeled with the parameter's name \u2014 edit its text box to override what Remote Start sends. If you change \"Selected Wash Course\" above to a different course, this list is replaced with that new course's own defaults on the next plugin restart. Values are stored as text; number/boolean parameters are converted back automatically when Start is sent.",
 																			"type": "array",
 																			"items": {
 																				"type": "object",
@@ -444,26 +465,11 @@
 																					},
 																					"parameters": {
 																						"title": "Parameters",
-																						"type": "array",
-																						"items": {
-																							"type": "object",
-																							"properties": {
-																								"name": {
-																									"title": "Parameter",
-																									"type": "string",
-																									"readOnly": true
-																								},
-																								"value": {
-																									"title": "Value",
-																									"type": "string"
-																								},
-																								"valueType": {
-																									"title": "Original Type",
-																									"type": "string",
-																									"readOnly": true
-																								}
-																							},
-																							"required": ["name", "value"]
+																						"type": "object",
+																						"description": "One field per parameter. The field's own label is the parameter's name \u2014 edit its text box to override the value Remote Start sends for that parameter.",
+																						"additionalProperties": {
+																							"title": "Value",
+																							"type": "string"
 																						}
 																					}
 																				},
@@ -500,7 +506,7 @@
 																	"properties": {
 																		"allowFilterReset": {
 																			"title": "Allow Filter Reset (AC)",
-																			"description": "Turning this on lets Apple Home send a real filter-counter reset command to the physical air conditioner, after you've replaced/cleaned the filter. Off by default. This command has not been live-tested yet — enable only when you are ready to verify it yourself.",
+																			"description": "Turning this on lets Apple Home send a real filter-counter reset command to the physical air conditioner, after you've replaced/cleaned the filter. Off by default. This command has not been live-tested yet \u2014 enable only when you are ready to verify it yourself.",
 																			"type": "boolean",
 																			"default": false
 																		}
