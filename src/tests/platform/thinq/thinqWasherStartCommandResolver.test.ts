@@ -1176,14 +1176,14 @@ describe('thinqWasherStartCommandResolver', () => {
 			const result = extractWasherStartCommand(deviceModel, {
 				courseId: 'express',
 				parameterOverrides: {
-					spinSpeed: 900,
+					spinSpeed: '900',
 					// waterTemp not overridden, should use course default
 				},
 			});
 
 			// Assert
 			const inner = result?.dataSetList?.['washerDryer'] as Record<string, unknown>;
-			expect(inner?.['spinSpeed']).toBe(900); // Override wins
+			expect(inner?.['spinSpeed']).toBe(900); // Override coerced to number, wins over default
 			expect(inner?.['waterTemp']).toBe(60); // Course default used
 		});
 
@@ -1377,13 +1377,13 @@ describe('thinqWasherStartCommandResolver', () => {
 				},
 			};
 
-			// Act: pass override value 400 via parameterOverrides
+			// Act: pass override value 400 via parameterOverrides (as string, to be coerced)
 			const result = extractWasherStartCommand(deviceModel, {
 				courseId: 'delicate',
-				parameterOverrides: { spinSpeed: 400 },
+				parameterOverrides: { spinSpeed: '400' },
 			});
 
-			// Assert: result should contain override value 400, not default 800
+			// Assert: result should contain override value 400 (coerced from string), not default 800
 			const washerDryerData = result?.dataSetList?.['washerDryer'] as Record<string, unknown> | undefined;
 			expect(washerDryerData?.['spinSpeed']).toBe(400);
 		});
@@ -1439,17 +1439,284 @@ describe('thinqWasherStartCommandResolver', () => {
 				},
 			};
 
-			// Act: override spinSpeed and waterTemp, leave washDuration as default
+			// Act: override spinSpeed and waterTemp (as strings), leave washDuration as default
 			const result = extractWasherStartCommand(deviceModel, {
 				courseId: 'delicate',
-				parameterOverrides: { spinSpeed: 400, waterTemp: 20 },
+				parameterOverrides: { spinSpeed: '400', waterTemp: '20' },
 			});
 
-			// Assert: overrides take precedence, untouched default is preserved
+			// Assert: overrides take precedence (coerced to numbers), untouched default is preserved
 			const washerDryerData = result?.dataSetList?.['washerDryer'] as Record<string, unknown> | undefined;
 			expect(washerDryerData?.['spinSpeed']).toBe(400);
 			expect(washerDryerData?.['waterTemp']).toBe(20);
 			expect(washerDryerData?.['washDuration']).toBe(45);
+		});
+
+		it('should coerce numeric string override to number when default is number', () => {
+			// Arrange: course default is numeric, override is numeric string
+			const deviceModel = {
+				ControlWifi: {
+					WMStart: { command: 'Set', data: { washerDryer: {} } },
+				},
+				Config: {
+					defaultCourse: 'delicate',
+					courseType: 'course',
+					smartCourseType: 'smartCourse',
+				},
+				Course: {
+					delicate: {
+						function: [{ value: 'spinSpeed', default: 1200 }],
+					},
+				},
+			};
+
+			// Act: pass numeric string override
+			const result = extractWasherStartCommand(deviceModel, {
+				courseId: 'delicate',
+				parameterOverrides: { spinSpeed: '900' },
+			});
+
+			// Assert: override coerced from string to number
+			const washerDryerData = result?.dataSetList?.['washerDryer'] as Record<string, unknown> | undefined;
+			expect(washerDryerData?.['spinSpeed']).toBe(900);
+			expect(typeof washerDryerData?.['spinSpeed']).toBe('number');
+		});
+
+		it('should drop non-numeric string override for number default and use course default', () => {
+			// Arrange: course default is numeric, override is non-numeric string
+			const deviceModel = {
+				ControlWifi: {
+					WMStart: { command: 'Set', data: { washerDryer: {} } },
+				},
+				Config: {
+					defaultCourse: 'delicate',
+					courseType: 'course',
+					smartCourseType: 'smartCourse',
+				},
+				Course: {
+					delicate: {
+						function: [{ value: 'spinSpeed', default: 1200 }],
+					},
+				},
+			};
+
+			// Act: pass non-numeric string override
+			const result = extractWasherStartCommand(deviceModel, {
+				courseId: 'delicate',
+				parameterOverrides: { spinSpeed: 'abc' },
+			});
+
+			// Assert: override dropped, default used
+			const washerDryerData = result?.dataSetList?.['washerDryer'] as Record<string, unknown> | undefined;
+			expect(washerDryerData?.['spinSpeed']).toBe(1200);
+		});
+
+		it('should drop Infinity override for number default and use course default', () => {
+			// Arrange: course default is numeric, override is Infinity string
+			const deviceModel = {
+				ControlWifi: {
+					WMStart: { command: 'Set', data: { washerDryer: {} } },
+				},
+				Config: {
+					defaultCourse: 'delicate',
+					courseType: 'course',
+					smartCourseType: 'smartCourse',
+				},
+				Course: {
+					delicate: {
+						function: [{ value: 'spinSpeed', default: 1200 }],
+					},
+				},
+			};
+
+			// Act: pass Infinity string override
+			const result = extractWasherStartCommand(deviceModel, {
+				courseId: 'delicate',
+				parameterOverrides: { spinSpeed: 'Infinity' },
+			});
+
+			// Assert: override dropped, default used
+			const washerDryerData = result?.dataSetList?.['washerDryer'] as Record<string, unknown> | undefined;
+			expect(washerDryerData?.['spinSpeed']).toBe(1200);
+		});
+
+		it('should drop NaN override for number default and use course default', () => {
+			// Arrange: course default is numeric, override is NaN string
+			const deviceModel = {
+				ControlWifi: {
+					WMStart: { command: 'Set', data: { washerDryer: {} } },
+				},
+				Config: {
+					defaultCourse: 'delicate',
+					courseType: 'course',
+					smartCourseType: 'smartCourse',
+				},
+				Course: {
+					delicate: {
+						function: [{ value: 'spinSpeed', default: 1200 }],
+					},
+				},
+			};
+
+			// Act: pass NaN string override
+			const result = extractWasherStartCommand(deviceModel, {
+				courseId: 'delicate',
+				parameterOverrides: { spinSpeed: 'NaN' },
+			});
+
+			// Assert: override dropped, default used
+			const washerDryerData = result?.dataSetList?.['washerDryer'] as Record<string, unknown> | undefined;
+			expect(washerDryerData?.['spinSpeed']).toBe(1200);
+		});
+
+		it('should coerce string "true" to boolean true when default is boolean', () => {
+			// Arrange: course default is boolean, override is string 'true'
+			const deviceModel = {
+				ControlWifi: {
+					WMStart: { command: 'Set', data: { washerDryer: {} } },
+				},
+				Config: {
+					defaultCourse: 'delicate',
+					courseType: 'course',
+					smartCourseType: 'smartCourse',
+				},
+				Course: {
+					delicate: {
+						function: [{ value: 'enabled', default: false }],
+					},
+				},
+			};
+
+			// Act: pass string 'true' override
+			const result = extractWasherStartCommand(deviceModel, {
+				courseId: 'delicate',
+				parameterOverrides: { enabled: 'true' },
+			});
+
+			// Assert: override coerced to boolean true
+			const washerDryerData = result?.dataSetList?.['washerDryer'] as Record<string, unknown> | undefined;
+			expect(washerDryerData?.['enabled']).toBe(true);
+		});
+
+		it('should coerce non-"true" string to false when default is boolean', () => {
+			// Arrange: course default is boolean, override is non-'true' string
+			const deviceModel = {
+				ControlWifi: {
+					WMStart: { command: 'Set', data: { washerDryer: {} } },
+				},
+				Config: {
+					defaultCourse: 'delicate',
+					courseType: 'course',
+					smartCourseType: 'smartCourse',
+				},
+				Course: {
+					delicate: {
+						function: [{ value: 'enabled', default: true }],
+					},
+				},
+			};
+
+			// Act: pass string 'false' override (which is not literally 'true')
+			const result = extractWasherStartCommand(deviceModel, {
+				courseId: 'delicate',
+				parameterOverrides: { enabled: 'false' },
+			});
+
+			// Assert: override coerced to boolean false (anything not 'true' is false)
+			const washerDryerData = result?.dataSetList?.['washerDryer'] as Record<string, unknown> | undefined;
+			expect(washerDryerData?.['enabled']).toBe(false);
+		});
+
+		it('should passthrough string override when default is string', () => {
+			// Arrange: course default is string, override is string
+			const deviceModel = {
+				ControlWifi: {
+					WMStart: { command: 'Set', data: { washerDryer: {} } },
+				},
+				Config: {
+					defaultCourse: 'delicate',
+					courseType: 'course',
+					smartCourseType: 'smartCourse',
+				},
+				Course: {
+					delicate: {
+						function: [{ value: 'mode', default: 'normal' }],
+					},
+				},
+			};
+
+			// Act: pass string override
+			const result = extractWasherStartCommand(deviceModel, {
+				courseId: 'delicate',
+				parameterOverrides: { mode: 'eco' },
+			});
+
+			// Assert: override used as-is (passthrough for strings)
+			const washerDryerData = result?.dataSetList?.['washerDryer'] as Record<string, unknown> | undefined;
+			expect(washerDryerData?.['mode']).toBe('eco');
+		});
+
+		it('should drop unknown parameter override names that are not in course defaults', () => {
+			// Arrange: override contains a parameter name not in the course's function defaults
+			const deviceModel = {
+				ControlWifi: {
+					WMStart: { command: 'Set', data: { washerDryer: {} } },
+				},
+				Config: {
+					defaultCourse: 'delicate',
+					courseType: 'course',
+					smartCourseType: 'smartCourse',
+				},
+				Course: {
+					delicate: {
+						function: [{ value: 'spinSpeed', default: 800 }],
+					},
+				},
+			};
+
+			// Act: pass override with unknown parameter name
+			const result = extractWasherStartCommand(deviceModel, {
+				courseId: 'delicate',
+				parameterOverrides: { staleParam: '123', spinSpeed: '400' },
+			});
+
+			// Assert: staleParam dropped (fail-closed), spinSpeed applied
+			const washerDryerData = result?.dataSetList?.['washerDryer'] as Record<string, unknown> | undefined;
+			expect(washerDryerData?.['staleParam']).toBeUndefined();
+			expect(washerDryerData?.['spinSpeed']).toBe(400);
+		});
+
+		it('should coerce zero and negative numbers correctly', () => {
+			// Arrange: test zero and negative numeric string overrides
+			const deviceModel = {
+				ControlWifi: {
+					WMStart: { command: 'Set', data: { washerDryer: {} } },
+				},
+				Config: {
+					defaultCourse: 'delicate',
+					courseType: 'course',
+					smartCourseType: 'smartCourse',
+				},
+				Course: {
+					delicate: {
+						function: [
+							{ value: 'zeroParam', default: 100 },
+							{ value: 'negativeParam', default: 100 },
+						],
+					},
+				},
+			};
+
+			// Act: pass zero and negative string overrides
+			const result = extractWasherStartCommand(deviceModel, {
+				courseId: 'delicate',
+				parameterOverrides: { zeroParam: '0', negativeParam: '-500' },
+			});
+
+			// Assert: zero and negative numbers coerced correctly
+			const washerDryerData = result?.dataSetList?.['washerDryer'] as Record<string, unknown> | undefined;
+			expect(washerDryerData?.['zeroParam']).toBe(0);
+			expect(washerDryerData?.['negativeParam']).toBe(-500);
 		});
 	});
 });

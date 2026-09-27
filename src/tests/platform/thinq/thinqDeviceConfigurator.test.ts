@@ -727,11 +727,12 @@ describe('ThinqDeviceConfigurator', () => {
 			const fullWasherControl = {
 				allowRemoteStart: true,
 				allowRemoteStop: true,
+				availableCourseIds: ['courseA'],
 				selectedCourse: 'courseA',
 				courses: [
 					{
 						id: 'courseA',
-						parameters: [{ name: 'spinSpeed', value: '1200', valueType: 'number' }],
+						parameters: { spinSpeed: '1200' },
 					},
 				],
 			};
@@ -819,10 +820,10 @@ describe('ThinqDeviceConfigurator', () => {
 				courses: [
 					{
 						id: 'delicate',
-						parameters: [
-							{ name: 'spinSpeed', value: '600', valueType: 'number' },
-							{ name: 'waterTemp', value: '30', valueType: 'number' },
-						],
+						parameters: {
+							spinSpeed: '600',
+							waterTemp: '30',
+						},
 					},
 				],
 			};
@@ -980,9 +981,9 @@ describe('ThinqDeviceConfigurator', () => {
 				courses: [
 					{
 						id: 'delicate',
-						parameters: [
-							{ name: 'spinSpeed', value: '400', valueType: 'number' }, // User edited value
-						],
+						parameters: {
+							spinSpeed: '400', // User edited value
+						},
 					},
 				],
 			});
@@ -1052,13 +1053,15 @@ describe('ThinqDeviceConfigurator', () => {
 			expect(getConfigSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
 
 			// CRITICAL ASSERTION: Verify that extractWasherStartCommand was called with the resolved courseSelection
-			// argument containing the user-edited override value (400), not the model default (800)
-			// This proves the real config→override resolution logic works end-to-end
+			// argument containing the user-edited override value (400 as string), not the model default (800)
+			// This test proves the raw config value flows through unchanged; numeric coercion is unit-tested in
+			// thinqWasherStartCommandResolver.test.ts, since extractWasherStartCommand is MOCKED in this file
+			// and never actually runs its coercion logic here.
 			expect(vi.mocked(mockedExtractWasherStartCommand)).toHaveBeenCalledWith(
 				expect.anything(), // deviceModel
 				expect.objectContaining({
 					courseId: 'delicate',
-					parameterOverrides: expect.objectContaining({ spinSpeed: 400 }),
+					parameterOverrides: expect.objectContaining({ spinSpeed: '400' }),
 				}),
 			);
 		});

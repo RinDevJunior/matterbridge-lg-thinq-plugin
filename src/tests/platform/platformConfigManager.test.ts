@@ -786,6 +786,97 @@ describe('PlatformConfigManager', () => {
 		});
 	});
 
+	describe('isDeviceIgnored', () => {
+		it('should return true when device found with ignore set to true', () => {
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'device-1',
+							ignore: true,
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			expect(manager.isDeviceIgnored('device-1')).toBe(true);
+		});
+
+		it('should return false when device found with ignore set to false', () => {
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'device-1',
+							ignore: false,
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			expect(manager.isDeviceIgnored('device-1')).toBe(false);
+		});
+
+		it('should return false when device found but ignore field is absent', () => {
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'device-1',
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			expect(manager.isDeviceIgnored('device-1')).toBe(false);
+		});
+
+		it('should return false when device not found in thinq.devices', () => {
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'other-device',
+							ignore: true,
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			expect(manager.isDeviceIgnored('device-1')).toBe(false);
+		});
+
+		it('should return false when thinq.devices is empty', () => {
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			expect(manager.isDeviceIgnored('device-1')).toBe(false);
+		});
+	});
+
 	describe('ensureWasherControlEntry', () => {
 		it('should return a new empty object when device entry has no washerControl', () => {
 			const config = asPartial<LgThinqPluginPlatformConfig>({
@@ -926,7 +1017,7 @@ describe('PlatformConfigManager', () => {
 								courses: [
 									{
 										id: 'express',
-										parameters: [],
+										parameters: {},
 									},
 								],
 							},

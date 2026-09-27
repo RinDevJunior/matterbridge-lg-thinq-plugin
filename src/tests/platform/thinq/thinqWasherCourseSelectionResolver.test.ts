@@ -5,19 +5,18 @@ import { resolveWasherCourseSelectionFromConfig } from '../../../platform/thinq/
 
 describe('thinqWasherCourseSelectionResolver', () => {
 	describe('resolveWasherCourseSelectionFromConfig', () => {
-		it('should resolve courseId and coerce mixed valueTypes correctly', () => {
+		it('should return courseId and parameterOverrides when selectedCourse set and matching entry exists', () => {
 			// Arrange
 			const washerControl: ThinqWasherControlConfig = {
 				selectedCourse: 'courseA',
 				courses: [
 					{
 						id: 'courseA',
-						parameters: [
-							{ name: 'spinSpeed', value: '1200', valueType: 'number' },
-							{ name: 'waterTemp', value: '60', valueType: 'number' },
-							{ name: 'mode', value: 'delicate', valueType: 'string' },
-							{ name: 'enabled', value: 'true', valueType: 'boolean' },
-						],
+						parameters: {
+							spinSpeed: '1200',
+							waterTemp: '60',
+							mode: 'delicate',
+						},
 					},
 				],
 			};
@@ -27,25 +26,21 @@ describe('thinqWasherCourseSelectionResolver', () => {
 
 			// Assert
 			expect(result.courseId).toBe('courseA');
-			expect(result.parameterOverrides ?? {}).toEqual({
-				spinSpeed: 1200,
-				waterTemp: 60,
+			expect(result.parameterOverrides).toEqual({
+				spinSpeed: '1200',
+				waterTemp: '60',
 				mode: 'delicate',
-				enabled: true,
 			});
 		});
 
-		it('should skip parameter with non-numeric string for number valueType', () => {
+		it('should return a new object for parameterOverrides, not the same reference', () => {
 			// Arrange
 			const washerControl: ThinqWasherControlConfig = {
 				selectedCourse: 'courseA',
 				courses: [
 					{
 						id: 'courseA',
-						parameters: [
-							{ name: 'spinSpeed', value: 'abc', valueType: 'number' }, // Invalid number
-							{ name: 'waterTemp', value: '60', valueType: 'number' },
-						],
+						parameters: { spinSpeed: '1200' },
 					},
 				],
 			};
@@ -54,114 +49,18 @@ describe('thinqWasherCourseSelectionResolver', () => {
 			const result = resolveWasherCourseSelectionFromConfig(washerControl);
 
 			// Assert
-			expect(result.parameterOverrides ?? {}).toEqual({
-				waterTemp: 60,
-			});
-			expect((result.parameterOverrides ?? {})['spinSpeed']).toBeUndefined();
+			expect(result.parameterOverrides).not.toBe(washerControl.courses?.[0].parameters);
+			expect(result.parameterOverrides).toEqual(washerControl.courses?.[0].parameters);
 		});
 
-		it('should skip parameter with Infinity for number valueType', () => {
-			// Arrange
-			const washerControl: ThinqWasherControlConfig = {
-				selectedCourse: 'courseA',
-				courses: [
-					{
-						id: 'courseA',
-						parameters: [
-							{ name: 'spinSpeed', value: 'Infinity', valueType: 'number' },
-							{ name: 'waterTemp', value: '60', valueType: 'number' },
-						],
-					},
-				],
-			};
-
-			// Act
-			const result = resolveWasherCourseSelectionFromConfig(washerControl);
-
-			// Assert
-			expect(result.parameterOverrides ?? {}).toEqual({
-				waterTemp: 60,
-			});
-			expect((result.parameterOverrides ?? {})['spinSpeed']).toBeUndefined();
-		});
-
-		it('should skip parameter with NaN for number valueType', () => {
-			// Arrange
-			const washerControl: ThinqWasherControlConfig = {
-				selectedCourse: 'courseA',
-				courses: [
-					{
-						id: 'courseA',
-						parameters: [
-							{ name: 'spinSpeed', value: 'NaN', valueType: 'number' },
-							{ name: 'waterTemp', value: '60', valueType: 'number' },
-						],
-					},
-				],
-			};
-
-			// Act
-			const result = resolveWasherCourseSelectionFromConfig(washerControl);
-
-			// Assert
-			expect(result.parameterOverrides ?? {}).toEqual({
-				waterTemp: 60,
-			});
-			expect((result.parameterOverrides ?? {})['spinSpeed']).toBeUndefined();
-		});
-
-		it('should coerce string "true" to boolean true for boolean valueType', () => {
-			// Arrange
-			const washerControl: ThinqWasherControlConfig = {
-				selectedCourse: 'courseA',
-				courses: [
-					{
-						id: 'courseA',
-						parameters: [{ name: 'enabled', value: 'true', valueType: 'boolean' }],
-					},
-				],
-			};
-
-			// Act
-			const result = resolveWasherCourseSelectionFromConfig(washerControl);
-
-			// Assert
-			expect((result.parameterOverrides ?? {})['enabled']).toBe(true);
-		});
-
-		it('should coerce non-"true" string to boolean false for boolean valueType', () => {
-			// Arrange
-			const washerControl: ThinqWasherControlConfig = {
-				selectedCourse: 'courseA',
-				courses: [
-					{
-						id: 'courseA',
-						parameters: [
-							{ name: 'enabled1', value: 'false', valueType: 'boolean' },
-							{ name: 'enabled2', value: 'anything', valueType: 'boolean' },
-							{ name: 'enabled3', value: '', valueType: 'boolean' },
-						],
-					},
-				],
-			};
-
-			// Act
-			const result = resolveWasherCourseSelectionFromConfig(washerControl);
-
-			// Assert
-			expect((result.parameterOverrides ?? {})['enabled1']).toBe(false);
-			expect((result.parameterOverrides ?? {})['enabled2']).toBe(false);
-			expect((result.parameterOverrides ?? {})['enabled3']).toBe(false);
-		});
-
-		it('should return courseId undefined when selectedCourse unset', () => {
+		it('should return undefined courseId when selectedCourse unset', () => {
 			// Arrange
 			const washerControl: ThinqWasherControlConfig = {
 				// selectedCourse undefined
 				courses: [
 					{
 						id: 'courseA',
-						parameters: [{ name: 'param', value: 'value', valueType: 'string' }],
+						parameters: { param: 'value' },
 					},
 				],
 			};
@@ -173,14 +72,14 @@ describe('thinqWasherCourseSelectionResolver', () => {
 			expect(result.courseId).toBeUndefined();
 		});
 
-		it('should return empty parameterOverrides when selectedCourse set but no matching course entry', () => {
+		it('should pass through courseId even when no matching course entry found', () => {
 			// Arrange
 			const washerControl: ThinqWasherControlConfig = {
 				selectedCourse: 'unknownCourse',
 				courses: [
 					{
 						id: 'courseA',
-						parameters: [{ name: 'param', value: 'value', valueType: 'string' }],
+						parameters: { param: 'value' },
 					},
 				],
 			};
@@ -190,13 +89,32 @@ describe('thinqWasherCourseSelectionResolver', () => {
 
 			// Assert
 			expect(result.courseId).toBe('unknownCourse'); // Still passed through
-			expect(result.parameterOverrides ?? {}).toEqual({});
+			expect(result.parameterOverrides).toBeUndefined(); // But no overrides found
 		});
 
-		it('should return courseId when no matching course but courses array exists', () => {
+		it('should return undefined parameterOverrides when no matching course entry found', () => {
 			// Arrange
 			const washerControl: ThinqWasherControlConfig = {
 				selectedCourse: 'missingCourse',
+				courses: [
+					{
+						id: 'courseA',
+						parameters: { param: 'value' },
+					},
+				],
+			};
+
+			// Act
+			const result = resolveWasherCourseSelectionFromConfig(washerControl);
+
+			// Assert
+			expect(result.parameterOverrides).toBeUndefined();
+		});
+
+		it('should return undefined parameterOverrides when courses array is empty', () => {
+			// Arrange
+			const washerControl: ThinqWasherControlConfig = {
+				selectedCourse: 'courseA',
 				courses: [],
 			};
 
@@ -204,21 +122,18 @@ describe('thinqWasherCourseSelectionResolver', () => {
 			const result = resolveWasherCourseSelectionFromConfig(washerControl);
 
 			// Assert
-			expect(result.courseId).toBe('missingCourse');
-			expect(result.parameterOverrides ?? {}).toEqual({});
+			expect(result.courseId).toBe('courseA');
+			expect(result.parameterOverrides).toBeUndefined();
 		});
 
-		it('should skip parameter with missing name', () => {
+		it('should return a distinct empty object when entry exists but has empty parameters', () => {
 			// Arrange
 			const washerControl: ThinqWasherControlConfig = {
 				selectedCourse: 'courseA',
 				courses: [
 					{
 						id: 'courseA',
-						parameters: [
-							{ name: '', value: 'should-skip', valueType: 'string' }, // Empty name
-							{ name: 'validParam', value: 'keep', valueType: 'string' },
-						],
+						parameters: {},
 					},
 				],
 			};
@@ -227,59 +142,13 @@ describe('thinqWasherCourseSelectionResolver', () => {
 			const result = resolveWasherCourseSelectionFromConfig(washerControl);
 
 			// Assert
-			expect(result.parameterOverrides ?? {}).toEqual({
-				validParam: 'keep',
-			});
+			expect(result.courseId).toBe('courseA');
+			expect(result.parameterOverrides).toBeDefined(); // Not undefined
+			expect(result.parameterOverrides).toEqual({});
+			expect(result.parameterOverrides).not.toBe(washerControl.courses?.[0].parameters); // Defensive copy
 		});
 
-		it('should skip parameter with non-string name', () => {
-			// Arrange
-			const washerControl: ThinqWasherControlConfig = {
-				selectedCourse: 'courseA',
-				courses: [
-					{
-						id: 'courseA',
-						parameters: [
-							{ name: 123 as any, value: 'should-skip', valueType: 'string' }, // Non-string name
-							{ name: 'validParam', value: 'keep', valueType: 'string' },
-						],
-					},
-				],
-			};
-
-			// Act
-			const result = resolveWasherCourseSelectionFromConfig(washerControl);
-
-			// Assert
-			expect(result.parameterOverrides ?? {}).toEqual({
-				validParam: 'keep',
-			});
-		});
-
-		it('should treat missing valueType as passthrough string', () => {
-			// Arrange
-			const washerControl: ThinqWasherControlConfig = {
-				selectedCourse: 'courseA',
-				courses: [
-					{
-						id: 'courseA',
-						parameters: [
-							{ name: 'param1', value: 'text' /* valueType omitted */ },
-							{ name: 'param2', value: '123', valueType: undefined },
-						],
-					},
-				],
-			};
-
-			// Act
-			const result = resolveWasherCourseSelectionFromConfig(washerControl);
-
-			// Assert
-			expect((result.parameterOverrides ?? {})['param1']).toBe('text');
-			expect((result.parameterOverrides ?? {})['param2']).toBe('123');
-		});
-
-		it('should return empty washerControl as undefined courseId with empty overrides', () => {
+		it('should return undefined courseId and parameterOverrides for empty washerControl', () => {
 			// Arrange
 			const washerControl: ThinqWasherControlConfig = {};
 
@@ -288,10 +157,10 @@ describe('thinqWasherCourseSelectionResolver', () => {
 
 			// Assert
 			expect(result.courseId).toBeUndefined();
-			expect(result.parameterOverrides ?? {}).toEqual({});
+			expect(result.parameterOverrides).toBeUndefined();
 		});
 
-		it('should handle washerControl with no courses array', () => {
+		it('should return undefined parameterOverrides when courses array missing', () => {
 			// Arrange
 			const washerControl: ThinqWasherControlConfig = {
 				selectedCourse: 'courseA',
@@ -303,45 +172,7 @@ describe('thinqWasherCourseSelectionResolver', () => {
 
 			// Assert
 			expect(result.courseId).toBe('courseA');
-			expect(result.parameterOverrides ?? {}).toEqual({});
-		});
-
-		it('should convert 0 to number 0 correctly for number valueType', () => {
-			// Arrange
-			const washerControl: ThinqWasherControlConfig = {
-				selectedCourse: 'courseA',
-				courses: [
-					{
-						id: 'courseA',
-						parameters: [{ name: 'zeroParam', value: '0', valueType: 'number' }],
-					},
-				],
-			};
-
-			// Act
-			const result = resolveWasherCourseSelectionFromConfig(washerControl);
-
-			// Assert
-			expect((result.parameterOverrides ?? {})['zeroParam']).toBe(0);
-		});
-
-		it('should handle negative numbers correctly', () => {
-			// Arrange
-			const washerControl: ThinqWasherControlConfig = {
-				selectedCourse: 'courseA',
-				courses: [
-					{
-						id: 'courseA',
-						parameters: [{ name: 'negativeParam', value: '-500', valueType: 'number' }],
-					},
-				],
-			};
-
-			// Act
-			const result = resolveWasherCourseSelectionFromConfig(washerControl);
-
-			// Assert
-			expect((result.parameterOverrides ?? {})['negativeParam']).toBe(-500);
+			expect(result.parameterOverrides).toBeUndefined();
 		});
 	});
 });
