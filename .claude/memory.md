@@ -164,6 +164,10 @@ It is version-controlled — commit and push changes so teammates can pull the l
   existing `stop` handler so switch `off` reuses it unchanged; `resolveWasherStartCommandPayload` is a
   fully separate `getDeviceModel()` fetch, deliberately not sharing Stop's fetch. See
   `workspace/washer-remote-start-stop-switch/plan.md`.
+- AC endpoint `onOffPlugInUnit` (0x010A) added alongside `roomAirConditioner` on the same endpoint
+  (Sep 27, 2026): live-tested on a real AC, confirmed NO EFFECT in Apple Home (no power tile
+  appeared) — reverted. Do not retry this exact same-endpoint approach without new evidence. See
+  `workspace/apple-energy-tab-ac-not-listed/`.
 
 ## Test Patterns
 
