@@ -119,5 +119,50 @@ describe('thinqWasherEndpointFactory', () => {
 			expect(childMock?.createDefaultOnOffClusterServer).toHaveBeenCalledWith(false);
 			expect(childMock?.addRequiredClusterServers).toHaveBeenCalled();
 		});
+
+		it('should not add remote start/stop switch child when includeRemoteStartStopSwitch is false', () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const laundryWasherMock = vi.mocked(LaundryWasher);
+
+			// Act
+			buildWasherEndpoint(device, { includeRemoteStartStopSwitch: false });
+
+			// Assert
+			const mockInstance = laundryWasherMock.mock.results[0]?.value;
+			expect(mockInstance?.addChildDeviceType).not.toHaveBeenCalled();
+		});
+
+		it('should add remote start/stop switch child when includeRemoteStartStopSwitch is true', () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const laundryWasherMock = vi.mocked(LaundryWasher);
+
+			// Act
+			buildWasherEndpoint(device, { includeRemoteStartStopSwitch: true });
+
+			// Assert
+			const mockInstance = laundryWasherMock.mock.results[0]?.value;
+			expect(mockInstance?.addChildDeviceType).toHaveBeenCalledWith(
+				WASHER_REMOTE_START_STOP_SWITCH_ID,
+				expect.any(Array),
+			);
+		});
+
+		it('should add remote start/stop switch child when options omit includeRemoteStartStopSwitch', () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const laundryWasherMock = vi.mocked(LaundryWasher);
+
+			// Act
+			buildWasherEndpoint(device, { vendorId: 0xfff1 });
+
+			// Assert
+			const mockInstance = laundryWasherMock.mock.results[0]?.value;
+			expect(mockInstance?.addChildDeviceType).toHaveBeenCalledWith(
+				WASHER_REMOTE_START_STOP_SWITCH_ID,
+				expect.any(Array),
+			);
+		});
 	});
 });

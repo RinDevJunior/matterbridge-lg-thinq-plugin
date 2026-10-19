@@ -1,6 +1,12 @@
+export interface WasherCourseSelection {
+	readonly courseId?: string;
+	readonly parameterOverrides?: Record<string, string>;
+}
+
 export interface WasherStartCommandPayload {
 	readonly command?: string;
 	readonly dataSetList?: Record<string, unknown>;
+	readonly resolvedCourseId?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -9,12 +15,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * Extracts a real `WMStart` command payload from a device's own downloaded model JSON
- * (`ControlWifi`/`Config`/`Course` slices). Pure, no I/O — returns `undefined` on any
- * missing/malformed shape instead of throwing, so callers can treat "no usable command" as a
- * normal (fail-closed) outcome. Always uses the model-declared default course (`Config.defaultCourse`)
- * and its own `function[]` defaults — no per-device course selection.
+ * (`ControlWifi`/`Config`/`Course` slices). Coerces raw string parameter overrides using the
+ * device's own freshly-resolved course-default types (no persisted `valueType`, no extra fetch).
+ * Drops unknown/stale override names, never injecting raw, uncoerced strings into the payload.
+ * Pure, no I/O — returns `undefined` on any missing/malformed shape instead of throwing, so
+ * callers can treat "no usable command" as a normal (fail-closed) outcome. Always uses the
+ * model-declared default course (`Config.defaultCourse`) and its own `function[]` defaults — no
+ * per-device course selection.
  */
-export function extractWasherStartCommand(deviceModel: Record<string, unknown>): WasherStartCommandPayload | undefined {
+export function extractWasherStartCommand(
+	deviceModel: Record<string, unknown>,
+	courseSelection?: WasherCourseSelection,
+): WasherStartCommandPayload | undefined {
 	if (!isRecord(deviceModel)) {
 		return undefined;
 	}
@@ -60,12 +72,16 @@ export function extractWasherStartCommand(deviceModel: Record<string, unknown>):
 		return undefined;
 	}
 
-	const defaultCourseEntry = course[defaultCourse];
-	if (!isRecord(defaultCourseEntry)) {
+	const requestedCourseId = courseSelection?.courseId;
+	const resolvedCourseId =
+		typeof requestedCourseId === 'string' && isRecord(course[requestedCourseId]) ? requestedCourseId : defaultCourse;
+
+	const selectedCourseEntry = course[resolvedCourseId];
+	if (!isRecord(selectedCourseEntry)) {
 		return undefined;
 	}
 
-	const functionEntries = defaultCourseEntry.function;
+	const functionEntries = selectedCourseEntry.function;
 	if (!Array.isArray(functionEntries)) {
 		return undefined;
 	}
@@ -81,15 +97,37 @@ export function extractWasherStartCommand(deviceModel: Record<string, unknown>):
 		return undefined;
 	}
 
+	const coercedOverrides: Record<string, unknown> = {};
+	for (const [name, rawValue] of Object.entries(courseSelection?.parameterOverrides ?? {})) {
+		if (!(name in courseDefaults)) {
+			continue; // unknown/stale parameter name for this course — fail-closed, never inject raw
+		}
+		const originalType = typeof courseDefaults[name];
+		if (originalType === 'number') {
+			const numericValue = Number(rawValue);
+			if (Number.isFinite(numericValue)) {
+				coercedOverrides[name] = numericValue;
+			}
+			// else: leave it out — courseDefaults[name]'s own value wins via the merge below (matches the old
+			// "skip invalid number override" behavior, just relocated)
+		} else if (originalType === 'boolean') {
+			coercedOverrides[name] = rawValue === 'true';
+		} else {
+			coercedOverrides[name] = rawValue;
+		}
+	}
+
 	const mergedInner: Record<string, unknown> = {
 		...templateInner,
 		...courseDefaults,
-		[courseType]: defaultCourse,
+		...coercedOverrides,
+		[courseType]: resolvedCourseId,
 		[smartCourseType]: 'NOT_SELECTED',
 	};
 
 	return {
 		command: typeof startEntry.command === 'string' ? startEntry.command : undefined,
 		dataSetList: { [dev]: mergedInner },
+		resolvedCourseId,
 	};
 }
