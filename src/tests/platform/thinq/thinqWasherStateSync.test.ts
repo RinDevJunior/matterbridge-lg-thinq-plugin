@@ -2,7 +2,6 @@ import { OnOff, OperationalState } from 'matterbridge/matter/clusters';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ThinqSnapshot } from '../../../core/domain/value-objects/ThinqSnapshot.js';
-import { WASHER_REMOTE_START_STOP_SWITCH_ID } from '../../../platform/thinq/thinqWasherEndpointFactory.js';
 import {
 	applyThinqSnapshotToWasher,
 	mapWasherStateToOperationalState,
@@ -16,7 +15,6 @@ function createMockWasherEndpoint(): any {
 		log: createMockLogger(),
 		updateAttribute: vi.fn().mockResolvedValue(false),
 		getAttribute: vi.fn().mockReturnValue(OperationalState.OperationalStateEnum.Stopped),
-		getChildEndpointById: vi.fn().mockReturnValue(undefined),
 	});
 }
 
@@ -372,87 +370,7 @@ describe('thinqWasherStateSync', () => {
 			expect(entryLog?.at(0)).toContain('unknown');
 		});
 
-		it('should update remote start/stop switch onOff when child exists and washer is running', async () => {
-			// Arrange
-			const snapshot = new ThinqSnapshot({
-				washerDryer: { state: 'RUNNING' },
-			});
-			const mockChild = asPartial<any>({
-				updateAttribute: vi.fn().mockResolvedValue(false),
-			});
-			mockWasher.getChildEndpointById.mockReturnValue(mockChild);
-
-			// Act
-			await applyThinqSnapshotToWasher(mockWasher, snapshot, mockLogger);
-
-			// Assert
-			expect(mockChild.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', true, mockLogger);
-		});
-
-		it('should update remote start/stop switch onOff to false when washer is not running', async () => {
-			// Arrange
-			const snapshot = new ThinqSnapshot({
-				washerDryer: { state: 'END' },
-			});
-			const mockChild = asPartial<any>({
-				updateAttribute: vi.fn().mockResolvedValue(false),
-			});
-			mockWasher.getChildEndpointById.mockReturnValue(mockChild);
-
-			// Act
-			await applyThinqSnapshotToWasher(mockWasher, snapshot, mockLogger);
-
-			// Assert
-			expect(mockChild.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', false, mockLogger);
-		});
-
-		it('should update remote start/stop switch onOff to false when washer is paused', async () => {
-			// Arrange
-			const snapshot = new ThinqSnapshot({
-				washerDryer: { state: 'PAUSE' },
-			});
-			const mockChild = asPartial<any>({
-				updateAttribute: vi.fn().mockResolvedValue(false),
-			});
-			mockWasher.getChildEndpointById.mockReturnValue(mockChild);
-
-			// Act
-			await applyThinqSnapshotToWasher(mockWasher, snapshot, mockLogger);
-
-			// Assert
-			expect(mockChild.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', false, mockLogger);
-		});
-
-		it('should not crash when child endpoint is undefined (defensive missing-child path)', async () => {
-			// Arrange
-			const snapshot = new ThinqSnapshot({
-				washerDryer: { state: 'RUNNING' },
-			});
-			mockWasher.getChildEndpointById.mockReturnValue(undefined);
-
-			// Act & Assert
-			await expect(applyThinqSnapshotToWasher(mockWasher, snapshot, mockLogger)).resolves.not.toThrow();
-			// Should complete without errors
-		});
-
-		it('should not update child when child endpoint is not found', async () => {
-			// Arrange
-			const snapshot = new ThinqSnapshot({
-				washerDryer: { state: 'RUNNING' },
-			});
-			const mockChild = asPartial<any>({
-				updateAttribute: vi.fn().mockResolvedValue(false),
-			});
-			mockWasher.getChildEndpointById.mockReturnValue(undefined);
-
-			// Act
-			await applyThinqSnapshotToWasher(mockWasher, snapshot, mockLogger);
-
-			// Assert
-			expect(mockChild.updateAttribute).not.toHaveBeenCalled();
-		});
-
-		it('should call getChildEndpointById with correct switch ID', async () => {
+		it('should not look up any child endpoint while still updating onOff, operationalState and operationalError', async () => {
 			// Arrange
 			const snapshot = new ThinqSnapshot({
 				washerDryer: { state: 'RUNNING' },
@@ -462,41 +380,9 @@ describe('thinqWasherStateSync', () => {
 			await applyThinqSnapshotToWasher(mockWasher, snapshot, mockLogger);
 
 			// Assert
-			expect(mockWasher.getChildEndpointById).toHaveBeenCalledWith(WASHER_REMOTE_START_STOP_SWITCH_ID);
-		});
-
-		it('should propagate child update errors instead of swallowing them', async () => {
-			// Arrange
-			const snapshot = new ThinqSnapshot({
-				washerDryer: { state: 'RUNNING' },
-			});
-			const mockChild = asPartial<any>({
-				updateAttribute: vi.fn().mockRejectedValue(new Error('Child update failed')),
-			});
-			mockWasher.getChildEndpointById.mockReturnValue(mockChild);
-
-			// Act & Assert
-			// Child update errors should be propagated, not silently swallowed
-			await expect(applyThinqSnapshotToWasher(mockWasher, snapshot, mockLogger)).rejects.toThrow('Child update failed');
-		});
-
-		it('should skip child write when washerRawState is undefined', async () => {
-			// Arrange
-			const snapshot = new ThinqSnapshot({
-				washerDryer: { remainTimeHour: 1 },
-				// Missing washerDryer.state
-			});
-			const mockChild = asPartial<any>({
-				updateAttribute: vi.fn().mockResolvedValue(false),
-			});
-			mockWasher.getChildEndpointById.mockReturnValue(mockChild);
-
-			// Act
-			await applyThinqSnapshotToWasher(mockWasher, snapshot, mockLogger);
-
-			// Assert
-			// Should return early, child should not be updated
-			expect(mockChild.updateAttribute).not.toHaveBeenCalled();
+			expect(mockWasher.getChildEndpointById).toBeUndefined();
+			const attributeNames = vi.mocked(mockWasher.updateAttribute).mock.calls.map((call: any[]) => call[1]);
+			expect(attributeNames).toEqual(expect.arrayContaining(['onOff', 'operationalState', 'operationalError']));
 		});
 	});
 });
