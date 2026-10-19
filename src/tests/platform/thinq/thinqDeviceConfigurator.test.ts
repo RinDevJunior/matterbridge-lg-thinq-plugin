@@ -582,13 +582,12 @@ describe('ThinqDeviceConfigurator', () => {
 		it('should log error when child endpoint is missing at registration', async () => {
 			// Arrange
 			const device = createMockWasherDevice();
-			const buildEndpointSpy = vi.mocked(buildWasherEndpoint);
-
-			// Setup the mock endpoint to return undefined for child
-			const mockEndpoint = buildEndpointSpy.mock.results[0]?.value;
-			if (mockEndpoint) {
-				(mockEndpoint.getChildEndpointById as any).mockReturnValue(undefined);
-			}
+			vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue({ allowRemoteStop: true });
+			const mockWasherEndpoint = asPartial<any>({
+				log: { debug: vi.fn(), info: vi.fn(), error: vi.fn() },
+				getChildEndpointById: vi.fn().mockReturnValue(undefined),
+			});
+			vi.mocked(buildWasherEndpoint).mockImplementationOnce(() => mockWasherEndpoint);
 
 			// Act
 			await configurator.registerWasher(device);
@@ -600,19 +599,86 @@ describe('ThinqDeviceConfigurator', () => {
 		it('should not register switch handlers when getChildEndpointById returns undefined', async () => {
 			// Arrange
 			const device = createMockWasherDevice();
-			const buildEndpointSpy = vi.mocked(buildWasherEndpoint);
+			vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue({ allowRemoteStop: true });
 			const registerSwitchHandlersSpy = vi.mocked(registerWasherRemoteStartStopSwitchCommandHandlers);
-
-			// Setup the mock endpoint to return undefined for child
-			const mockEndpoint = buildEndpointSpy.mock.results[0]?.value;
-			if (mockEndpoint) {
-				(mockEndpoint.getChildEndpointById as any).mockReturnValue(undefined);
-			}
+			const mockWasherEndpoint = asPartial<any>({
+				log: { debug: vi.fn(), info: vi.fn(), error: vi.fn() },
+				getChildEndpointById: vi.fn().mockReturnValue(undefined),
+			});
+			vi.mocked(buildWasherEndpoint).mockImplementationOnce(() => mockWasherEndpoint);
 
 			// Act
 			await configurator.registerWasher(device);
 
 			// Assert
+			expect(registerSwitchHandlersSpy).not.toHaveBeenCalled();
+		});
+
+		it('should pass includeRemoteStartStopSwitch false to buildWasherEndpoint when both flags are absent', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue({});
+
+			// Act
+			await configurator.registerWasher(device);
+
+			// Assert
+			expect(vi.mocked(buildWasherEndpoint)).toHaveBeenCalledWith(
+				expect.anything(),
+				expect.objectContaining({ includeRemoteStartStopSwitch: false }),
+			);
+		});
+
+		it('should pass includeRemoteStartStopSwitch true to buildWasherEndpoint when only allowRemoteStop is set', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue({ allowRemoteStop: true });
+
+			// Act
+			await configurator.registerWasher(device);
+
+			// Assert
+			expect(vi.mocked(buildWasherEndpoint)).toHaveBeenCalledWith(
+				expect.anything(),
+				expect.objectContaining({ includeRemoteStartStopSwitch: true }),
+			);
+		});
+
+		it('should pass includeRemoteStartStopSwitch true to buildWasherEndpoint when only allowRemoteStart is set', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue({ allowRemoteStart: true });
+
+			// Act
+			await configurator.registerWasher(device);
+
+			// Assert
+			expect(vi.mocked(buildWasherEndpoint)).toHaveBeenCalledWith(
+				expect.anything(),
+				expect.objectContaining({ includeRemoteStartStopSwitch: true }),
+			);
+		});
+
+		it('should not log child-missing error and should log info when both flags are false and child is undefined', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue({
+				allowRemoteStart: false,
+				allowRemoteStop: false,
+			});
+			const registerSwitchHandlersSpy = vi.mocked(registerWasherRemoteStartStopSwitchCommandHandlers);
+			const mockWasherEndpoint = asPartial<any>({
+				log: { debug: vi.fn(), info: vi.fn(), error: vi.fn() },
+				getChildEndpointById: vi.fn().mockReturnValue(undefined),
+			});
+			vi.mocked(buildWasherEndpoint).mockImplementationOnce(() => mockWasherEndpoint);
+
+			// Act
+			await configurator.registerWasher(device);
+
+			// Assert
+			expect(mockLogger.error).not.toHaveBeenCalledWith(expect.stringContaining('child endpoint missing'));
+			expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('remote start/stop switch not created'));
 			expect(registerSwitchHandlersSpy).not.toHaveBeenCalled();
 		});
 

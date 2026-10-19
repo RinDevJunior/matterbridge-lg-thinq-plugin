@@ -12,6 +12,8 @@ export interface BuildWasherEndpointOptions {
 	vendorName?: string;
 	productId?: number;
 	productName?: string;
+	/** Omit or pass `true` to create the remote Start/Stop switch child; `false` skips it entirely. */
+	includeRemoteStartStopSwitch?: boolean;
 }
 
 /**
@@ -40,11 +42,13 @@ export function buildWasherEndpoint(
 		options?.productName ?? 'Matterbridge Laundry Washer',
 	);
 
-	washer
-		.addChildDeviceType(WASHER_REMOTE_START_STOP_SWITCH_ID, [onOffPlugInUnit])
-		.createDefaultIdentifyClusterServer()
-		.createDefaultOnOffClusterServer(false)
-		.addRequiredClusterServers();
+	if (options?.includeRemoteStartStopSwitch !== false) {
+		washer
+			.addChildDeviceType(WASHER_REMOTE_START_STOP_SWITCH_ID, [onOffPlugInUnit])
+			.createDefaultIdentifyClusterServer()
+			.createDefaultOnOffClusterServer(false)
+			.addRequiredClusterServers();
+	}
 
 	return washer;
 }

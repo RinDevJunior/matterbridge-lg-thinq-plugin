@@ -153,17 +153,20 @@ export class ThinqDeviceConfigurator {
 			: undefined;
 		const productIdentity = this.resolveProductIdentity(device);
 
+		const washerControl = this.configManager.getWasherControlConfig(device.id);
+		const exposeRemoteSwitch = Boolean(washerControl.allowRemoteStart || washerControl.allowRemoteStop);
+
 		const washer = buildWasherEndpoint(device, {
 			vendorId: matterOverride?.matterVendorId,
 			vendorName: matterOverride?.matterVendorName,
 			productId: productIdentity.productId,
 			productName: productIdentity.productName,
+			includeRemoteStartStopSwitch: exposeRemoteSwitch,
 		});
 
 		// Hardcoded: the washer is always exposed as its own standalone Matter node (server mode), matching the AC.
 		washer.mode = 'server';
 
-		const washerControl = this.configManager.getWasherControlConfig(device.id);
 		const stopCommandPayload = await this.resolveWasherStopCommandPayload(device);
 		registerWasherCommandHandlers(washer, device, this.apiClient, this.logger, washerControl, stopCommandPayload);
 
@@ -191,9 +194,13 @@ export class ThinqDeviceConfigurator {
 				startCommandPayload,
 				stopCommandPayload,
 			);
-		} else {
+		} else if (exposeRemoteSwitch) {
 			this.logger.error(
 				`ThinQ Washer ${device.id}: ${WASHER_REMOTE_START_STOP_SWITCH_ID} child endpoint missing at registration — remote start/stop switch will not respond.`,
+			);
+		} else {
+			this.logger.info(
+				`ThinQ Washer ${device.id}: remote start/stop switch not created (allowRemoteStart and allowRemoteStop are both off).`,
 			);
 		}
 
