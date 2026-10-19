@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.1-rc03] - 2026-10-20
+
 ### Changed
 
 - **Washer Start/Pause/Stop wired directly to OperationalState** — Pause sends LG's PAUSE control (`WMStop`), Stop sends LG's POWEROFF control (`WMOff`).
@@ -16,6 +18,11 @@
 ### Fixed
 
 - **Start from Google Home / Matter apps** — Start now actually sends the command to LG instead of only updating the displayed state.
+- **ThinQ keep-alive failure logging** — a failed AC keep-alive now logs a single line including LG's resultCode instead of two debug lines; no retry or back-off was added.
+
+<a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
+
+---
 
 ## [0.1.1-rc02] - 2026-10-19
 
