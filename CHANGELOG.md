@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Washer Start/Pause/Stop wired directly to OperationalState** — Pause sends LG's PAUSE control (`WMStop`), Stop sends LG's POWEROFF control (`WMOff`).
+- **BREAKING: washer Stop now sends POWEROFF (`WMOff`)** — Matterbridge Stop previously sent LG's PAUSE control (`WMStop`); it now powers the washer off, so automations relying on Stop to pause must use Pause instead.
+- **Washer Resume not supported** — LG has no resume control; via Matter, Pause sends PAUSE only when the washer is Running.
+- **BREAKING: "Allow Remote Start/Stop (Washer)" settings removed** — the `allowRemoteStart` and `allowRemoteStop` options are gone; old keys are cleaned from existing configs automatically.
+
+### Removed
+
+- **Washer `RemoteStartStopSwitch` child endpoint removed** — the extra Start/Stop switch is gone. The washer is its own Matter node, so it just disappears; if a controller (Apple/Google Home) keeps a stale tile, remove the washer and add it again.
+
+### Fixed
+
+- **Start from Google Home / Matter apps** — Start now actually sends the command to LG instead of only updating the displayed state.
+
 ## [0.1.1-rc02] - 2026-10-19
 
 ### Added

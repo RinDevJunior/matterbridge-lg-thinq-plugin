@@ -604,7 +604,7 @@ describe('PlatformConfigManager', () => {
 					devices: [
 						{
 							deviceId: 'washer-123',
-							washerControl: { allowRemoteStop: true },
+							washerControl: { selectedCourse: 'express' },
 						},
 					],
 				},
@@ -613,7 +613,7 @@ describe('PlatformConfigManager', () => {
 
 			const result = manager.getWasherControlConfig('washer-123');
 
-			expect(result).toEqual({ allowRemoteStop: true });
+			expect(result).toEqual({ selectedCourse: 'express' });
 		});
 
 		it('should return empty object when device found but washerControl not set', () => {
@@ -668,7 +668,7 @@ describe('PlatformConfigManager', () => {
 			expect(result).toEqual({});
 		});
 
-		it('should return allowRemoteStop false when explicitly set', () => {
+		it('should return availableCourseIds unchanged when explicitly set', () => {
 			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: {
 					loginType: 'account',
@@ -677,7 +677,7 @@ describe('PlatformConfigManager', () => {
 					devices: [
 						{
 							deviceId: 'washer-123',
-							washerControl: { allowRemoteStop: false },
+							washerControl: { availableCourseIds: ['express'] },
 						},
 					],
 				},
@@ -686,7 +686,7 @@ describe('PlatformConfigManager', () => {
 
 			const result = manager.getWasherControlConfig('washer-123');
 
-			expect(result).toEqual({ allowRemoteStop: false });
+			expect(result).toEqual({ availableCourseIds: ['express'] });
 		});
 	});
 
@@ -919,11 +919,11 @@ describe('PlatformConfigManager', () => {
 			const result = manager.ensureWasherControlEntry('washer-123');
 
 			// Mutate the returned object
-			result.allowRemoteStart = true;
+			result.selectedCourse = 'express';
 
 			// Re-read the device entry to verify mutation persists
 			const reread = manager.getWasherControlConfig('washer-123');
-			expect(reread.allowRemoteStart).toBe(true);
+			expect(reread.selectedCourse).toBe('express');
 		});
 
 		it('should return existing washerControl when device entry already has one', () => {
@@ -935,7 +935,7 @@ describe('PlatformConfigManager', () => {
 					devices: [
 						{
 							deviceId: 'washer-123',
-							washerControl: { allowRemoteStop: true, allowRemoteStart: false },
+							washerControl: { selectedCourse: 'express', availableCourseIds: ['express'] },
 						},
 					],
 				},
@@ -944,11 +944,11 @@ describe('PlatformConfigManager', () => {
 
 			const result = manager.ensureWasherControlEntry('washer-123');
 
-			expect(result).toEqual({ allowRemoteStop: true, allowRemoteStart: false });
+			expect(result).toEqual({ selectedCourse: 'express', availableCourseIds: ['express'] });
 		});
 
 		it('should return same object reference for existing washerControl', () => {
-			const washerControl = { allowRemoteStop: true };
+			const washerControl = { selectedCourse: 'express' };
 			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: {
 					loginType: 'account',
@@ -1011,8 +1011,6 @@ describe('PlatformConfigManager', () => {
 						{
 							deviceId: 'washer-123',
 							washerControl: {
-								allowRemoteStart: true,
-								allowRemoteStop: true,
 								selectedCourse: 'express',
 								courses: [
 									{
@@ -1029,7 +1027,6 @@ describe('PlatformConfigManager', () => {
 
 			const result = manager.ensureWasherControlEntry('washer-123');
 
-			expect(result.allowRemoteStart).toBe(true);
 			expect(result.selectedCourse).toBe('express');
 			expect(result.courses).toHaveLength(1);
 		});
@@ -1044,7 +1041,7 @@ describe('PlatformConfigManager', () => {
 					devices: [
 						{
 							deviceId: 'washer-123',
-							washerControl: { allowRemoteStop: true },
+							washerControl: { selectedCourse: 'express' },
 						},
 					],
 				},
@@ -1053,7 +1050,7 @@ describe('PlatformConfigManager', () => {
 
 			const getResult = manager.getWasherControlConfig('washer-123');
 
-			expect(getResult).toEqual({ allowRemoteStop: true });
+			expect(getResult).toEqual({ selectedCourse: 'express' });
 		});
 
 		it('should not affect getWasherControlConfig when device has no washerControl', () => {

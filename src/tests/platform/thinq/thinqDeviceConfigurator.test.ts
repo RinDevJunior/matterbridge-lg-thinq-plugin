@@ -8,11 +8,9 @@ import type { PlatformConfigManager } from '../../../platform/platformConfigMana
 import { registerAirConditionerCommandHandlers } from '../../../platform/thinq/thinqAirConditionerCommandHandlers.js';
 import { buildAirConditionerEndpoint } from '../../../platform/thinq/thinqAirConditionerEndpointFactory.js';
 import { ThinqDeviceConfigurator } from '../../../platform/thinq/thinqDeviceConfigurator.js';
-import {
-	registerWasherCommandHandlers,
-	registerWasherRemoteStartStopSwitchCommandHandlers,
-} from '../../../platform/thinq/thinqWasherCommandHandlers.js';
+import { registerWasherCommandHandlers } from '../../../platform/thinq/thinqWasherCommandHandlers.js';
 import { buildWasherEndpoint } from '../../../platform/thinq/thinqWasherEndpointFactory.js';
+import { extractWasherStartCommand } from '../../../platform/thinq/thinqWasherStartCommandResolver.js';
 import type { ThinqApiClient } from '../../../services/thinq/thinqApiClient.js';
 import { asPartial, createMockLogger } from '../../helpers/testUtils.js';
 
@@ -30,21 +28,48 @@ vi.mock('../../../platform/thinq/thinqAirConditionerEndpointFactory.js', () => (
 vi.mock('../../../platform/thinq/thinqWasherEndpointFactory.js', () => ({
 	buildWasherEndpoint: vi.fn(() => ({
 		log: { debug: vi.fn(), info: vi.fn(), error: vi.fn() },
-		getChildEndpointById: vi.fn(),
 	})),
-	WASHER_REMOTE_START_STOP_SWITCH_ID: 'RemoteStartStopSwitch',
 }));
 vi.mock('../../../platform/thinq/thinqWasherCommandHandlers.js', () => ({
 	registerWasherCommandHandlers: vi.fn(),
-	registerWasherRemoteStartStopSwitchCommandHandlers: vi.fn(),
 }));
 vi.mock('../../../platform/thinq/thinqWasherStartCommandResolver.js', () => ({
 	extractWasherStartCommand: vi.fn(),
 }));
-vi.mock('../../../platform/thinq/thinqWasherStopCommandResolver.js');
 vi.mock('../../../platform/thinq/thinqAirConditionerFilterResetCommandHandler.js', () => ({
 	registerFilterResetCommandHandler: vi.fn(),
 }));
+
+/** LG `ControlWifi.WMStop` entry: the PAUSE control (matches the LG sample washer model shape). */
+const PAUSE_CONTROL_ENTRY = {
+	command: 'Set',
+	data: {
+		washerDryer: { controlDataType: 'PAUSE', controlDataValueLength: 1, controlDataValue: 0 },
+	},
+};
+
+/** LG `ControlWifi.WMOff` entry: the POWEROFF control (matches the LG sample washer model shape). */
+const POWEROFF_CONTROL_ENTRY = {
+	command: 'Set',
+	data: {
+		washerDryer: { controlDataType: 'POWEROFF', controlDataValueLength: 1, controlDataValue: 0 },
+	},
+};
+
+function createConfiguratorWithDeviceModel(
+	logger: ReturnType<typeof createMockLogger>,
+	configManager: PlatformConfigManager,
+	getDeviceModel: ThinqApiClient['getDeviceModel'],
+): ThinqDeviceConfigurator {
+	return new ThinqDeviceConfigurator(
+		logger,
+		asPartial<ThinqApiClient>({
+			getDeviceModel,
+			sendCommand: vi.fn().mockResolvedValue(undefined),
+		}),
+		configManager,
+	);
+}
 
 function createMockThinqAirConditionerDevice(): ThinqAirConditionerDevice {
 	return asPartial<ThinqAirConditionerDevice>({
@@ -471,10 +496,10 @@ describe('ThinqDeviceConfigurator', () => {
 			expect(getConfigSpy).toHaveBeenCalledWith('washer-456');
 		});
 
-		it('should pass washerControl config to registerWasherCommandHandlers', async () => {
+		it('should pass washer, device, apiClient and logger to registerWasherCommandHandlers', async () => {
 			// Arrange
 			const device = createMockWasherDevice();
-			const washerControl = { allowRemoteStop: true };
+			const washerControl = { selectedCourse: 'express' };
 			vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue(washerControl);
 			const registerHandlersSpy = vi.mocked(registerWasherCommandHandlers);
 
@@ -483,10 +508,12 @@ describe('ThinqDeviceConfigurator', () => {
 
 			// Assert
 			const call = registerHandlersSpy.mock.calls[0];
-			expect(call[4]).toEqual(washerControl); // washerControl parameter
+			expect(call?.[1]).toBe(device);
+			expect(call?.[2]).toBe(mockApiClient);
+			expect(call?.[3]).toBe(mockLogger);
 		});
 
-		it('should pass 5+ parameters to registerWasherCommandHandlers (includes stop payload)', async () => {
+		it('should pass 5 parameters to registerWasherCommandHandlers with a { pause, stop, start } payloads object fifth', async () => {
 			// Arrange
 			const device = createMockWasherDevice();
 			const registerHandlersSpy = vi.mocked(registerWasherCommandHandlers);
@@ -496,17 +523,18 @@ describe('ThinqDeviceConfigurator', () => {
 
 			// Assert
 			const call = registerHandlersSpy.mock.calls[0];
-			// Verify the function is called with 6 parameters:
-			// washer, device, apiClient, logger, washerControl, stopCommandPayload
-			expect(call.length).toBe(6);
+			// washer, device, apiClient, logger, { pause, stop, start }
+			expect(call).toHaveLength(5);
+			expect(Object.keys(call?.[4] ?? {}).sort()).toEqual(['pause', 'start', 'stop']);
 		});
 
-		it('should call getDeviceModel three times (once for catalog, once for stop, once for start)', async () => {
+		it('should call getDeviceModel three times (once for pause+stop, once for catalog, once for start)', async () => {
 			// Arrange
 			const device = createMockWasherDevice();
 			const getDeviceModelSpy = vi.fn().mockResolvedValue({
 				ControlWifi: {
 					WMStop: { data: { washerDryer: {} } },
+					WMOff: { data: { washerDryer: {} } },
 					WMStart: { command: 'Set', data: { washerDryer: {} } },
 				},
 				Config: {
@@ -544,77 +572,116 @@ describe('ThinqDeviceConfigurator', () => {
 			await configuratorWithSpy.registerWasher(device);
 
 			// Assert
-			expect(getDeviceModelSpy).toHaveBeenCalledTimes(3); // catalog, stop, start
+			expect(getDeviceModelSpy).toHaveBeenCalledTimes(3); // pause+stop, catalog, start
 		});
 
-		it('should register switch handlers when child endpoint exists', async () => {
+		it('should resolve pause from WMStop and stop from WMOff when both ControlWifi entries exist', async () => {
 			// Arrange
 			const device = createMockWasherDevice();
-			const registerSwitchHandlersSpy = vi.mocked(registerWasherRemoteStartStopSwitchCommandHandlers);
-			const mockChild = { addCommandHandler: vi.fn() };
-			const mockWasherEndpoint = asPartial<any>({
-				log: { debug: vi.fn(), info: vi.fn(), error: vi.fn() },
-				getChildEndpointById: vi.fn().mockReturnValue(mockChild),
+			vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue({});
+			const getDeviceModelSpy = vi.fn().mockResolvedValue({
+				ControlWifi: {
+					WMStop: PAUSE_CONTROL_ENTRY,
+					WMOff: POWEROFF_CONTROL_ENTRY,
+				},
 			});
-
-			// Reconfigure the mock to return our created endpoint
-			vi.mocked(buildWasherEndpoint).mockImplementationOnce(() => mockWasherEndpoint);
+			const configuratorWithModel = createConfiguratorWithDeviceModel(mockLogger, mockConfigManager, getDeviceModelSpy);
 
 			// Act
-			await configurator.registerWasher(device);
+			await configuratorWithModel.registerWasher(device);
 
 			// Assert
-			const calls = vi.mocked(registerSwitchHandlersSpy).mock.calls;
-			expect(calls.length).toBeGreaterThan(0);
-			const firstCall = calls[0];
-			// Verify first arg is the child endpoint
-			expect(firstCall?.[0]).toBe(mockChild);
-			// Verify second arg is the washer endpoint
-			expect(firstCall?.[1]).toBe(mockWasherEndpoint);
-			// Verify third arg is the device
-			expect(firstCall?.[2]).toBe(device);
-			// Verify fourth arg is the apiClient
-			expect(firstCall?.[3]).toBe(mockApiClient);
-			// Verify fifth arg is the logger
-			expect(firstCall?.[4]).toBe(mockLogger);
+			const payloads = vi.mocked(registerWasherCommandHandlers).mock.calls[0]?.[4];
+			expect(payloads).toMatchObject({
+				pause: { command: 'Set', dataSetList: { washerDryer: PAUSE_CONTROL_ENTRY.data.washerDryer } },
+				stop: { command: 'Set', dataSetList: { washerDryer: POWEROFF_CONTROL_ENTRY.data.washerDryer } },
+			});
+			expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('resolved pause-command payload'));
+			expect(mockLogger.info).toHaveBeenCalledWith(
+				expect.stringContaining('resolved stop-command (power-off) payload'),
+			);
 		});
 
-		it('should log error when child endpoint is missing at registration', async () => {
+		it('should leave stop undefined and warn about missing WMOff when only WMStop exists', async () => {
 			// Arrange
 			const device = createMockWasherDevice();
-			vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue({ allowRemoteStop: true });
-			const mockWasherEndpoint = asPartial<any>({
-				log: { debug: vi.fn(), info: vi.fn(), error: vi.fn() },
-				getChildEndpointById: vi.fn().mockReturnValue(undefined),
-			});
-			vi.mocked(buildWasherEndpoint).mockImplementationOnce(() => mockWasherEndpoint);
+			vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue({});
+			const getDeviceModelSpy = vi.fn().mockResolvedValue({ ControlWifi: { WMStop: PAUSE_CONTROL_ENTRY } });
+			const configuratorWithModel = createConfiguratorWithDeviceModel(mockLogger, mockConfigManager, getDeviceModelSpy);
 
 			// Act
-			await configurator.registerWasher(device);
+			await configuratorWithModel.registerWasher(device);
 
 			// Assert
-			expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining('child endpoint missing at registration'));
+			const payloads = vi.mocked(registerWasherCommandHandlers).mock.calls[0]?.[4];
+			expect(payloads?.pause).toBeDefined();
+			expect(payloads?.stop).toBeUndefined();
+			expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('no WMOff'));
 		});
 
-		it('should not register switch handlers when getChildEndpointById returns undefined', async () => {
+		it('should leave pause undefined and warn about missing WMStop when only WMOff exists', async () => {
 			// Arrange
 			const device = createMockWasherDevice();
-			vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue({ allowRemoteStop: true });
-			const registerSwitchHandlersSpy = vi.mocked(registerWasherRemoteStartStopSwitchCommandHandlers);
-			const mockWasherEndpoint = asPartial<any>({
-				log: { debug: vi.fn(), info: vi.fn(), error: vi.fn() },
-				getChildEndpointById: vi.fn().mockReturnValue(undefined),
-			});
-			vi.mocked(buildWasherEndpoint).mockImplementationOnce(() => mockWasherEndpoint);
+			vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue({});
+			const getDeviceModelSpy = vi.fn().mockResolvedValue({ ControlWifi: { WMOff: POWEROFF_CONTROL_ENTRY } });
+			const configuratorWithModel = createConfiguratorWithDeviceModel(mockLogger, mockConfigManager, getDeviceModelSpy);
 
 			// Act
-			await configurator.registerWasher(device);
+			await configuratorWithModel.registerWasher(device);
 
 			// Assert
-			expect(registerSwitchHandlersSpy).not.toHaveBeenCalled();
+			const payloads = vi.mocked(registerWasherCommandHandlers).mock.calls[0]?.[4];
+			expect(payloads?.pause).toBeUndefined();
+			expect(payloads?.stop).toBeDefined();
+			expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('no WMStop'));
 		});
 
-		it('should pass includeRemoteStartStopSwitch false to buildWasherEndpoint when both flags are absent', async () => {
+		it('should resolve both pause and stop to undefined without any pause/stop model fetch when modelJsonUri is missing', async () => {
+			// Arrange
+			const device = asPartial<ThinqWasherDevice>({
+				id: 'washer-456',
+				name: 'Laundry Room Washer',
+				type: 'WASHER',
+				modelName: 'VCDWL_QEUK',
+				platformType: 'THINQ',
+				online: true,
+				snapshot: new ThinqSnapshot({}),
+			});
+			vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue({});
+			const getDeviceModelSpy = vi.fn().mockResolvedValue({});
+			const configuratorWithModel = createConfiguratorWithDeviceModel(mockLogger, mockConfigManager, getDeviceModelSpy);
+
+			// Act
+			await configuratorWithModel.registerWasher(device);
+
+			// Assert
+			const payloads = vi.mocked(registerWasherCommandHandlers).mock.calls[0]?.[4];
+			expect(payloads?.pause).toBeUndefined();
+			expect(payloads?.stop).toBeUndefined();
+			expect(getDeviceModelSpy).not.toHaveBeenCalled();
+		});
+
+		it('should resolve registerWasher with pause and stop undefined and only a debug log when the pause/stop model fetch rejects', async () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue({});
+			const getDeviceModelSpy = vi.fn().mockRejectedValueOnce(new Error('Model unavailable')).mockResolvedValue({});
+			const configuratorWithModel = createConfiguratorWithDeviceModel(mockLogger, mockConfigManager, getDeviceModelSpy);
+
+			// Act & Assert
+			await expect(configuratorWithModel.registerWasher(device)).resolves.toBeDefined();
+			const payloads = vi.mocked(registerWasherCommandHandlers).mock.calls[0]?.[4];
+			expect(payloads?.pause).toBeUndefined();
+			expect(payloads?.stop).toBeUndefined();
+			expect(mockLogger.debug).toHaveBeenCalledWith(
+				expect.stringContaining('failed to resolve pause/stop-command payloads'),
+			);
+			expect(mockLogger.warn).not.toHaveBeenCalledWith(
+				expect.stringContaining('failed to resolve pause/stop-command payloads'),
+			);
+		});
+
+		it('should not pass includeRemoteStartStopSwitch to buildWasherEndpoint so the switch is always created', async () => {
 			// Arrange
 			const device = createMockWasherDevice();
 			vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue({});
@@ -623,63 +690,32 @@ describe('ThinqDeviceConfigurator', () => {
 			await configurator.registerWasher(device);
 
 			// Assert
-			expect(vi.mocked(buildWasherEndpoint)).toHaveBeenCalledWith(
-				expect.anything(),
-				expect.objectContaining({ includeRemoteStartStopSwitch: false }),
-			);
+			const options = vi.mocked(buildWasherEndpoint).mock.calls[0]?.[1];
+			expect(options).not.toHaveProperty('includeRemoteStartStopSwitch');
 		});
 
-		it('should pass includeRemoteStartStopSwitch true to buildWasherEndpoint when only allowRemoteStop is set', async () => {
+		it('should warn when no usable start payload can be resolved from the device model', async () => {
 			// Arrange
 			const device = createMockWasherDevice();
-			vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue({ allowRemoteStop: true });
-
-			// Act
-			await configurator.registerWasher(device);
-
-			// Assert
-			expect(vi.mocked(buildWasherEndpoint)).toHaveBeenCalledWith(
-				expect.anything(),
-				expect.objectContaining({ includeRemoteStartStopSwitch: true }),
+			vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue({});
+			vi.mocked(extractWasherStartCommand).mockReturnValue(undefined);
+			const configuratorWithModel = new ThinqDeviceConfigurator(
+				mockLogger,
+				asPartial<ThinqApiClient>({
+					getDeviceModel: vi.fn().mockResolvedValue({}),
+					sendCommand: vi.fn().mockResolvedValue(undefined),
+				}),
+				mockConfigManager,
 			);
-		});
-
-		it('should pass includeRemoteStartStopSwitch true to buildWasherEndpoint when only allowRemoteStart is set', async () => {
-			// Arrange
-			const device = createMockWasherDevice();
-			vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue({ allowRemoteStart: true });
 
 			// Act
-			await configurator.registerWasher(device);
+			await configuratorWithModel.registerWasher(device);
 
 			// Assert
-			expect(vi.mocked(buildWasherEndpoint)).toHaveBeenCalledWith(
-				expect.anything(),
-				expect.objectContaining({ includeRemoteStartStopSwitch: true }),
+			expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('no usable WMStart/default-course entry'));
+			expect(mockLogger.info).not.toHaveBeenCalledWith(
+				expect.stringContaining('no usable WMStart/default-course entry'),
 			);
-		});
-
-		it('should not log child-missing error and should log info when both flags are false and child is undefined', async () => {
-			// Arrange
-			const device = createMockWasherDevice();
-			vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue({
-				allowRemoteStart: false,
-				allowRemoteStop: false,
-			});
-			const registerSwitchHandlersSpy = vi.mocked(registerWasherRemoteStartStopSwitchCommandHandlers);
-			const mockWasherEndpoint = asPartial<any>({
-				log: { debug: vi.fn(), info: vi.fn(), error: vi.fn() },
-				getChildEndpointById: vi.fn().mockReturnValue(undefined),
-			});
-			vi.mocked(buildWasherEndpoint).mockImplementationOnce(() => mockWasherEndpoint);
-
-			// Act
-			await configurator.registerWasher(device);
-
-			// Assert
-			expect(mockLogger.error).not.toHaveBeenCalledWith(expect.stringContaining('child endpoint missing'));
-			expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('remote start/stop switch not created'));
-			expect(registerSwitchHandlersSpy).not.toHaveBeenCalled();
 		});
 
 		it('should fetch device model and reconcile course config when catalog available', async () => {
@@ -791,8 +827,6 @@ describe('ThinqDeviceConfigurator', () => {
 			// Arrange
 			const device = createMockWasherDevice();
 			const fullWasherControl = {
-				allowRemoteStart: true,
-				allowRemoteStop: true,
 				availableCourseIds: ['courseA'],
 				selectedCourse: 'courseA',
 				courses: [
@@ -896,6 +930,7 @@ describe('ThinqDeviceConfigurator', () => {
 			const validModel = {
 				ControlWifi: {
 					WMStop: { data: { washerDryer: {} } },
+					WMOff: { data: { washerDryer: {} } },
 					WMStart: {
 						command: 'Set',
 						data: { washerDryer: {} },
@@ -927,10 +962,8 @@ describe('ThinqDeviceConfigurator', () => {
 				sendCommand: vi.fn().mockResolvedValue(undefined),
 			});
 			const ensureWasherControlEntrySpy = vi.fn().mockReturnValue(washerControlWithSelection);
-			const getWasherControlConfigSpy = vi
-				.fn()
-				.mockReturnValueOnce({}) // First call in registerWasher
-				.mockReturnValueOnce(washerControlWithSelection); // Second call after backfill
+			// Single read in registerWasher, made after ensureWasherControlEntry + reconcile backfilled the entry
+			const getWasherControlConfigSpy = vi.fn().mockReturnValue(washerControlWithSelection);
 			const mockConfigManagerWithSpy = asPartial<PlatformConfigManager>({
 				getDeviceCapabilities: vi.fn().mockReturnValue(DEFAULT_AIR_CONDITIONER_CAPABILITIES),
 				getWasherControlConfig: getWasherControlConfigSpy,
@@ -949,11 +982,10 @@ describe('ThinqDeviceConfigurator', () => {
 			// Act
 			await configuratorWithSpy.registerWasher(device);
 
-			// Assert - verify config was read after backfill with selectedCourse set
+			// Assert - the single config read happens for the backfilled device
 			const calls = vi.mocked(getWasherControlConfigSpy).mock.calls;
-			expect(calls.length).toBeGreaterThanOrEqual(2);
-			// The second call should get the backfilled config
-			expect(calls[1]?.[0]).toBe('washer-456');
+			expect(calls.length).toBe(1);
+			expect(calls[0]?.[0]).toBe('washer-456');
 		});
 
 		it('should gracefully skip course backfill when getDeviceModel throws', async () => {
@@ -962,6 +994,7 @@ describe('ThinqDeviceConfigurator', () => {
 			const validModel = {
 				ControlWifi: {
 					WMStop: { data: { washerDryer: {} } },
+					WMOff: { data: { washerDryer: {} } },
 					WMStart: {
 						command: 'Set',
 						data: { washerDryer: {} },
@@ -980,8 +1013,8 @@ describe('ThinqDeviceConfigurator', () => {
 			};
 			const getDeviceModelSpy = vi
 				.fn()
-				.mockRejectedValueOnce(new Error('Network error')) // Catalog fetch fails
-				.mockResolvedValueOnce(validModel) // Stop fetch succeeds
+				.mockRejectedValueOnce(new Error('Network error')) // Pause/stop fetch (first in registerWasher) fails
+				.mockResolvedValueOnce(validModel) // Catalog fetch succeeds
 				.mockResolvedValueOnce(validModel); // Start fetch succeeds
 			const apiClientWithSpy = asPartial<ThinqApiClient>({
 				getDeviceModel: getDeviceModelSpy,
@@ -1004,23 +1037,32 @@ describe('ThinqDeviceConfigurator', () => {
 
 			// Act & Assert - should not throw, should gracefully handle error
 			await expect(configuratorWithSpy.registerWasher(device)).resolves.toBeDefined();
-			// Verification: getDeviceModel was called 3 times (catalog fails, stop succeeds, start succeeds)
+			// Verification: getDeviceModel was called 3 times (pause/stop fails, catalog succeeds, start succeeds)
 			expect(getDeviceModelSpy).toHaveBeenCalledTimes(3);
 		});
 
-		it('should preserve existing washerControl args passed to registerWasherCommandHandlers', async () => {
+		it('should forward resolved start payload as the start field of the fifth argument to registerWasherCommandHandlers', async () => {
 			// Arrange
 			const device = createMockWasherDevice();
-			const washerControl = { allowRemoteStop: true, allowRemoteStart: false };
+			const resolvedStartPayload = { command: 'Set', dataSetList: { washerDryer: { course: 'express' } } };
+			vi.mocked(extractWasherStartCommand).mockReturnValue(resolvedStartPayload);
 			const registerHandlersSpy = vi.mocked(registerWasherCommandHandlers);
-			vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue(washerControl);
+			const configuratorWithModel = new ThinqDeviceConfigurator(
+				mockLogger,
+				asPartial<ThinqApiClient>({
+					getDeviceModel: vi.fn().mockResolvedValue({}),
+					sendCommand: vi.fn().mockResolvedValue(undefined),
+				}),
+				mockConfigManager,
+			);
 
 			// Act
-			await configurator.registerWasher(device);
+			await configuratorWithModel.registerWasher(device);
 
 			// Assert
 			const call = registerHandlersSpy.mock.calls[0];
-			expect(call?.[4]).toEqual(washerControl); // Regression: washerControl param unchanged
+			expect(call).toHaveLength(5);
+			expect(call?.[4]?.start).toEqual(resolvedStartPayload);
 		});
 
 		it('should preserve device id in getWasherControlConfig calls', async () => {
@@ -1032,13 +1074,13 @@ describe('ThinqDeviceConfigurator', () => {
 			await configurator.registerWasher(device);
 
 			// Assert
-			// Should be called twice: once in registerWasher, once after reconcile
+			// Called once in registerWasher (after the course reconcile step)
 			expect(getConfigSpy).toHaveBeenCalledWith('washer-456');
 		});
 
-		it('end-to-end: config-overridden course parameters reach registerWasherRemoteStartStopSwitchCommandHandlers payload', async () => {
+		it('end-to-end: config-overridden course parameters reach extractWasherStartCommand via registerWasher', async () => {
 			// This test proves the complete feature: user-edited config values flow through registerWasher()
-			// into the real start command payload passed to registerWasherRemoteStartStopSwitchCommandHandlers
+			// into the real start command payload resolved for registerWasherCommandHandlers
 			//
 			// Arrange: pre-seed config with washerControl containing user-edited parameter values
 			const device = createMockWasherDevice();
@@ -1058,6 +1100,7 @@ describe('ThinqDeviceConfigurator', () => {
 			const deviceModel = {
 				ControlWifi: {
 					WMStop: { data: { washerDryer: {} } },
+					WMOff: { data: { washerDryer: {} } },
 					WMStart: { command: 'Set', data: { washerDryer: {} } },
 				},
 				Config: { defaultCourse: 'express', courseType: 'course', smartCourseType: 'smartCourse' },
@@ -1090,18 +1133,9 @@ describe('ThinqDeviceConfigurator', () => {
 
 			const configuratorWithSpy = new ThinqDeviceConfigurator(mockLogger, apiClientWithSpy, mockConfigManagerWithSpy);
 
-			// Mock buildWasherEndpoint to return an endpoint with a working child
-			const mockChild = { addCommandHandler: vi.fn() };
-			const mockWasherEndpoint = asPartial<any>({
-				log: { debug: vi.fn(), info: vi.fn(), error: vi.fn() },
-				getChildEndpointById: vi.fn().mockReturnValue(mockChild),
-			});
-			vi.mocked(buildWasherEndpoint).mockReturnValueOnce(mockWasherEndpoint);
-
 			// Get the mocked extractWasherStartCommand to verify call arguments
 			// Return a minimal payload so the code path doesn't crash (actual content is tested in resolver unit tests)
-			const { extractWasherStartCommand: mockedExtractWasherStartCommand } =
-				await import('../../../platform/thinq/thinqWasherStartCommandResolver.js');
+			const mockedExtractWasherStartCommand = vi.mocked(extractWasherStartCommand);
 			vi.mocked(mockedExtractWasherStartCommand).mockReturnValue({
 				command: 'Set',
 				dataSetList: { washerDryer: {} },
@@ -1115,8 +1149,8 @@ describe('ThinqDeviceConfigurator', () => {
 			// Verify registerWasher() successfully runs the course resolution flow with seeded config
 			const getConfigSpy = vi.mocked(mockConfigManagerWithSpy.getWasherControlConfig);
 			expect(getConfigSpy).toHaveBeenCalledWith('washer-456');
-			// Verify the config manager was called at least twice (initial read + after reconcile)
-			expect(getConfigSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+			// Exactly one read in registerWasher, made after the course reconcile step
+			expect(getConfigSpy.mock.calls.length).toBe(1);
 
 			// CRITICAL ASSERTION: Verify that extractWasherStartCommand was called with the resolved courseSelection
 			// argument containing the user-edited override value (400 as string), not the model default (800)

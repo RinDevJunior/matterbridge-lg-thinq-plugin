@@ -67,7 +67,7 @@ Requires matterbridge@3.10.10
 - Live energy/power consumption monitoring
 - Filter life monitoring, plus an opt-in filter-reset command
 
-**Washer** — read-only status, plus an opt-in remote Stop/Cancel command (resolved from the device's own model data).
+**Washer** — read-only status, plus real Start, Pause and Stop from the washer's own controls in Google Home / Apple Home (resolved from the device's own model data and your selected wash course). Stop turns the washer off; Resume is not supported by LG.
 
 ---
 

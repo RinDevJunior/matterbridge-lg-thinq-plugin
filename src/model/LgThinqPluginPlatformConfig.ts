@@ -21,8 +21,6 @@ export interface ThinqWasherCourseConfig {
 }
 
 export interface ThinqWasherControlConfig {
-	allowRemoteStop?: boolean;
-	allowRemoteStart?: boolean;
 	availableCourseIds?: string[];
 	courses?: ThinqWasherCourseConfig[];
 	selectedCourse?: string;
