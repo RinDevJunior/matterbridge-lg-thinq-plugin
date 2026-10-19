@@ -220,12 +220,18 @@ export class ThinqApiClient {
 			throw new Error('Invalid deviceId: must be a non-empty string.');
 		}
 
-		await this.request('post', `service/devices/${deviceId}/control`, {
-			ctrlKey: 'allEventEnable',
-			command: 'Set',
-			dataKey: 'airState.mon.timeout',
-			dataValue: '70',
-		});
+		await this.request(
+			'post',
+			`service/devices/${deviceId}/control`,
+			{
+				ctrlKey: 'allEventEnable',
+				command: 'Set',
+				dataKey: 'airState.mon.timeout',
+				dataValue: '70',
+			},
+			false,
+			false,
+		);
 	}
 
 	/** Exchanges a refresh token for a new access token (`grant_type=refresh_token`), mutating and returning `session`. */
@@ -380,7 +386,13 @@ export class ThinqApiClient {
 		return typeof data?.resultCode === 'string' && data.resultCode === THINQ_TOKEN_EXPIRED_RESULT_CODE;
 	}
 
-	private async request<T>(method: 'get' | 'post', uri: string, data?: unknown, retry = false): Promise<T> {
+	private async request<T>(
+		method: 'get' | 'post',
+		uri: string,
+		data?: unknown,
+		retry = false,
+		logFailure = true,
+	): Promise<T> {
 		await this.getGateway();
 		const gateway = this.gateway;
 		if (!gateway) {
@@ -403,10 +415,10 @@ export class ThinqApiClient {
 				}
 
 				await this.refreshToken(this.session);
-				return this.request<T>(method, uri, data, true);
+				return this.request<T>(method, uri, data, true, logFailure);
 			}
 
-			if (axios.isAxiosError(error)) {
+			if (logFailure && axios.isAxiosError(error)) {
 				this.logger.debug(
 					`ThinQ request failed <- ${method.toUpperCase()} ${url} status=${error.response?.status} data=${JSON.stringify(error.response?.data)}`,
 				);
