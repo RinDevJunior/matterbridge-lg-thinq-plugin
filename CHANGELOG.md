@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.1.1-rc02] - 2026-10-19
+
+### Added
+
+- **Washer wash-program config selection** — users can choose which washer courses are exposed via plugin config, with the course list trimmed to the selected programs (PR #4).
+- **Device-ignore checkbox** — a per-device config checkbox to exclude a device from the plugin (PR #4).
+
+### Changed
+
+- **AC onOffPlugInUnit experiment documented** — docs now record the negative result of the AC onOffPlugInUnit experiment.
+
+### Fixed
+
+- **Washer RemoteStartStopSwitch visibility** — the switch is now hidden when remote start and remote stop are both off.
+
+<a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
+
+---
+
 ## [0.1.1-rc01] - 2026-09-25
 
 ### Added
