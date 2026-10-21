@@ -122,7 +122,29 @@ describe('parseConnectControlValue', () => {
 		expect(result).toEqual({ value: 'POWER_ON' });
 	});
 
-	it.each(['STOP', 'stop', 'POWER_OFF', ' power_off '])(
+	it('should return POWER_OFF when the value is POWER_OFF', () => {
+		// Arrange
+		const raw = 'POWER_OFF';
+
+		// Act
+		const result = parseConnectControlValue(raw);
+
+		// Assert
+		expect(result).toEqual({ value: 'POWER_OFF' });
+	});
+
+	it('should normalize padded and lower-case power_off to POWER_OFF when parsing the value', () => {
+		// Arrange
+		const raw = ' power_off ';
+
+		// Act
+		const result = parseConnectControlValue(raw);
+
+		// Assert
+		expect(result).toEqual({ value: 'POWER_OFF' });
+	});
+
+	it.each(['STOP', 'stop'])(
 		'should refuse %j with a not-enabled error when the value is a forbidden command',
 		(raw) => {
 			// Arrange / Act
@@ -133,6 +155,28 @@ describe('parseConnectControlValue', () => {
 			expect(result).toHaveProperty('error', expect.stringMatching(/not enabled in this step/));
 		},
 	);
+
+	it('should list all three allowed values in the error when the value is STOP', () => {
+		// Arrange
+		const raw = 'STOP';
+
+		// Act
+		const result = parseConnectControlValue(raw);
+
+		// Assert
+		expect(result).toHaveProperty('error', expect.stringContaining('Allowed: POWER_ON, POWER_OFF, START'));
+	});
+
+	it('should list all three allowed values in the error when the value is unknown', () => {
+		// Arrange
+		const raw = 'WAKE_UP';
+
+		// Act
+		const result = parseConnectControlValue(raw);
+
+		// Assert
+		expect(result).toHaveProperty('error', expect.stringContaining('Allowed: POWER_ON, POWER_OFF, START'));
+	});
 
 	it('should refuse WAKE_UP with an unknown-value error when the value is not in the allowlist', () => {
 		// Arrange
@@ -194,6 +238,30 @@ describe('buildConnectControlPayload', () => {
 
 		// Assert
 		expect(payload).toEqual({ location: { locationName: 'MINI' }, operation: { washerOperationMode: 'START' } });
+	});
+
+	it('should serialize exactly the POWER_OFF location and operation body when a locationName is given', () => {
+		// Arrange
+		const value = 'POWER_OFF';
+
+		// Act
+		const payload = buildConnectControlPayload(value, 'MAIN');
+
+		// Assert
+		expect(JSON.stringify(payload)).toBe(
+			'{"location":{"locationName":"MAIN"},"operation":{"washerOperationMode":"POWER_OFF"}}',
+		);
+	});
+
+	it('should return only the POWER_OFF operation body when no locationName is given', () => {
+		// Arrange
+		const value = 'POWER_OFF';
+
+		// Act
+		const payload = buildConnectControlPayload(value);
+
+		// Assert
+		expect(payload).toEqual({ operation: { washerOperationMode: 'POWER_OFF' } });
 	});
 });
 
@@ -271,6 +339,42 @@ describe('evaluateConnectControlGuards', () => {
 
 		// Assert
 		expect(reason).toMatch(/refusing to interrupt a cycle/);
+	});
+
+	it.each(['RUNNING', 'PAUSE'])('should refuse POWER_OFF when the state is %s', (currentState) => {
+		// Arrange
+		const summary: ConnectProbeSummary = { ...WRITABLE_SUMMARY, currentState };
+
+		// Act
+		const reason = evaluateConnectControlGuards('POWER_OFF', summary);
+
+		// Assert
+		expect(reason).toMatch(/refusing to interrupt a cycle/);
+	});
+
+	it.each(['INITIAL', 'END'])('should pass POWER_OFF when the profile lists it and the state is %s', (currentState) => {
+		// Arrange
+		const summary: ConnectProbeSummary = { ...WRITABLE_SUMMARY, currentState };
+
+		// Act
+		const reason = evaluateConnectControlGuards('POWER_OFF', summary);
+
+		// Assert
+		expect(reason).toBeUndefined();
+	});
+
+	it('should refuse POWER_OFF and name the value when the profile allows only START and STOP', () => {
+		// Arrange
+		const summary: ConnectProbeSummary = {
+			...WRITABLE_SUMMARY,
+			washerOperationMode: { modes: ['w'], writable: true, allowedValues: ['START', 'STOP'] },
+		};
+
+		// Act
+		const reason = evaluateConnectControlGuards('POWER_OFF', summary);
+
+		// Assert
+		expect(reason).toMatch(/Profile does not list "POWER_OFF" as writable/);
 	});
 });
 
@@ -604,8 +708,153 @@ describe('cmdConnectControl', () => {
 		);
 	});
 
+	describe('POWER_OFF', () => {
+		it('should print the exact POWER_OFF body and the Dry run notice and never call controlDevice when yes is false', async () => {
+			// Arrange
+			const options = { ...BASE_OPTIONS, yes: false, send: 'POWER_OFF' };
+
+			// Act
+			await cmdConnectControl(SESSION, options, mockLogger);
+
+			// Assert
+			expect(printedOutput()).toContain(
+				'{"location":{"locationName":"MAIN"},"operation":{"washerOperationMode":"POWER_OFF"}}',
+			);
+			expect(printedOutput()).toContain('Dry run');
+			expect(mockClient.controlDevice).not.toHaveBeenCalled();
+			expect(process.exitCode).toBeUndefined();
+		});
+
+		it('should call controlDevice exactly once with the POWER_OFF body and print Accepted by LG when the state is INITIAL', async () => {
+			// Arrange
+			mockClient.getDeviceState.mockResolvedValue(washerState('INITIAL'));
+			const options = { ...BASE_OPTIONS, yes: true, send: 'POWER_OFF' };
+
+			// Act
+			await cmdConnectControl(SESSION, options, mockLogger);
+
+			// Assert
+			expect(mockClient.controlDevice.mock.calls).toEqual([
+				['dev-1', { location: { locationName: 'MAIN' }, operation: { washerOperationMode: 'POWER_OFF' } }],
+			]);
+			expect(printedOutput()).toContain('Accepted by LG');
+			expect(process.exitCode).toBeUndefined();
+		});
+
+		it('should send one POST with the POWER_OFF body when the array state is INITIAL', async () => {
+			// Arrange
+			mockClient.getDeviceState.mockResolvedValue(washerStateArray({ locationName: 'MAIN', currentState: 'INITIAL' }));
+			const options = { ...BASE_OPTIONS, yes: true, send: 'POWER_OFF' };
+
+			// Act
+			await cmdConnectControl(SESSION, options, mockLogger);
+
+			// Assert
+			expect(mockClient.controlDevice.mock.calls).toEqual([
+				['dev-1', { location: { locationName: 'MAIN' }, operation: { washerOperationMode: 'POWER_OFF' } }],
+			]);
+			expect(process.exitCode).toBeUndefined();
+		});
+
+		it.each(['RUNNING', 'PAUSE'])(
+			'should refuse without any POST and set exitCode 1 when the plain-object state is %s',
+			async (currentState) => {
+				// Arrange
+				mockClient.getDeviceState.mockResolvedValue(washerState(currentState));
+				const options = { ...BASE_OPTIONS, yes: true, send: 'POWER_OFF' };
+
+				// Act
+				await cmdConnectControl(SESSION, options, mockLogger);
+
+				// Assert
+				expect(mockClient.controlDevice).not.toHaveBeenCalled();
+				expect(printedOutput()).toContain('Refused');
+				expect(process.exitCode).toBe(1);
+			},
+		);
+
+		it.each(['RUNNING', 'PAUSE'])(
+			'should refuse without any POST and set exitCode 1 when the array state is %s even with yes',
+			async (currentState) => {
+				// Arrange
+				mockClient.getDeviceState.mockResolvedValue(washerStateArray({ locationName: 'MAIN', currentState }));
+				const options = { ...BASE_OPTIONS, yes: true, send: 'POWER_OFF' };
+
+				// Act
+				await cmdConnectControl(SESSION, options, mockLogger);
+
+				// Assert
+				expect(mockClient.controlDevice).not.toHaveBeenCalled();
+				expect(printedOutput()).toContain('Refused');
+				expect(process.exitCode).toBe(1);
+			},
+		);
+
+		it('should not call controlDevice and set exitCode 1 when the profile allows only START and STOP', async () => {
+			// Arrange
+			mockClient.getDeviceProfile.mockResolvedValue(washerProfile(['START', 'STOP']));
+			const options = { ...BASE_OPTIONS, yes: true, send: 'POWER_OFF' };
+
+			// Act
+			await cmdConnectControl(SESSION, options, mockLogger);
+
+			// Assert
+			expect(mockClient.controlDevice).not.toHaveBeenCalled();
+			expect(process.exitCode).toBe(1);
+		});
+
+		it('should not call controlDevice and set exitCode 1 when washerOperationMode is not writable', async () => {
+			// Arrange
+			mockClient.getDeviceProfile.mockResolvedValue(washerProfile(ALL_VALUES, ['r']));
+			const options = { ...BASE_OPTIONS, yes: true, send: 'POWER_OFF' };
+
+			// Act
+			await cmdConnectControl(SESSION, options, mockLogger);
+
+			// Assert
+			expect(mockClient.controlDevice).not.toHaveBeenCalled();
+			expect(process.exitCode).toBe(1);
+		});
+
+		it('should never POST and never print Sending in a dry run when the array state is RUNNING', async () => {
+			// Arrange
+			mockClient.getDeviceState.mockResolvedValue(washerStateArray({ locationName: 'MAIN', currentState: 'RUNNING' }));
+			const options = { ...BASE_OPTIONS, yes: false, send: 'POWER_OFF' };
+
+			// Act
+			await cmdConnectControl(SESSION, options, mockLogger);
+
+			// Assert
+			expect(mockClient.controlDevice).not.toHaveBeenCalled();
+			expect(printedOutput()).not.toContain('Sending...');
+		});
+
+		it('should never print the PAT on a POWER_OFF dry run', async () => {
+			// Arrange
+			const options = { ...BASE_OPTIONS, yes: false, send: 'POWER_OFF' };
+
+			// Act
+			await cmdConnectControl(SESSION, options, mockLogger);
+
+			// Assert
+			expect(printedOutput()).not.toContain(FAKE_PAT);
+		});
+
+		it('should never print the PAT on a successful POWER_OFF real send', async () => {
+			// Arrange
+			mockClient.getDeviceState.mockResolvedValue(washerState('INITIAL'));
+			const options = { ...BASE_OPTIONS, yes: true, send: 'POWER_OFF' };
+
+			// Act
+			await cmdConnectControl(SESSION, options, mockLogger);
+
+			// Assert
+			expect(printedOutput()).not.toContain(FAKE_PAT);
+		});
+	});
+
 	describe('allowlist refusals before any client is created', () => {
-		it.each(['STOP', 'POWER_OFF'])('should not construct a client and set exitCode 1 when send is %s', async (send) => {
+		it.each(['STOP'])('should not construct a client and set exitCode 1 when send is %s', async (send) => {
 			// Arrange
 			const options = { ...BASE_OPTIONS, yes: true, send };
 

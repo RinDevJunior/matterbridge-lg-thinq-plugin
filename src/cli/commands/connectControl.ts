@@ -9,7 +9,7 @@ import {
 import type { CliPatSession } from '../types.js';
 import { type ConnectProbeSummary, formatConnectProbeSummary, summarizeConnectProbe } from './connectProbe.js';
 
-export const CONNECT_CONTROL_ALLOWED_VALUES = ['POWER_ON', 'START'] as const;
+export const CONNECT_CONTROL_ALLOWED_VALUES = ['POWER_ON', 'POWER_OFF', 'START'] as const;
 export type ConnectControlValue = (typeof CONNECT_CONTROL_ALLOWED_VALUES)[number];
 
 export interface ConnectControlOptions {
@@ -59,7 +59,7 @@ export function parseConnectControlValue(raw: string | undefined): { value: Conn
 	if (isConnectControlValue(normalized)) {
 		return { value: normalized };
 	}
-	if (normalized === 'STOP' || normalized === 'POWER_OFF') {
+	if (normalized === 'STOP') {
 		return {
 			error: `"${normalized}" is not enabled in this step. Allowed: ${CONNECT_CONTROL_ALLOWED_VALUES.join(', ')}`,
 		};
