@@ -8,6 +8,7 @@ import { createMockLogger } from '../helpers/testUtils.js';
 
 const mocks = vi.hoisted(() => ({
 	endpoint: {
+		mode: undefined as string | undefined,
 		createDefaultBasicInformationClusterServer: vi.fn(),
 		addCommandHandler: vi.fn(),
 		updateAttribute: vi.fn(),
@@ -53,9 +54,18 @@ describe('thinqV2WasherEndpoint', () => {
 		vi.clearAllMocks();
 		logger = createMockLogger();
 		service = createMockService();
+		mocks.endpoint.mode = undefined;
 	});
 
 	describe('buildThinqV2WasherEndpoint', () => {
+		it('should set the endpoint mode to server so the washer runs as its own Matter node', () => {
+			// Arrange & Act
+			buildThinqV2WasherEndpoint(WASHER, service, logger);
+
+			// Assert
+			expect(mocks.endpoint.mode).toBe('server');
+		});
+
 		it('should register exactly the on and off command handlers', () => {
 			// Arrange & Act
 			buildThinqV2WasherEndpoint(WASHER, service, logger);

@@ -30,6 +30,7 @@ import { BEDROOM_PROFILE, STUDY_PROFILE } from '../helpers/thinqV2AirConditioner
 const mocks = vi.hoisted(() => {
 	const child = { updateAttribute: vi.fn().mockResolvedValue(undefined) };
 	const endpoint = {
+		mode: undefined as string | undefined,
 		createDefaultIdentifyClusterServer: vi.fn().mockReturnThis(),
 		createDefaultBasicInformationClusterServer: vi.fn().mockReturnThis(),
 		createDefaultPowerSourceWiredClusterServer: vi.fn().mockReturnThis(),
@@ -137,9 +138,18 @@ describe('thinqV2AirConditionerEndpoint', () => {
 		mocks.endpoint.getChildEndpointById.mockReturnValue(mocks.child);
 		mocks.endpoint.getAttribute.mockReturnValue(undefined);
 		mocks.endpoint.updateAttribute.mockResolvedValue(undefined);
+		mocks.endpoint.mode = undefined;
 	});
 
 	describe('buildThinqV2AirConditionerEndpoint construction', () => {
+		it('should set the endpoint mode to server so the AC runs as its own Matter node', () => {
+			// Arrange & Act
+			buildThinqV2AirConditionerEndpoint(buildStudyAc(), service, logger);
+
+			// Assert
+			expect(mocks.endpoint.mode).toBe('server');
+		});
+
 		it('should build the Study Room endpoint with a cooling thermostat limited to 16-30 C and no humidity child', () => {
 			// Arrange & Act
 			buildThinqV2AirConditionerEndpoint(buildStudyAc(), service, logger);

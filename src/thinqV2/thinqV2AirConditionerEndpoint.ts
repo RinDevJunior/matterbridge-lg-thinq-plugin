@@ -134,6 +134,9 @@ export function buildThinqV2AirConditionerEndpoint(
 		.createDefaultCoolingThermostatClusterServer(initialLocal, initialTarget, limits.min, limits.max)
 		.createDefaultThermostatUserInterfaceConfigurationClusterServer();
 
+	// Standalone Matter node (own pairing code), matching the account-login air conditioner.
+	endpoint.mode = 'server';
+
 	if (fanTier === 'complete') {
 		endpoint.createCompleteFanControlClusterServer(
 			FanControl.FanMode.Auto,

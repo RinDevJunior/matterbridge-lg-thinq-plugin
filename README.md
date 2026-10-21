@@ -80,15 +80,17 @@ Besides username/password and refresh token, you can sign in with a Personal Acc
 
 What it does today:
 
-- Only washers are registered. Each one appears as a Matter washer that Google Home can turn on and off.
-- On is any state except `POWER_OFF`. Off and on commands are refused while the washer is running or paused, or when its state is unknown.
+- Washers and air conditioners are registered as separate Matter devices (`server` mode). Each one is paired on its own with its own pairing code, exactly like the account login.
+- Washer: appears as a Matter washer that Google Home can turn on and off. On is any state except `POWER_OFF`. Off and on commands are refused while the washer is running or paused, or when its state is unknown.
+- Air conditioner: power, target temperature (Celsius), fan speed, swing, room temperature, humidity (on units that report it) and read-only filter life. Home shows Cool and Off.
 - After a command, the state is re-read about 3 s later.
-- Washer state is polled every `refreshIntervalSeconds` (the Refresh Interval setting). Values below 15 s are raised to 15 s.
+- State is polled every `refreshIntervalSeconds` (the Refresh Interval setting). Values below 15 s are raised to 15 s.
+- Because PAT devices now run in server mode, they get new device IDs. Remove any previously paired PAT washer or air conditioner from your controller and pair it again with its new pairing code.
 
 Limits:
 
-- Washers only. Air conditioners are not supported with PAT login.
-- No start, stop or pause (the CLI `connect-control` can send START, but the plugin does not).
+- Air conditioner: no heat mode, energy monitoring, filter reset, swing angle, dust values, display light, timers or wind steps.
+- No washer start, stop or pause (the CLI `connect-control` can send START, but the plugin does not).
 - No push updates, only polling.
 
 ---

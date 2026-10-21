@@ -24,6 +24,8 @@ export function buildThinqV2WasherEndpoint(
 		0x8001,
 		'LG Washer',
 	);
+	// Standalone Matter node (own pairing code), matching the account-login washer.
+	endpoint.mode = 'server';
 
 	const handlePower = async (on: boolean): Promise<void> => {
 		try {

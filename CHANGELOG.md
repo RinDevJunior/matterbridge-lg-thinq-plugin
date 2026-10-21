@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Air conditioners with PAT login** — ThinQ Connect air conditioners are registered with power, target temperature (Celsius), fan speed, swing, room temperature, humidity (where reported) and read-only filter life. Home shows Cool and Off.
+
+### Changed
+
+- **PAT devices run in server mode** — with PAT login, washers and air conditioners are now standalone Matter nodes, each paired on its own, like the account login. They get new device IDs: remove the old PAT devices from your controller and pair them again.
+
 ## [0.1.1-rc04] - 2026-10-21
 
 ### Added
