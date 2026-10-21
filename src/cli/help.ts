@@ -18,7 +18,7 @@ ${b}Usage:${r}
   npm run cli -- --command ${c}<command>${r} [options]
 
 ${b}Options:${r}
-  ${y}--type${r}         account|token (default: account)
+  ${y}--type${r}         account|token|pat (default: account)
   ${y}--country${r}      Country code (default: US)
   ${y}--language${r}     Language code (default: en-US)
   ${y}--help${r}         Show this help message
@@ -35,7 +35,7 @@ ${b}Energy options:${r}
   ${y}--keep-alive${r}   Send the plugin's keep-alive first, wait 2s, then sample
 
 ${b}Commands:${r}
-${row('login', '', 'Authenticate with LG ThinQ')}
+${row('login', '', 'Authenticate with LG ThinQ (pat = ThinQ Connect Personal Access Token, validated read-only, saved to .cli-pat-session.json)')}
 ${row('devices', '', 'List all discovered ThinQ devices (requires a prior login)')}
 ${row('energy', '[energy options]', 'Print raw AC power/energy snapshot fields (requires a prior login)')}
 ${row('help', '', 'Show this help message')}
@@ -45,6 +45,7 @@ ${b}Examples:${r}
   npm run cli -- --command ${g}login${r}
   npm run cli -- --command ${g}login${r} --type account --country US --language en-US
   npm run cli -- --command ${g}login${r} --type token
+  npm run cli -- --command ${g}login${r} --type pat --country US
   npm run cli -- --command ${g}devices${r}
   npm run cli -- --command ${g}devices${r} --dump-snapshot <deviceId>
   npm run cli -- --command ${g}devices${r} --probe-filter <deviceId>

@@ -13,6 +13,7 @@ import {
 	LgThinqPluginPlatformConfig,
 	type MatterOverrideSettings,
 	type ThinqAcFilterControlConfig,
+	type ThinqLoginType,
 	type ThinqWasherControlConfig,
 } from '../model/LgThinqPluginPlatformConfig.js';
 
@@ -58,7 +59,7 @@ export class PlatformConfigManager {
 		return this.config.advancedFeature.settings.unregisterOnShutdown;
 	}
 
-	public get thinqLoginType(): 'account' | 'token' {
+	public get thinqLoginType(): ThinqLoginType {
 		return this.config.thinq.loginType;
 	}
 
@@ -72,6 +73,10 @@ export class PlatformConfigManager {
 
 	public get thinqRefreshToken(): string | undefined {
 		return this.config.thinq.refreshToken;
+	}
+
+	public get thinqPersonalAccessToken(): string | undefined {
+		return this.config.thinq.personalAccessToken;
 	}
 
 	public get country(): string {
@@ -141,6 +146,10 @@ export class PlatformConfigManager {
 
 	public validateConfig(): boolean {
 		this.log.debug('Validating platform config');
+
+		if (this.thinqLoginType === 'pat') {
+			return Boolean(this.thinqPersonalAccessToken && this.country);
+		}
 
 		if (this.thinqLoginType === 'token') {
 			return Boolean(this.thinqRefreshToken);

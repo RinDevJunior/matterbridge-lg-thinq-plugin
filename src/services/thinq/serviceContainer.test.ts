@@ -1,6 +1,7 @@
 import type { LocalStorage } from 'node-persist';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ThinqConnectApiError } from '../../errors/index.js';
 import type { PlatformConfigManager } from '../../platform/platformConfigManager.js';
 import { asPartial, createMockLogger } from '../../tests/helpers/testUtils.js';
 import { ThinqServiceContainer } from './serviceContainer.js';
@@ -198,6 +199,43 @@ describe('ThinqServiceContainer', () => {
 			const service = container.getFilterMonitoringService();
 
 			expect(service['logger']).toBe(mockLogger);
+		});
+	});
+
+	describe('getConnectApiClient', () => {
+		it('should return the same ThinqConnectApiClient instance on repeated calls when config has PAT and country', () => {
+			// Arrange
+			const patConfigManager = asPartial<PlatformConfigManager>({
+				country: 'US',
+				language: 'en-US',
+				thinqLoginType: 'pat',
+				thinqPersonalAccessToken: 'pat-secret-1234567890',
+			});
+			const patContainer = new ThinqServiceContainer(mockLogger, mockPersist, patConfigManager, '/tmp/mqtt');
+
+			// Act
+			const client1 = patContainer.getConnectApiClient();
+			const client2 = patContainer.getConnectApiClient();
+
+			// Assert
+			expect(client1).toBe(client2);
+		});
+
+		it('should throw ThinqConnectApiError when loginType is pat but PAT is missing', () => {
+			// Arrange
+			const patConfigManager = asPartial<PlatformConfigManager>({
+				country: 'US',
+				language: 'en-US',
+				thinqLoginType: 'pat',
+				thinqPersonalAccessToken: undefined,
+			});
+			const patContainer = new ThinqServiceContainer(mockLogger, mockPersist, patConfigManager, '/tmp/mqtt');
+
+			// Act
+			const act = () => patContainer.getConnectApiClient();
+
+			// Assert
+			expect(act).toThrow(ThinqConnectApiError);
 		});
 	});
 });

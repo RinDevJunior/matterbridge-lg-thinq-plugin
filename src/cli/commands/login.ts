@@ -9,10 +9,15 @@ import { ThinqApiClient } from '../../services/thinq/thinqApiClient.js';
 import { saveSession } from '../session.js';
 import { maskSecret } from '../utils.js';
 import { prompt } from '../utils.js';
+import { cmdLoginPat } from './loginPat.js';
 
-export type CliLoginType = 'account' | 'token';
+export type CliLoginType = 'account' | 'token' | 'pat';
 
-async function buildAuthContext(type: CliLoginType, country: string, language: string): Promise<ThinqAuthContext> {
+async function buildAuthContext(
+	type: Exclude<CliLoginType, 'pat'>,
+	country: string,
+	language: string,
+): Promise<ThinqAuthContext> {
 	if (type === 'token') {
 		const refreshToken = await prompt('Refresh token: ');
 		return {
@@ -39,6 +44,11 @@ export async function cmdLogin(
 	language: string,
 	logger: AnsiLogger,
 ): Promise<void> {
+	if (type === 'pat') {
+		await cmdLoginPat(country, logger);
+		return;
+	}
+
 	const context = await buildAuthContext(type, country, language);
 
 	const apiClient = new ThinqApiClient(new ThinqSession('', '', 0), country, language, logger);

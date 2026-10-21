@@ -41,11 +41,14 @@ export interface ThinqDeviceConfigEntry {
 	acFilterControl?: ThinqAcFilterControlConfig;
 }
 
+export type ThinqLoginType = 'account' | 'token' | 'pat';
+
 export interface ThinqAuthConfig {
-	loginType: 'account' | 'token';
+	loginType: ThinqLoginType;
 	username?: string;
 	password?: string;
 	refreshToken?: string;
+	personalAccessToken?: string;
 	country: string;
 	language: string;
 	refreshIntervalSeconds?: number;
