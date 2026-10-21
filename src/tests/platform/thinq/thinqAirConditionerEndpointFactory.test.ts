@@ -869,6 +869,92 @@ describe('buildAirConditionerEndpoint', () => {
 		});
 	});
 
+	describe('real serial number on BasicInformation', () => {
+		it('should pass serialNumber as the BasicInformation serial when present', () => {
+			// Arrange
+			mockDevice = asPartial<ThinqAirConditionerDevice>({
+				name: 'Living Room AC',
+				id: '12345678-1234-1234-1234-123456789012',
+				type: 'AC',
+				serialNumber: 'FAKESERIAL01',
+			});
+			const capabilities = asPartial<AirConditionerCapabilities>({
+				supportsHeat: true,
+				supportsFanSpeedControl: true,
+			});
+
+			// Act
+			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
+
+			// Assert
+			expect(mockEndpoint.createDefaultBasicInformationClusterServer).toHaveBeenCalledWith(
+				mockDevice.name,
+				'FAKESERIAL01',
+				0xfff1,
+				'Matterbridge',
+				0x8000,
+				'Matterbridge Air Conditioner',
+			);
+		});
+
+		it('should keep the endpoint id built from device.id when serialNumber is present', () => {
+			// Arrange
+			mockDevice = asPartial<ThinqAirConditionerDevice>({
+				name: 'Living Room AC',
+				id: '12345678-1234-1234-1234-123456789012',
+				type: 'AC',
+				serialNumber: 'FAKESERIAL01',
+			});
+			const capabilities = asPartial<AirConditionerCapabilities>({
+				supportsHeat: true,
+				supportsFanSpeedControl: true,
+			});
+
+			// Act
+			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low);
+
+			// Assert
+			expect(MatterbridgeEndpointMockFn).toHaveBeenCalledWith(
+				expect.any(Array),
+				expect.objectContaining({
+					id: 'LivingRoomAC-12345678-1234-1234-1234-123456789012',
+				}),
+			);
+		});
+
+		it('should pass serialNumber together with all four identity overrides', () => {
+			// Arrange
+			mockDevice = asPartial<ThinqAirConditionerDevice>({
+				name: 'Living Room AC',
+				id: '12345678-1234-1234-1234-123456789012',
+				type: 'AC',
+				serialNumber: 'FAKESERIAL01',
+			});
+			const capabilities = asPartial<AirConditionerCapabilities>({
+				supportsHeat: true,
+				supportsFanSpeedControl: true,
+			});
+
+			// Act
+			buildAirConditionerEndpoint(mockDevice, capabilities, setpoints, FanControl.FanMode.Low, {
+				vendorId: 4996,
+				vendorName: 'LG',
+				productId: 1,
+				productName: 'My AC',
+			});
+
+			// Assert
+			expect(mockEndpoint.createDefaultBasicInformationClusterServer).toHaveBeenCalledWith(
+				mockDevice.name,
+				'FAKESERIAL01',
+				4996,
+				'LG',
+				1,
+				'My AC',
+			);
+		});
+	});
+
 	describe('Matter override configuration (Phase G)', () => {
 		it('should use default values when no options passed', () => {
 			// Arrange
