@@ -95,15 +95,21 @@ function resolveOutPath(out) {
     return { error: OUT_ERROR };
   }
   try {
-    const realWorkspace = fs.realpathSync(WORKSPACE_DIR);
     let anchor = path.dirname(resolved);
     while (!pathExists(anchor)) {
       anchor = path.dirname(anchor);
     }
-    if (!isWithin(realWorkspace, fs.realpathSync(anchor))) {
-      return { error: OUT_ERROR };
-    }
-    if (pathExists(resolved) && !isWithin(realWorkspace, fs.realpathSync(resolved))) {
+    const realAnchor = fs.realpathSync(anchor);
+    if (pathExists(WORKSPACE_DIR)) {
+      const realWorkspace = fs.realpathSync(WORKSPACE_DIR);
+      if (!isWithin(realWorkspace, realAnchor)) {
+        return { error: OUT_ERROR };
+      }
+      if (pathExists(resolved) && !isWithin(realWorkspace, fs.realpathSync(resolved))) {
+        return { error: OUT_ERROR };
+      }
+    } else if (realAnchor !== fs.realpathSync(PROJECT_ROOT)) {
+      // workspace/ is absent (gitignored, e.g. on CI): nothing between the root and the target may be a symlink.
       return { error: OUT_ERROR };
     }
   } catch {
