@@ -16,11 +16,15 @@ import { applyThinqFilterStateToAirConditioner } from './platform/thinq/thinqAir
 import { applyThinqSnapshotToAirConditioner } from './platform/thinq/thinqAirConditionerStateSync.js';
 import { reconcileThinqDeviceConfigEntries } from './platform/thinq/thinqDeviceConfigReconciler.js';
 import { applyThinqSnapshotToWasher } from './platform/thinq/thinqWasherStateSync.js';
+import { resolveThinqGeneration } from './platform/thinqGeneration.js';
 import { ThinqServiceContainer } from './services/thinq/serviceContainer.js';
 import { ThinqSession } from './services/thinq/session.js';
 import { ThinqDeviceUpdateListener } from './services/thinq/thinqDeviceService.js';
 import type { ThinqFilterUpdateListener } from './services/thinq/thinqFilterMonitoringService.js';
 import { PLUGIN_NAME } from './settings.js';
+import { ThinqServiceV2Container } from './thinqV2/thinqServiceV2Container.js';
+import { applyThinqV2WasherState, buildThinqV2WasherEndpoint } from './thinqV2/thinqV2WasherEndpoint.js';
+import type { ThinqV2Washer } from './thinqV2/thinqV2WasherService.js';
 
 export default function initializePlugin(
 	matterbridge: PlatformMatterbridge,
@@ -44,6 +48,10 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 
 	// ThinQ family services (Phase 1: auth + discovery + polling, AirConditioner only)
 	public readonly thinqServices: ThinqServiceContainer;
+
+	// ThinQ Connect (PAT) generation: only defined when loginType is 'pat'
+	private readonly thinqV2Services: ThinqServiceV2Container | undefined;
+	private thinqV2Washers: ThinqV2Washer[] = [];
 
 	private thinqPollingIntervalMs: number | undefined;
 	private readonly thinqDeviceKindById = new Map<string, 'AC' | 'WASHER'>();
@@ -73,6 +81,14 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 			this.configManager,
 			Path.join(this.matterbridge.matterbridgePluginDirectory, PLUGIN_NAME, 'mqtt-certs'),
 		);
+		this.thinqV2Services =
+			resolveThinqGeneration(this.configManager.thinqLoginType) === 'v2'
+				? new ThinqServiceV2Container(this.log, {
+						personalAccessToken: this.configManager.thinqPersonalAccessToken ?? '',
+						country: this.configManager.country,
+						pollIntervalSeconds: this.configManager.thinqRefreshIntervalSeconds,
+					})
+				: undefined;
 	}
 
 	// #region Lifecycle
@@ -96,13 +112,12 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 			return;
 		}
 
-		if (this.configManager.thinqLoginType === 'pat') {
-			await this.validateThinqConnectToken();
-			return;
-		}
-
 		try {
-			await this.startThinqDevices();
+			if (this.thinqV2Services) {
+				await this.startThinqV2Devices();
+			} else {
+				await this.startThinqDevices();
+			}
 		} catch (error) {
 			this.log.error(`ThinQ startup failed: ${error instanceof Error ? error.message : String(error)}`);
 			this.state.setStartupCompleted(false);
@@ -138,6 +153,11 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 
 		if (!this.state.isStartupCompleted) {
 			this.log.debug('onConfigure: exit early — startup did not complete, skipping polling setup');
+			return;
+		}
+
+		if (this.thinqV2Services) {
+			this.startThinqV2Polling();
 			return;
 		}
 
@@ -208,10 +228,14 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 		this.log.debug(`onShutdown: entry (reason=${reason ?? 'none'})`);
 		this.log.notice('onShutdown called with reason:', reason ?? 'none');
 
-		this.thinqServices.getDeviceService().stopPolling();
-		this.thinqServices.getDeviceService().stopKeepAlive();
-		this.thinqServices.getMqttListener().stop();
-		this.thinqServices.getFilterMonitoringService().stopPolling();
+		if (this.thinqV2Services) {
+			this.thinqV2Services.shutdown();
+		} else {
+			this.thinqServices.getDeviceService().stopPolling();
+			this.thinqServices.getDeviceService().stopKeepAlive();
+			this.thinqServices.getMqttListener().stop();
+			this.thinqServices.getFilterMonitoringService().stopPolling();
+		}
 
 		if (this.configManager.unregisterOnShutdown) {
 			await this.unregisterAllDevices(UNREGISTER_DEVICES_DELAY_MS);
@@ -221,21 +245,49 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 		this.log.debug('onShutdown: exit');
 	}
 
-	/**
-	 * Validates the ThinQ Connect Personal Access Token with a read-only device listing.
-	 * Does not mark startup as completed; device control via PAT is not enabled yet.
-	 */
-	private async validateThinqConnectToken(): Promise<void> {
-		try {
-			const result = await this.thinqServices.getConnectApiClient().validateToken();
+	/** Discovers ThinQ Connect (PAT) washers and registers each as a Matter LaundryWasher endpoint. */
+	private async startThinqV2Devices(): Promise<void> {
+		const container = this.thinqV2Services;
+		if (!container) {
+			throw new Error('ThinQ V2 services not initialized');
+		}
+		const service = container.getWasherService();
+
+		this.thinqV2Washers = await service.discoverWashers();
+		if (this.thinqV2Washers.length === 0) {
 			this.log.notice(
-				`ThinQ Connect: Personal Access Token accepted, ${result.deviceCount} device(s) visible. Device control via PAT is not enabled yet.`,
-			);
-		} catch (error) {
-			this.log.error(
-				`ThinQ Connect: Personal Access Token validation failed: ${error instanceof Error ? error.message : String(error)}`,
+				'ThinQ Connect (PAT): no washer found. Only washers are supported with a Personal Access Token in this version.',
 			);
 		}
+
+		for (const washer of this.thinqV2Washers) {
+			const endpoint = buildThinqV2WasherEndpoint(washer, service, this.log);
+			await this.registerDevice(endpoint);
+			this.registry.register(washer.deviceId, endpoint);
+		}
+
+		this.log.notice(`ThinQ Connect (PAT): registered ${this.thinqV2Washers.length} washer(s).`);
+	}
+
+	private startThinqV2Polling(): void {
+		const container = this.thinqV2Services;
+		if (!container) {
+			throw new Error('ThinQ V2 services not initialized');
+		}
+
+		container.getWasherService().startPolling(container.pollIntervalMs, this.thinqV2Washers, (deviceId, state) => {
+			const endpoint = this.registry.getDevice(deviceId) as MatterbridgeEndpoint | undefined;
+			if (!endpoint) {
+				this.log.debug(`ThinQ V2 state update received for unregistered device ${deviceId}, skipping.`);
+				return;
+			}
+			void applyThinqV2WasherState(endpoint, state, this.log).catch((error: unknown) => {
+				this.log.error(
+					`Failed to apply ThinQ V2 state update for ${deviceId}: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			});
+		});
+		this.log.debug(`ThinQ V2 polling started at ${container.pollIntervalMs}ms interval`);
 	}
 
 	/**
