@@ -72,6 +72,7 @@ export class ThinqConnectWasherService {
 	private readonly refreshTimers = new Set<NodeJS.Timeout>();
 	private pollTimer: NodeJS.Timeout | undefined;
 	private tickRunning = false;
+	private pollTick: (() => Promise<void>) | undefined;
 	private listener: ThinqConnectWasherStateListener | undefined;
 
 	constructor(
@@ -204,8 +205,32 @@ export class ThinqConnectWasherService {
 			}
 		};
 
+		this.pollTick = tick;
 		void tick();
 		this.pollTimer = setInterval(() => void tick(), intervalMs);
+	}
+
+	/** Replaces only the interval timer; no-op when not polling. */
+	public setPollInterval(intervalMs: number, pollNow = false): void {
+		const { pollTick } = this;
+		if (!this.pollTimer || !pollTick) {
+			return;
+		}
+		clearInterval(this.pollTimer);
+		this.pollTimer = setInterval(() => void pollTick(), intervalMs);
+		if (pollNow) {
+			void pollTick();
+		}
+	}
+
+	/** Push-triggered re-read; never throws. */
+	public async refreshState(washer: ThinqConnectWasher): Promise<void> {
+		try {
+			const state = await this.readState(washer);
+			this.listener?.(washer.deviceId, state);
+		} catch (error) {
+			this.logger.warn(`ThinQ Connect: push refresh failed for ${washer.deviceId}: ${errorMessage(error)}`);
+		}
 	}
 
 	public stopPolling(): void {
@@ -213,6 +238,7 @@ export class ThinqConnectWasherService {
 			clearInterval(this.pollTimer);
 			this.pollTimer = undefined;
 		}
+		this.pollTick = undefined;
 		for (const timer of this.refreshTimers) {
 			clearTimeout(timer);
 		}

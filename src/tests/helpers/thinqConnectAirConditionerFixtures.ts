@@ -133,4 +133,89 @@ export const BEDROOM_STATE: ThinqConnectPayload = {
 	operation: { airConOperationMode: 'POWER_OFF' },
 };
 
+const F_TARGET_RANGE = { max: 86, min: 60, step: 1 };
+
+const writeOnlyRange = (range: { max: number; min: number; step: number }): Record<string, unknown> => ({
+	type: 'range',
+	mode: ['w'],
+	value: { w: range },
+});
+
+const temperatureInUnitEntry = (
+	unit: 'C' | 'F',
+	range: { max: number; min: number; step: number },
+): Record<string, unknown> => ({
+	currentTemperature: { type: 'number', mode: ['r'] },
+	targetTemperature: { type: 'number', mode: ['r'] },
+	minTargetTemperature: { type: 'number', mode: ['r'] },
+	maxTargetTemperature: { type: 'number', mode: ['r'] },
+	coolTargetTemperature: writeOnlyRange(range),
+	autoTargetTemperature: writeOnlyRange(range),
+	unit,
+});
+
+function buildStudyProfile(
+	unit: 'C' | 'F',
+	targetRange: { max: number; min: number; step: number },
+	withTemperatureInUnits: boolean,
+): ThinqConnectPayload {
+	return {
+		property: {
+			runState: { currentState: readOnlyEnum(['NORMAL', 'ERROR']) },
+			airConJobMode: { currentJobMode: readWriteEnum(['FAN', 'AIR_DRY', 'COOL', 'AUTO']) },
+			operation: { airConOperationMode: readWriteEnum(['POWER_ON', 'POWER_OFF']) },
+			temperature: {
+				currentTemperature: { type: 'number', mode: ['r'] },
+				unit: readOnlyEnum([unit]),
+				minTargetTemperature: { type: 'number', mode: ['r'] },
+				maxTargetTemperature: { type: 'number', mode: ['r'] },
+				coolTargetTemperature: writeOnlyRange(targetRange),
+				autoTargetTemperature: writeOnlyRange(targetRange),
+				targetTemperature: readWriteRange(targetRange),
+			},
+			...(withTemperatureInUnits
+				? { temperatureInUnits: [temperatureInUnitEntry('C', C_RANGE), temperatureInUnitEntry('F', F_TARGET_RANGE)] }
+				: {}),
+			filterInfo: {
+				filterLifetime: { type: 'number', mode: ['r'] },
+				usedTime: { type: 'number', mode: ['r'] },
+			},
+			airFlow: {
+				windStrength: readWriteEnum(['LOW', 'MID', 'HIGH', 'AUTO']),
+				windStrengthDetail: readWriteEnum(['NATURE', 'LOW', 'LOW_MID', 'MID', 'MID_HIGH', 'HIGH']),
+				windStep: readWriteRange({ max: 5, min: 1, step: 1 }),
+			},
+			windDirection: { rotateUpDown: readWriteBoolean() },
+		},
+		notification: { push: ['WATER_IS_FULL'] },
+	};
+}
+
+/** Study Room AC profile from workspace/device-dumps/raw-ac-study.txt: Celsius top level, C + F temperatureInUnits, windStep 1-5. */
+export const STUDY_PROFILE_FULL: ThinqConnectPayload = buildStudyProfile('C', C_RANGE, true);
+
+/** SYNTHETIC Fahrenheit variant of STUDY_PROFILE_FULL (top-level unit F, 60-86 F target). Never seen on a real device. */
+export const FAHRENHEIT_PROFILE: ThinqConnectPayload = buildStudyProfile('F', F_TARGET_RANGE, true);
+
+/** SYNTHETIC: FAHRENHEIT_PROFILE without temperatureInUnits, so no Celsius entry exists. */
+export const FAHRENHEIT_PROFILE_NO_CELSIUS_ENTRY: ThinqConnectPayload = buildStudyProfile('F', F_TARGET_RANGE, false);
+
+/** SYNTHETIC Fahrenheit state: 77 F current, 72 F target, powered on, COOL, windStep 5. */
+export const FAHRENHEIT_STATE: ThinqConnectPayload = {
+	runState: { currentState: 'NORMAL' },
+	airConJobMode: { currentJobMode: 'COOL' },
+	temperature: {
+		currentTemperature: 77,
+		targetTemperature: 72,
+		unit: 'F',
+		minTargetTemperature: 60,
+		maxTargetTemperature: 86,
+	},
+	airFlow: { windStrength: 'HIGH', windStrengthDetail: 'HIGH', windStep: 5 },
+	operation: { airConOperationMode: 'POWER_ON' },
+};
+
+/** Study Room AC state reporting runState ERROR (fault), otherwise as STUDY_STATE. */
+export const ERROR_STATE: ThinqConnectPayload = { ...STUDY_STATE, runState: { currentState: 'ERROR' } };
+
 export { C_RANGE, F_RANGE };

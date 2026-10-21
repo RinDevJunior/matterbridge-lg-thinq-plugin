@@ -83,18 +83,20 @@ What it does today:
 - Washers and air conditioners are registered as separate Matter devices (`server` mode). Each one is paired on its own with its own pairing code, exactly like the account login.
 - Washer: appears as a Matter washer that Google Home can turn on and off. On is any state except `POWER_OFF`. Off and on commands are refused while the washer is running or paused, or when its state is unknown.
 - Washer Start and Stop: Start is sent only from `INITIAL` with Remote Start not off, Stop only while running or paused. Anything else is refused and the tile falls back to the real state. The plugin never powers the washer on for a Start.
-- Air conditioner: power, target temperature (Celsius), fan speed, swing, room temperature, humidity (on units that report it) and read-only filter life. Home shows Cool and Off.
+- Air conditioner: power, target temperature, fan speed, swing, room temperature, humidity (on units that report it) and read-only filter life. Home shows Cool and Off. The fan slider uses the finer `windStep` levels (20/40/60/80/100 %) where the unit reports them. Units that report Fahrenheit use their own unit for limits and writes (not tested on hardware). A unit that reports ERROR logs one warning.
 - After a command, the state is re-read about 3 s later.
-- State is polled every `refreshIntervalSeconds` (the Refresh Interval setting). Values below 15 s are raised to 15 s.
+- State arrives by push (ThinQ Connect events over MQTT) when available, and each event triggers a state re-read. Push is on by default and has no setting. Polling stays as a fallback every `refreshIntervalSeconds` (minimum 15 s) and, while push is healthy, as a 5 minute safety net.
+- Push keeps one anonymous client id in `thinq-connect-client-id.json` in the plugin storage folder so LG sees the same client after a restart. Keys and certificates are kept in memory only and are never logged or written to disk.
+- Push log lines (info): `ThinQ Connect push: starting for N device(s).`, `connected to the MQTT broker.`, `subscribed to events for N of M device(s).`, `healthy, safety poll in use.`, and `unavailable (...), polling stays on; retry in N s.` With `debug` on you also see each event as `event DEVICE_STATUS for <id> (changed: ...)`.
 - Each washer and air conditioner is added automatically to the ThinQ Devices list in the plugin settings. `Ignore`, product name and product ID work for PAT devices too; restart the plugin after changing them.
 - The air conditioner's room temperature is also reported as a Matter temperature sensor.
 - Because PAT devices now run in server mode, they get new device IDs. Remove any previously paired PAT washer or air conditioner from your controller and pair it again with its new pairing code.
 
 Limits:
 
-- Air conditioner: no heat mode, energy monitoring, filter reset, swing angle, dust values, display light, timers or wind steps.
+- Air conditioner: no heat mode, energy monitoring, filter reset, swing angle, dust values, display light, timers.
 - Washer Start and Stop work through ThinQ Connect only when the washer is idle (`INITIAL`) with Remote Start on; START has not been tested on hardware yet. Pause and resume are not available.
-- No push updates, only polling.
+- Push needs a token with the event permission. If LG's event subscription cap is reached (error 1312) that device stays on polling. Push is not yet tested against the real LG service; if it fails, polling keeps everything working.
 
 ---
 

@@ -61,6 +61,135 @@ const WASHER: ThinqConnectWasher = {
 	operationMode: { writable: true, allowedValues: ['START', 'STOP', 'POWER_OFF', 'POWER_ON'] },
 };
 
+describe('ThinqConnectWasherService push refresh and poll interval', () => {
+	let logger: ReturnType<typeof createMockLogger>;
+	let client: MockClient;
+	let service: ThinqConnectWasherService;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.useFakeTimers();
+		logger = createMockLogger();
+		client = createMockClient();
+		client.getDeviceState.mockResolvedValue(washerState('RUNNING'));
+		client.controlDevice.mockResolvedValue({});
+		service = new ThinqConnectWasherService(client satisfies ThinqConnectWasherClient, logger);
+	});
+
+	afterEach(() => {
+		service.stopPolling();
+		vi.clearAllTimers();
+		vi.useRealTimers();
+	});
+
+	describe('refreshState', () => {
+		it('should read the state once and call the registered listener with it', async () => {
+			// Arrange
+			const listener = vi.fn();
+			service.startPolling(60000, [], listener);
+
+			// Act
+			await service.refreshState(WASHER);
+
+			// Assert
+			expect(client.getDeviceState).toHaveBeenCalledTimes(1);
+			expect(listener).toHaveBeenCalledWith('w1', { currentState: 'RUNNING', powerOn: true });
+		});
+
+		it('should still read the state and resolve without throwing when no listener is registered', async () => {
+			// Arrange & Act
+			const result = service.refreshState(WASHER);
+
+			// Assert
+			await expect(result).resolves.toBeUndefined();
+			expect(client.getDeviceState).toHaveBeenCalledWith('w1');
+		});
+
+		it('should log a warn with the device id and not call the listener when the read fails', async () => {
+			// Arrange
+			client.getDeviceState.mockRejectedValue(new Error('offline'));
+			const listener = vi.fn();
+			service.startPolling(60000, [], listener);
+
+			// Act
+			await service.refreshState(WASHER);
+
+			// Assert
+			expect(logger.warn).toHaveBeenCalledWith('ThinQ Connect: push refresh failed for w1: offline');
+			expect(listener).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('setPollInterval', () => {
+		it('should do nothing when polling has not started', async () => {
+			// Arrange & Act
+			service.setPollInterval(10000, true);
+			await vi.advanceTimersByTimeAsync(20000);
+
+			// Assert
+			expect(vi.getTimerCount()).toBe(0);
+			expect(client.getDeviceState).not.toHaveBeenCalled();
+		});
+
+		it('should do nothing after polling was stopped', async () => {
+			// Arrange
+			service.startPolling(60000, [WASHER], vi.fn());
+			service.stopPolling();
+
+			// Act
+			service.setPollInterval(1000, true);
+			await vi.advanceTimersByTimeAsync(5000);
+
+			// Assert
+			expect(client.getDeviceState).toHaveBeenCalledTimes(1);
+			expect(vi.getTimerCount()).toBe(0);
+		});
+
+		it('should replace only the interval so the next tick follows the new interval', async () => {
+			// Arrange
+			service.startPolling(60000, [WASHER], vi.fn());
+			await vi.advanceTimersByTimeAsync(0);
+
+			// Act
+			service.setPollInterval(10000);
+			const timersAfterChange = vi.getTimerCount();
+			await vi.advanceTimersByTimeAsync(40000);
+
+			// Assert
+			expect(timersAfterChange).toBe(1);
+			expect(client.getDeviceState).toHaveBeenCalledTimes(5);
+		});
+
+		it('should read immediately when pollNow is true', async () => {
+			// Arrange
+			service.startPolling(60000, [WASHER], vi.fn());
+			await vi.advanceTimersByTimeAsync(0);
+
+			// Act
+			service.setPollInterval(60000, true);
+			await vi.advanceTimersByTimeAsync(0);
+
+			// Assert
+			expect(client.getDeviceState).toHaveBeenCalledTimes(2);
+		});
+
+		it('should keep the pending post-command refresh when the interval changes', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(washerState('POWER_OFF'));
+			const listener = vi.fn();
+			service.startPolling(60000, [], listener);
+			await service.setPower(WASHER, true);
+
+			// Act
+			service.setPollInterval(60000);
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_WASHER_POST_COMMAND_REFRESH_DELAY_MS);
+
+			// Assert
+			expect(listener).toHaveBeenCalledWith('w1', expect.objectContaining({ powerOn: false }));
+		});
+	});
+});
+
 describe('ThinqConnectWasherService', () => {
 	let logger: ReturnType<typeof createMockLogger>;
 	let client: MockClient;

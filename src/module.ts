@@ -25,6 +25,7 @@ import { PLUGIN_NAME } from './settings.js';
 import { applyThinqConnectAirConditionerState } from './thinqConnect/thinqConnectAirConditionerEndpoint.js';
 import { registerThinqConnectAirConditioners } from './thinqConnect/thinqConnectAirConditionerRegistration.js';
 import type { ThinqConnectAirConditioner } from './thinqConnect/thinqConnectAirConditionerService.js';
+import { loadOrCreateThinqConnectClientId } from './thinqConnect/thinqConnectClientId.js';
 import { syncThinqConnectDeviceConfigEntries } from './thinqConnect/thinqConnectDeviceConfigReconciler.js';
 import type { ThinqConnectMatterIdentityOverride } from './thinqConnect/thinqConnectMatterIdentity.js';
 import { ThinqConnectServiceContainer } from './thinqConnect/thinqConnectServiceContainer.js';
@@ -94,8 +95,22 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 						personalAccessToken: this.configManager.thinqPersonalAccessToken ?? '',
 						country: this.configManager.country,
 						pollIntervalSeconds: this.configManager.thinqRefreshIntervalSeconds,
+						clientId: this.loadThinqConnectClientId(),
 					})
 				: undefined;
+	}
+
+	private loadThinqConnectClientId(): string | undefined {
+		try {
+			return loadOrCreateThinqConnectClientId(
+				Path.join(this.matterbridge.matterbridgePluginDirectory, PLUGIN_NAME, 'thinq-connect-client-id.json'),
+			);
+		} catch (error) {
+			this.log.warn(
+				`ThinQ Connect: could not store the client id, using a temporary one: ${error instanceof Error ? error.message : String(error)}`,
+			);
+			return undefined;
+		}
 	}
 
 	// #region Lifecycle
@@ -236,6 +251,7 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 		this.log.notice('onShutdown called with reason:', reason ?? 'none');
 
 		if (this.thinqConnectServices) {
+			await this.thinqConnectServices.stopPush();
 			this.thinqConnectServices.shutdown();
 		} else {
 			this.thinqServices.getDeviceService().stopPolling();
@@ -356,6 +372,7 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 				});
 			});
 		this.log.debug(`ThinQ Connect polling started at ${container.pollIntervalMs}ms interval`);
+		container.startPush({ washers: this.thinqConnectWashers, airConditioners: this.thinqConnectAirConditioners });
 	}
 
 	/**

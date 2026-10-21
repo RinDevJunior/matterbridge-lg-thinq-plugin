@@ -27,6 +27,9 @@ describe('describeThinqConnectResultCode', () => {
 		'2210',
 		'2212',
 		'2214',
+		'1312',
+		'1214',
+		'1204',
 	];
 
 	it.each(knownCodes)('should return a non-empty description for known code %s', (code) => {

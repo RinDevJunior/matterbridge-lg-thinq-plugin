@@ -10,7 +10,13 @@ import {
 	Thermostat,
 } from 'matterbridge/matter/clusters';
 
-import type { AirConditionerProfile } from '../services/thinqConnect/thinqConnectAirConditioner.js';
+import {
+	type AirConditionerProfile,
+	percentToWindStep,
+	readWindStepScale,
+	resolveCelsiusTargetRange,
+	windStepToPercent,
+} from '../services/thinqConnect/thinqConnectAirConditioner.js';
 import type {
 	ThinqConnectAirConditioner,
 	ThinqConnectAirConditionerOutcome,
@@ -91,7 +97,7 @@ export function describeFanTier(profile: AirConditionerProfile): FanTier {
 }
 
 function thermostatLimitsCelsius(ac: ThinqConnectAirConditioner): { min: number; max: number } {
-	const range = ac.profile.targetTemperature;
+	const range = resolveCelsiusTargetRange(ac.profile);
 	if (!range) {
 		return { min: DEFAULT_MIN_CELSIUS, max: DEFAULT_MAX_CELSIUS };
 	}
@@ -108,7 +114,8 @@ export function buildThinqConnectAirConditionerEndpoint(
 	service: Pick<
 		ThinqConnectAirConditionerService,
 		'setPower' | 'setCoolMode' | 'setTargetTemperature' | 'setWindStrength' | 'setSwing'
-	>,
+	> &
+		Partial<Pick<ThinqConnectAirConditionerService, 'setWindStep'>>,
 	logger: AnsiLogger,
 	identity: ThinqConnectMatterIdentityOverride = {},
 ): MatterbridgeEndpoint {
@@ -119,6 +126,8 @@ export function buildThinqConnectAirConditionerEndpoint(
 	const initialLocal = clampCelsius(ac.initialState?.currentTemperatureC ?? midpoint);
 	const initialTarget = clampCelsius(ac.initialState?.targetTemperatureC ?? midpoint);
 	const fanTier = describeFanTier(profile);
+	const windStepScale = readWindStepScale(profile);
+	const setWindStep = service.setWindStep?.bind(service);
 
 	const endpoint = new MatterbridgeEndpoint([roomAirConditioner, powerSource], {
 		id: `${ac.name.replaceAll(' ', '')}-${ac.deviceId.replaceAll(' ', '')}`,
@@ -315,6 +324,26 @@ export function buildThinqConnectAirConditionerEndpoint(
 			if (context.fabric === undefined) {
 				return;
 			}
+			if (windStepScale && setWindStep) {
+				const step = newValue === null ? undefined : percentToWindStep(windStepScale, newValue);
+				if (step === undefined) {
+					logger.debug(`ThinQ Connect ${ac.deviceId}: ignoring fan percent ${newValue}, reverting.`);
+					void endpoint.updateAttribute(FanControl.id, 'percentSetting', oldValue, logger).catch((error: unknown) => {
+						logger.error(`ThinQ Connect ${ac.deviceId} fan percent revert failed: ${errorMessage(error)}`);
+					});
+					return;
+				}
+				void settle(
+					'fan percent',
+					() => setWindStep(ac, step),
+					async (state) => {
+						if (state.windStep === undefined) {
+							await endpoint.updateAttribute(FanControl.id, 'percentSetting', oldValue, logger);
+						}
+					},
+				);
+				return;
+			}
 			const strength = newValue === null ? undefined : mapPercentToWindStrength(newValue);
 			if (strength === undefined) {
 				logger.debug(`ThinQ Connect ${ac.deviceId}: ignoring fan percent ${newValue}, reverting.`);
@@ -430,7 +459,11 @@ export async function applyThinqConnectAirConditionerState(
 		if (fanMode !== undefined) {
 			await endpoint.updateAttribute(FanControl.id, 'fanMode', fanMode, logger);
 		}
-		const percent = mapWindStrengthToPercent(state.windStrength);
+		const scale = readWindStepScale(profile);
+		const percent =
+			scale !== undefined && state.windStep !== undefined && state.windStrength !== 'AUTO'
+				? windStepToPercent(scale, state.windStep)
+				: mapWindStrengthToPercent(state.windStrength);
 		if (percent !== undefined) {
 			await endpoint.updateAttribute(FanControl.id, 'percentCurrent', percent, logger);
 			await endpoint.updateAttribute(FanControl.id, 'percentSetting', percent, logger);

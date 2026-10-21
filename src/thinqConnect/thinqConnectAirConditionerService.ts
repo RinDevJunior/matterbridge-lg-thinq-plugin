@@ -8,13 +8,18 @@ import {
 	buildAirConditionerPowerPayload,
 	buildAirConditionerSwingPayload,
 	buildAirConditionerTargetTemperaturePayload,
+	buildAirConditionerWindStepPayload,
 	buildAirConditionerWindStrengthPayload,
+	celsiusToFahrenheit,
 	evaluateAirConditionerEnumWrite,
 	evaluateAirConditionerRangeWrite,
+	evaluateAirConditionerWindStepWrite,
 	fahrenheitToCelsius,
 	filterRemainingPercent,
+	isAirConditionerFaultState,
 	readAirConditionerProfile,
 	readAirConditionerState,
+	resolveTargetTemperatureUnit,
 	snapToRange,
 } from '../services/thinqConnect/thinqConnectAirConditioner.js';
 import type { ThinqConnectApiClient, ThinqConnectResource } from '../services/thinqConnect/thinqConnectApiClient.js';
@@ -36,6 +41,7 @@ export interface ThinqConnectAirConditionerState {
 	currentTemperatureC?: number;
 	targetTemperatureC?: number;
 	windStrength?: string;
+	windStep?: number;
 	rotateUpDown?: boolean;
 	rotateLeftRight?: boolean;
 	humidityPercent?: number;
@@ -72,13 +78,17 @@ const toCelsius = (value: number | undefined, unit: AirConditionerTemperatureUni
 	return unit === 'F' ? fahrenheitToCelsius(value) : value;
 };
 
-const toState = (raw: AirConditionerRawState): ThinqConnectAirConditionerState => ({
+const toState = (
+	raw: AirConditionerRawState,
+	fallbackUnit?: AirConditionerTemperatureUnit,
+): ThinqConnectAirConditionerState => ({
 	powerOn: raw.powerOn,
 	jobMode: raw.jobMode,
 	temperatureUnit: raw.temperatureUnit,
-	currentTemperatureC: toCelsius(raw.currentTemperature, raw.temperatureUnit),
-	targetTemperatureC: toCelsius(raw.targetTemperature, raw.temperatureUnit),
+	currentTemperatureC: toCelsius(raw.currentTemperature, raw.temperatureUnit ?? fallbackUnit),
+	targetTemperatureC: toCelsius(raw.targetTemperature, raw.temperatureUnit ?? fallbackUnit),
 	windStrength: raw.windStrength,
+	windStep: raw.windStep,
 	rotateUpDown: raw.rotateUpDown,
 	rotateLeftRight: raw.rotateLeftRight,
 	humidityPercent: raw.humidityPercent,
@@ -89,10 +99,12 @@ const toState = (raw: AirConditionerRawState): ThinqConnectAirConditionerState =
 export class ThinqConnectAirConditionerService {
 	private readonly lastState = new Map<string, ThinqConnectAirConditionerState>();
 	private readonly lastRaw = new Map<string, AirConditionerRawState>();
+	private readonly faultState = new Map<string, string>();
 	private readonly inFlight = new Set<string>();
 	private readonly refreshTimers = new Set<NodeJS.Timeout>();
 	private pollTimer: NodeJS.Timeout | undefined;
 	private tickRunning = false;
+	private pollTick: (() => Promise<void>) | undefined;
 	private listener: ThinqConnectAirConditionerStateListener | undefined;
 
 	constructor(
@@ -137,7 +149,8 @@ export class ThinqConnectAirConditionerService {
 	public async readState(ac: ThinqConnectAirConditioner): Promise<ThinqConnectAirConditionerState> {
 		const payload = await this.client.getDeviceState(ac.deviceId);
 		const raw = readAirConditionerState(payload);
-		const state = toState(raw);
+		this.trackFaultState(ac, raw.runState);
+		const state = toState(raw, resolveTargetTemperatureUnit(ac.profile));
 		this.lastRaw.set(ac.deviceId, raw);
 		this.lastState.set(ac.deviceId, state);
 		return state;
@@ -184,16 +197,19 @@ export class ThinqConnectAirConditionerService {
 			if (reason !== undefined || !range) {
 				return { kind: 'refuse', reason: reason ?? 'Profile has no temperature.targetTemperature.' };
 			}
-			const snapped = snapToRange(celsius, range);
+			const unit = resolveTargetTemperatureUnit(ac.profile);
+			const requested = unit === 'F' ? celsiusToFahrenheit(celsius) : celsius;
+			const snapped = snapToRange(requested, range);
+			const snappedCelsius = unit === 'F' ? fahrenheitToCelsius(snapped) : snapped;
 			const raw = this.lastRaw.get(ac.deviceId);
-			const currentCelsius = toCelsius(raw?.targetTemperature, raw?.temperatureUnit);
-			if (currentCelsius !== undefined && Math.abs(snapped - currentCelsius) < 0.001) {
+			const currentCelsius = toCelsius(raw?.targetTemperature, raw?.temperatureUnit ?? unit);
+			if (currentCelsius !== undefined && Math.abs(snappedCelsius - currentCelsius) < 0.001) {
 				return { kind: 'noop' };
 			}
 			return {
 				kind: 'send',
-				payload: buildAirConditionerTargetTemperaturePayload(snapped, 'C'),
-				patch: { targetTemperatureC: snapped },
+				payload: buildAirConditionerTargetTemperaturePayload(snapped, unit),
+				patch: { targetTemperatureC: snappedCelsius },
 			};
 		});
 	}
@@ -221,6 +237,30 @@ export class ThinqConnectAirConditionerService {
 				kind: 'send',
 				payload: buildAirConditionerWindStrengthPayload(strength),
 				patch: { windStrength: strength },
+			};
+		});
+	}
+
+	public async setWindStep(ac: ThinqConnectAirConditioner, step: number): Promise<ThinqConnectAirConditionerOutcome> {
+		return this.runCommand(ac, `WIND_STEP_${step}`, (state) => {
+			const offReason = this.requirePoweredOn(state);
+			if (offReason !== undefined) {
+				return { kind: 'refuse', reason: offReason };
+			}
+			const reason = evaluateAirConditionerWindStepWrite(ac.profile, step);
+			if (reason !== undefined) {
+				return { kind: 'refuse', reason };
+			}
+			if (state.windStep === undefined) {
+				return { kind: 'refuse', reason: 'Wind step is unknown; refusing to send.' };
+			}
+			if (state.windStep === step) {
+				return { kind: 'noop' };
+			}
+			return {
+				kind: 'send',
+				payload: buildAirConditionerWindStepPayload(step),
+				patch: { windStep: step, windStrength: undefined },
 			};
 		});
 	}
@@ -284,8 +324,32 @@ export class ThinqConnectAirConditionerService {
 			}
 		};
 
+		this.pollTick = tick;
 		void tick();
 		this.pollTimer = setInterval(() => void tick(), intervalMs);
+	}
+
+	/** Replaces only the interval timer; no-op when not polling. */
+	public setPollInterval(intervalMs: number, pollNow = false): void {
+		const { pollTick } = this;
+		if (!this.pollTimer || !pollTick) {
+			return;
+		}
+		clearInterval(this.pollTimer);
+		this.pollTimer = setInterval(() => void pollTick(), intervalMs);
+		if (pollNow) {
+			void pollTick();
+		}
+	}
+
+	/** Push-triggered re-read; never throws. */
+	public async refreshState(ac: ThinqConnectAirConditioner): Promise<void> {
+		try {
+			const state = await this.readState(ac);
+			this.listener?.(ac.deviceId, state);
+		} catch (error) {
+			this.logger.warn(`ThinQ Connect: push refresh failed for ${ac.deviceId}: ${errorMessage(error)}`);
+		}
 	}
 
 	public stopPolling(): void {
@@ -293,11 +357,32 @@ export class ThinqConnectAirConditionerService {
 			clearInterval(this.pollTimer);
 			this.pollTimer = undefined;
 		}
+		this.pollTick = undefined;
 		for (const timer of this.refreshTimers) {
 			clearTimeout(timer);
 		}
 		this.refreshTimers.clear();
 		this.listener = undefined;
+	}
+
+	private trackFaultState(ac: ThinqConnectAirConditioner, runState: string | undefined): void {
+		if (runState === undefined) {
+			return;
+		}
+		const previous = this.faultState.get(ac.deviceId);
+		if (isAirConditionerFaultState(runState)) {
+			if (previous !== runState) {
+				this.faultState.set(ac.deviceId, runState);
+				this.logger.warn(
+					`ThinQ Connect: air conditioner "${ac.name}" (${ac.deviceId}) reports ${runState}. Check the unit or the LG ThinQ app.`,
+				);
+			}
+			return;
+		}
+		if (previous !== undefined) {
+			this.faultState.delete(ac.deviceId);
+			this.logger.info(`ThinQ Connect: air conditioner "${ac.name}" (${ac.deviceId}) is back to ${runState}.`);
+		}
 	}
 
 	private requirePoweredOn(state: ThinqConnectAirConditionerState): string | undefined {

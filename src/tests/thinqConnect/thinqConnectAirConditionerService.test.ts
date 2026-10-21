@@ -12,7 +12,11 @@ import { createMockLogger } from '../helpers/testUtils.js';
 import {
 	BEDROOM_PROFILE,
 	BEDROOM_STATE,
+	ERROR_STATE,
+	FAHRENHEIT_PROFILE,
+	FAHRENHEIT_STATE,
 	STUDY_PROFILE,
+	STUDY_PROFILE_FULL,
 	STUDY_STATE,
 	STUDY_STATE_FAHRENHEIT,
 } from '../helpers/thinqConnectAirConditionerFixtures.js';
@@ -53,6 +57,136 @@ function buildBedroomAc(overrides: Partial<ThinqConnectAirConditioner> = {}): Th
 		...overrides,
 	};
 }
+
+describe('ThinqConnectAirConditionerService push refresh and poll interval', () => {
+	let logger: ReturnType<typeof createMockLogger>;
+	let client: ReturnType<typeof createMockClient>;
+	let service: ThinqConnectAirConditionerService;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.useFakeTimers();
+		logger = createMockLogger();
+		client = createMockClient();
+		client.getDeviceState.mockResolvedValue(STUDY_STATE);
+		client.controlDevice.mockResolvedValue({});
+		service = new ThinqConnectAirConditionerService(client, logger);
+	});
+
+	afterEach(() => {
+		service.stopPolling();
+		vi.clearAllTimers();
+		vi.useRealTimers();
+	});
+
+	describe('refreshState', () => {
+		it('should read the state once and call the registered listener with it', async () => {
+			// Arrange
+			const listener = vi.fn();
+			service.startPolling(60_000, [], listener);
+
+			// Act
+			await service.refreshState(buildStudyAc());
+
+			// Assert
+			expect(client.getDeviceState).toHaveBeenCalledTimes(1);
+			expect(listener).toHaveBeenCalledWith('study-ac', expect.objectContaining({ powerOn: true }));
+		});
+
+		it('should still read the state and resolve without throwing when no listener is registered', async () => {
+			// Arrange & Act
+			const result = service.refreshState(buildStudyAc());
+
+			// Assert
+			await expect(result).resolves.toBeUndefined();
+			expect(client.getDeviceState).toHaveBeenCalledWith('study-ac');
+		});
+
+		it('should log a warn with the device id and not call the listener when the read fails', async () => {
+			// Arrange
+			client.getDeviceState.mockRejectedValue(new Error('offline'));
+			const listener = vi.fn();
+			service.startPolling(60_000, [], listener);
+
+			// Act
+			await service.refreshState(buildStudyAc());
+
+			// Assert
+			expect(logger.warn).toHaveBeenCalledWith('ThinQ Connect: push refresh failed for study-ac: offline');
+			expect(listener).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('setPollInterval', () => {
+		it('should do nothing when polling has not started', async () => {
+			// Arrange & Act
+			service.setPollInterval(10_000, true);
+			await vi.advanceTimersByTimeAsync(20_000);
+
+			// Assert
+			expect(vi.getTimerCount()).toBe(0);
+			expect(client.getDeviceState).not.toHaveBeenCalled();
+		});
+
+		it('should do nothing after polling was stopped', async () => {
+			// Arrange
+			service.startPolling(60_000, [buildStudyAc()], vi.fn());
+			service.stopPolling();
+
+			// Act
+			service.setPollInterval(1_000, true);
+			await vi.advanceTimersByTimeAsync(5_000);
+
+			// Assert
+			expect(client.getDeviceState).toHaveBeenCalledTimes(1);
+			expect(vi.getTimerCount()).toBe(0);
+		});
+
+		it('should replace only the interval so the next tick follows the new interval', async () => {
+			// Arrange
+			service.startPolling(60_000, [buildStudyAc()], vi.fn());
+			await vi.advanceTimersByTimeAsync(0);
+
+			// Act
+			service.setPollInterval(10_000);
+			const timersAfterChange = vi.getTimerCount();
+			await vi.advanceTimersByTimeAsync(40_000);
+
+			// Assert
+			expect(timersAfterChange).toBe(1);
+			expect(client.getDeviceState).toHaveBeenCalledTimes(5);
+		});
+
+		it('should read immediately when pollNow is true', async () => {
+			// Arrange
+			service.startPolling(60_000, [buildStudyAc()], vi.fn());
+			await vi.advanceTimersByTimeAsync(0);
+
+			// Act
+			service.setPollInterval(60_000, true);
+			await vi.advanceTimersByTimeAsync(0);
+
+			// Assert
+			expect(client.getDeviceState).toHaveBeenCalledTimes(2);
+		});
+
+		it('should keep the pending post-command refresh when the interval changes', async () => {
+			// Arrange
+			const listener = vi.fn();
+			const ac = buildBedroomAc();
+			client.getDeviceState.mockResolvedValue(BEDROOM_STATE);
+			service.startPolling(60_000, [], listener);
+			await service.setPower(ac, true);
+
+			// Act
+			service.setPollInterval(60_000);
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_AC_POST_COMMAND_REFRESH_DELAY_MS);
+
+			// Assert
+			expect(listener).toHaveBeenCalledWith('bedroom-ac', expect.anything());
+		});
+	});
+});
 
 describe('ThinqConnectAirConditionerService', () => {
 	let logger: ReturnType<typeof createMockLogger>;
@@ -737,6 +871,369 @@ describe('ThinqConnectAirConditionerService', () => {
 				...vi.mocked(logger.error).mock.calls,
 			];
 			expect(logged.flat().join(' ')).not.toContain(token);
+		});
+	});
+});
+
+function fahrenheitStateWithTarget(targetTemperature: number): ThinqConnectPayload {
+	return {
+		...FAHRENHEIT_STATE,
+		temperature: {
+			currentTemperature: 77,
+			targetTemperature,
+			unit: 'F',
+			minTargetTemperature: 60,
+			maxTargetTemperature: 86,
+		},
+	};
+}
+
+describe('ThinqConnectAirConditionerService Fahrenheit, ERROR and windStep', () => {
+	let logger: ReturnType<typeof createMockLogger>;
+	let client: ReturnType<typeof createMockClient>;
+	let service: ThinqConnectAirConditionerService;
+
+	function buildFahrenheitAc(): ThinqConnectAirConditioner {
+		return { deviceId: 'study-ac', name: 'Study Room AC', profile: readAirConditionerProfile(FAHRENHEIT_PROFILE) };
+	}
+
+	function buildStudyFullAc(): ThinqConnectAirConditioner {
+		return { deviceId: 'study-ac', name: 'Study Room AC', profile: readAirConditionerProfile(STUDY_PROFILE_FULL) };
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		logger = createMockLogger();
+		client = createMockClient();
+		client.getDeviceState.mockResolvedValue(STUDY_STATE);
+		client.controlDevice.mockResolvedValue({});
+		service = new ThinqConnectAirConditionerService(client, logger);
+	});
+
+	afterEach(() => {
+		service.stopPolling();
+		vi.useRealTimers();
+	});
+
+	describe('setTargetTemperature with a Fahrenheit unit', () => {
+		it('should send the snapped Fahrenheit target with unit F when a 22 C request is made', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(fahrenheitStateWithTarget(80));
+
+			// Act
+			const outcome = await service.setTargetTemperature(buildFahrenheitAc(), 22);
+
+			// Assert
+			expect(client.controlDevice).toHaveBeenCalledWith('study-ac', {
+				temperature: { targetTemperature: 72, unit: 'F' },
+			});
+			expect(outcome).toMatchObject({ status: 'sent' });
+			expect(outcome.state.targetTemperatureC).toBeCloseTo(22.22, 2);
+		});
+
+		it('should return noop when the Celsius request snaps to the current Fahrenheit target', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(fahrenheitStateWithTarget(72));
+
+			// Act
+			const outcome = await service.setTargetTemperature(buildFahrenheitAc(), 22.2);
+
+			// Assert
+			expect(outcome).toMatchObject({ status: 'noop' });
+			expect(client.controlDevice).not.toHaveBeenCalled();
+		});
+
+		it('should clamp a Celsius request below the Fahrenheit range to the 60 F minimum', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(fahrenheitStateWithTarget(72));
+
+			// Act
+			const outcome = await service.setTargetTemperature(buildFahrenheitAc(), 10);
+
+			// Assert
+			expect(client.controlDevice).toHaveBeenCalledWith('study-ac', {
+				temperature: { targetTemperature: 60, unit: 'F' },
+			});
+			expect(outcome.state.targetTemperatureC).toBeCloseTo(15.56, 2);
+		});
+
+		it('should refuse a Fahrenheit target change while the AC is off', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue({
+				...FAHRENHEIT_STATE,
+				operation: { airConOperationMode: 'POWER_OFF' },
+			});
+
+			// Act
+			const outcome = await service.setTargetTemperature(buildFahrenheitAc(), 22);
+
+			// Assert
+			expect(outcome).toMatchObject({ status: 'refused' });
+			expect(outcome.status === 'refused' ? outcome.reason : '').toContain('off');
+			expect(client.controlDevice).not.toHaveBeenCalled();
+		});
+
+		it('should keep unit C and the 24.5 C snap on the Celsius profile (regression)', async () => {
+			// Arrange & Act
+			await service.setTargetTemperature(buildStudyAc(), 24.3);
+
+			// Assert
+			expect(client.controlDevice).toHaveBeenCalledWith('study-ac', {
+				temperature: { targetTemperature: 24.5, unit: 'C' },
+			});
+		});
+	});
+
+	describe('readState with a Fahrenheit profile', () => {
+		it('should convert a state without a unit field using the Fahrenheit profile unit', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue({
+				temperature: { currentTemperature: 77, targetTemperature: 72 },
+				operation: { airConOperationMode: 'POWER_ON' },
+			});
+
+			// Act
+			const state = await service.readState(buildFahrenheitAc());
+
+			// Assert
+			expect(state.currentTemperatureC).toBeCloseTo(25, 5);
+			expect(state.targetTemperatureC).toBeCloseTo(22.22, 2);
+		});
+
+		it('should use the state unit C without converting again on a Fahrenheit profile', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue({
+				temperature: { currentTemperature: 25, targetTemperature: 22.5, unit: 'C' },
+				operation: { airConOperationMode: 'POWER_ON' },
+			});
+
+			// Act
+			const state = await service.readState(buildFahrenheitAc());
+
+			// Assert
+			expect(state.currentTemperatureC).toBe(25);
+			expect(state.targetTemperatureC).toBe(22.5);
+		});
+	});
+
+	describe('ERROR warning per transition', () => {
+		it('should not warn when runState is NORMAL', async () => {
+			// Arrange & Act
+			await service.readState(buildStudyAc());
+
+			// Assert
+			expect(vi.mocked(logger.warn)).not.toHaveBeenCalled();
+		});
+
+		it('should warn once with the device id when the first ERROR is read', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(ERROR_STATE);
+
+			// Act
+			await service.readState(buildStudyAc());
+
+			// Assert
+			expect(vi.mocked(logger.warn)).toHaveBeenCalledTimes(1);
+			expect(vi.mocked(logger.warn).mock.calls[0]?.[0]).toContain('study-ac');
+		});
+
+		it('should keep a single warning across repeated ERROR reads', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(ERROR_STATE);
+			const ac = buildStudyAc();
+
+			// Act
+			await service.readState(ac);
+			await service.readState(ac);
+			await service.readState(ac);
+
+			// Assert
+			expect(vi.mocked(logger.warn)).toHaveBeenCalledTimes(1);
+		});
+
+		it('should log one info and re-arm the warning when the state returns to NORMAL', async () => {
+			// Arrange
+			client.getDeviceState
+				.mockResolvedValueOnce(ERROR_STATE)
+				.mockResolvedValueOnce(STUDY_STATE)
+				.mockResolvedValueOnce(ERROR_STATE);
+			const ac = buildStudyAc();
+
+			// Act
+			await service.readState(ac);
+			await service.readState(ac);
+			await service.readState(ac);
+
+			// Assert
+			expect(vi.mocked(logger.info)).toHaveBeenCalledTimes(1);
+			expect(vi.mocked(logger.info).mock.calls[0]?.[0]).toContain('back to NORMAL');
+			expect(vi.mocked(logger.warn)).toHaveBeenCalledTimes(2);
+		});
+
+		it('should warn again when the fault value changes from ERROR to FAULT', async () => {
+			// Arrange
+			client.getDeviceState
+				.mockResolvedValueOnce(ERROR_STATE)
+				.mockResolvedValueOnce({ ...STUDY_STATE, runState: { currentState: 'FAULT' } });
+			const ac = buildStudyAc();
+
+			// Act
+			await service.readState(ac);
+			await service.readState(ac);
+
+			// Assert
+			expect(vi.mocked(logger.warn)).toHaveBeenCalledTimes(2);
+		});
+
+		it('should neither warn nor clear the flag when runState is absent between two ERROR reads', async () => {
+			// Arrange
+			client.getDeviceState
+				.mockResolvedValueOnce(ERROR_STATE)
+				.mockResolvedValueOnce({ ...STUDY_STATE, runState: undefined })
+				.mockResolvedValueOnce(ERROR_STATE);
+			const ac = buildStudyAc();
+
+			// Act
+			await service.readState(ac);
+			await service.readState(ac);
+			await service.readState(ac);
+
+			// Assert
+			expect(vi.mocked(logger.warn)).toHaveBeenCalledTimes(1);
+			expect(vi.mocked(logger.info)).not.toHaveBeenCalled();
+		});
+
+		it('should share one warning across readState, a command read and the polling tick', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(ERROR_STATE);
+			const ac = buildStudyAc();
+			const listener = vi.fn();
+
+			// Act
+			await service.readState(ac);
+			await service.setPower(ac, true);
+			service.startPolling(60_000, [ac], listener);
+			await vi.waitFor(() => {
+				expect(listener).toHaveBeenCalledTimes(1);
+			});
+
+			// Assert
+			expect(vi.mocked(logger.warn)).toHaveBeenCalledTimes(1);
+		});
+
+		it('should not expose runState on the state object returned to the caller', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(ERROR_STATE);
+
+			// Act
+			const state = await service.readState(buildStudyAc());
+
+			// Assert
+			expect(state).not.toHaveProperty('runState');
+		});
+	});
+
+	describe('setWindStep', () => {
+		it('should refuse and send nothing when the AC is off', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue({ ...STUDY_STATE, operation: { airConOperationMode: 'POWER_OFF' } });
+
+			// Act
+			const outcome = await service.setWindStep(buildStudyFullAc(), 3);
+
+			// Assert
+			expect(outcome).toMatchObject({
+				status: 'refused',
+				reason: 'Air conditioner is off; refusing to change settings.',
+			});
+			expect(client.controlDevice).not.toHaveBeenCalled();
+		});
+
+		it('should refuse when the windStep state is unknown', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue({ ...STUDY_STATE, airFlow: { windStrength: 'HIGH' } });
+
+			// Act
+			const outcome = await service.setWindStep(buildStudyFullAc(), 3);
+
+			// Assert
+			expect(outcome).toMatchObject({ status: 'refused', reason: 'Wind step is unknown; refusing to send.' });
+			expect(client.controlDevice).not.toHaveBeenCalled();
+		});
+
+		it.each([0, 6, 9])('should refuse wind step %i outside the profile range without sending', async (step) => {
+			// Arrange & Act
+			const outcome = await service.setWindStep(buildStudyFullAc(), step);
+
+			// Assert
+			expect(outcome.status === 'refused' ? outcome.reason : '').toContain('outside the profile range 1-5');
+			expect(client.controlDevice).not.toHaveBeenCalled();
+		});
+
+		it('should return noop when the requested step equals the current step', async () => {
+			// Arrange & Act
+			const outcome = await service.setWindStep(buildStudyFullAc(), 5);
+
+			// Assert
+			expect(outcome).toMatchObject({ status: 'noop' });
+			expect(client.controlDevice).not.toHaveBeenCalled();
+		});
+
+		it('should send the windStep payload and clear windStrength in the patched state when the step changes', async () => {
+			// Arrange & Act
+			const outcome = await service.setWindStep(buildStudyFullAc(), 3);
+
+			// Assert
+			expect(client.controlDevice).toHaveBeenCalledWith('study-ac', { airFlow: { windStep: 3 } });
+			expect(outcome).toMatchObject({ status: 'sent', state: { windStep: 3 } });
+			expect(outcome.state.windStrength).toBeUndefined();
+		});
+
+		it('should return failed with the freshly read state when the control call rejects', async () => {
+			// Arrange
+			client.controlDevice.mockRejectedValueOnce(new Error('rejected'));
+
+			// Act
+			const outcome = await service.setWindStep(buildStudyFullAc(), 3);
+
+			// Assert
+			expect(outcome).toMatchObject({ status: 'failed', error: 'rejected', state: { windStep: 5 } });
+		});
+
+		it('should refuse a second command while the first is in flight', async () => {
+			// Arrange
+			const ac = buildStudyFullAc();
+
+			// Act
+			const first = service.setWindStep(ac, 3);
+			const second = await service.setWindStep(ac, 2);
+			await first;
+
+			// Assert
+			expect(second).toMatchObject({
+				status: 'refused',
+				reason: 'Another command is already in progress for this air conditioner.',
+			});
+			expect(client.controlDevice).toHaveBeenCalledTimes(1);
+		});
+
+		it('should re-read the state 3 s after a sent step', async () => {
+			// Arrange
+			vi.useFakeTimers();
+			const ac = buildStudyFullAc();
+			const listener = vi.fn();
+			service.startPolling(60_000, [ac], listener);
+			await vi.advanceTimersByTimeAsync(0);
+			const readsBefore = client.getDeviceState.mock.calls.length;
+			listener.mockClear();
+
+			// Act
+			await service.setWindStep(ac, 3);
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_AC_POST_COMMAND_REFRESH_DELAY_MS);
+
+			// Assert
+			expect(client.getDeviceState).toHaveBeenCalledTimes(readsBefore + 2);
+			expect(listener).toHaveBeenCalledTimes(1);
 		});
 	});
 });

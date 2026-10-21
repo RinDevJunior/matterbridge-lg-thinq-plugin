@@ -19,6 +19,9 @@
 - **`connect-probe --energy`** — a read-only call to the Energy API.
 - **`connect-settings` CLI command** — a read-only list of every ThinQ Connect profile property with its current value and allowed values.
 - **Global `--out <file>` option** — saves the output of any command except `login` to a private file.
+- **Push updates (ThinQ Connect)** — PAT login now receives device events over MQTT and re-reads the state on each event. Polling stays as a fallback and slows to a 5 minute safety net while push is healthy; there is no new setting. Not yet tested against the real LG service.
+- **Finer air conditioner fan steps (ThinQ Connect)** — the fan slider uses the unit's `windStep` levels (20/40/60/80/100 %) when it reports them.
+- **Air conditioner error warning (ThinQ Connect)** — an air conditioner that reports ERROR logs one warning per change, and one message when it recovers.
 
 ### Changed
 
@@ -30,6 +33,7 @@
 ### Fixed
 
 - **Washer state read as empty** — the ThinQ Connect state response is an array; it is now read correctly instead of being treated as empty.
+- **Fahrenheit air conditioners (ThinQ Connect)** — units that report Fahrenheit now get correct limits, rounding and unit on temperature writes. Not tested on hardware.
 
 <a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
 
