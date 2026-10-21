@@ -23,6 +23,9 @@ import { ThinqDeviceUpdateListener } from './services/thinq/thinqDeviceService.j
 import type { ThinqFilterUpdateListener } from './services/thinq/thinqFilterMonitoringService.js';
 import { PLUGIN_NAME } from './settings.js';
 import { ThinqServiceV2Container } from './thinqV2/thinqServiceV2Container.js';
+import { applyThinqV2AirConditionerState } from './thinqV2/thinqV2AirConditionerEndpoint.js';
+import { registerThinqV2AirConditioners } from './thinqV2/thinqV2AirConditionerRegistration.js';
+import type { ThinqV2AirConditioner } from './thinqV2/thinqV2AirConditionerService.js';
 import { applyThinqV2WasherState, buildThinqV2WasherEndpoint } from './thinqV2/thinqV2WasherEndpoint.js';
 import type { ThinqV2Washer } from './thinqV2/thinqV2WasherService.js';
 
@@ -52,6 +55,7 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 	// ThinQ Connect (PAT) generation: only defined when loginType is 'pat'
 	private readonly thinqV2Services: ThinqServiceV2Container | undefined;
 	private thinqV2Washers: ThinqV2Washer[] = [];
+	private thinqV2AirConditioners: ThinqV2AirConditioner[] = [];
 
 	private thinqPollingIntervalMs: number | undefined;
 	private readonly thinqDeviceKindById = new Map<string, 'AC' | 'WASHER'>();
@@ -245,7 +249,10 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 		this.log.debug('onShutdown: exit');
 	}
 
-	/** Discovers ThinQ Connect (PAT) washers and registers each as a Matter LaundryWasher endpoint. */
+	/**
+	 * Discovers ThinQ Connect (PAT) washers and air conditioners and registers each as a Matter endpoint
+	 * (LaundryWasher / room air conditioner).
+	 */
 	private async startThinqV2Devices(): Promise<void> {
 		const container = this.thinqV2Services;
 		if (!container) {
@@ -254,11 +261,6 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 		const service = container.getWasherService();
 
 		this.thinqV2Washers = await service.discoverWashers();
-		if (this.thinqV2Washers.length === 0) {
-			this.log.notice(
-				'ThinQ Connect (PAT): no washer found. Only washers are supported with a Personal Access Token in this version.',
-			);
-		}
 
 		for (const washer of this.thinqV2Washers) {
 			const endpoint = buildThinqV2WasherEndpoint(washer, service, this.log);
@@ -267,6 +269,28 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 		}
 
 		this.log.notice(`ThinQ Connect (PAT): registered ${this.thinqV2Washers.length} washer(s).`);
+
+		try {
+			this.thinqV2AirConditioners = await registerThinqV2AirConditioners({
+				service: container.getAirConditionerService(),
+				logger: this.log,
+				isIgnored: (id) => this.configManager.isDeviceIgnored(id),
+				registerDevice: (endpoint) => this.registerDevice(endpoint),
+				unregisterIgnoredDevice: (id, endpoint) => this.unregisterIgnoredDevice(id, endpoint),
+				remember: (id, endpoint) => this.registry.register(id, endpoint),
+			});
+		} catch (error) {
+			this.log.error(
+				`ThinQ Connect (PAT): air conditioner discovery failed: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+		this.log.notice(`ThinQ Connect (PAT): registered ${this.thinqV2AirConditioners.length} air conditioner(s).`);
+
+		if (this.thinqV2Washers.length === 0 && this.thinqV2AirConditioners.length === 0) {
+			this.log.notice(
+				'ThinQ Connect (PAT): no washer or air conditioner found. Only washers and air conditioners are supported with a Personal Access Token in this version.',
+			);
+		}
 	}
 
 	private startThinqV2Polling(): void {
@@ -287,6 +311,22 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 				);
 			});
 		});
+		const airConditionersById = new Map(this.thinqV2AirConditioners.map((ac) => [ac.deviceId, ac]));
+		container
+			.getAirConditionerService()
+			.startPolling(container.pollIntervalMs, this.thinqV2AirConditioners, (deviceId, state) => {
+				const endpoint = this.registry.getDevice(deviceId) as MatterbridgeEndpoint | undefined;
+				const ac = airConditionersById.get(deviceId);
+				if (!endpoint || !ac) {
+					this.log.debug(`ThinQ V2 state update received for unregistered device ${deviceId}, skipping.`);
+					return;
+				}
+				void applyThinqV2AirConditionerState(endpoint, ac, state, this.log).catch((error: unknown) => {
+					this.log.error(
+						`Failed to apply ThinQ V2 state update for ${deviceId}: ${error instanceof Error ? error.message : String(error)}`,
+					);
+				});
+			});
 		this.log.debug(`ThinQ V2 polling started at ${container.pollIntervalMs}ms interval`);
 	}
 

@@ -85,6 +85,33 @@ describe('ThinqServiceV2Container', () => {
 		});
 	});
 
+	describe('getAirConditionerService', () => {
+		it('should return the same air conditioner service instance on repeated calls', () => {
+			// Arrange
+			const container = new ThinqServiceV2Container(logger, createOptions());
+
+			// Act
+			const service1 = container.getAirConditionerService();
+			const service2 = container.getAirConditionerService();
+
+			// Assert
+			expect(service1).toBe(service2);
+		});
+
+		it('should share the same Connect API client as the washer service', () => {
+			// Arrange
+			const container = new ThinqServiceV2Container(logger, createOptions());
+
+			// Act
+			const airConditionerService = container.getAirConditionerService();
+			const washerService = container.getWasherService();
+
+			// Assert
+			expect(airConditionerService['client']).toBe(container.getConnectApiClient());
+			expect(airConditionerService['client']).toBe(washerService['client']);
+		});
+	});
+
 	describe('pollIntervalMs', () => {
 		it('should return 60000 ms for a 60 second interval', () => {
 			// Arrange
@@ -131,6 +158,32 @@ describe('ThinqServiceV2Container', () => {
 
 			// Assert
 			expect(stopSpy).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	describe('shutdown with air conditioner polling', () => {
+		it('should not throw when the air conditioner service was never created', () => {
+			// Arrange
+			const container = new ThinqServiceV2Container(logger, createOptions());
+
+			// Act & Assert
+			expect(() => container.shutdown()).not.toThrow();
+		});
+
+		it('should stop air conditioner polling and still stop washer polling', () => {
+			// Arrange
+			const container = new ThinqServiceV2Container(logger, createOptions());
+			const airConditionerService = container.getAirConditionerService();
+			const washerService = container.getWasherService();
+			const airStopSpy = vi.spyOn(airConditionerService, 'stopPolling');
+			const washerStopSpy = vi.spyOn(washerService, 'stopPolling');
+
+			// Act
+			container.shutdown();
+
+			// Assert
+			expect(airStopSpy).toHaveBeenCalledTimes(1);
+			expect(washerStopSpy).toHaveBeenCalledTimes(1);
 		});
 	});
 

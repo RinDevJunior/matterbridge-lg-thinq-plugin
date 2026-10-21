@@ -1,6 +1,7 @@
 import type { AnsiLogger } from 'matterbridge/logger';
 
 import { ThinqConnectApiClient } from '../services/thinqConnect/thinqConnectApiClient.js';
+import { ThinqV2AirConditionerService } from './thinqV2AirConditionerService.js';
 import { ThinqV2WasherService } from './thinqV2WasherService.js';
 
 export const THINQ_V2_MIN_POLL_INTERVAL_SECONDS = 15;
@@ -15,6 +16,7 @@ export interface ThinqV2Options {
 export class ThinqServiceV2Container {
 	private connectApiClientInstance: ThinqConnectApiClient | undefined;
 	private washerServiceInstance: ThinqV2WasherService | undefined;
+	private airConditionerServiceInstance: ThinqV2AirConditionerService | undefined;
 
 	constructor(
 		private readonly logger: AnsiLogger,
@@ -35,11 +37,17 @@ export class ThinqServiceV2Container {
 		return this.washerServiceInstance;
 	}
 
+	public getAirConditionerService(): ThinqV2AirConditionerService {
+		this.airConditionerServiceInstance ??= new ThinqV2AirConditionerService(this.getConnectApiClient(), this.logger);
+		return this.airConditionerServiceInstance;
+	}
+
 	public get pollIntervalMs(): number {
 		return Math.max(this.options.pollIntervalSeconds, THINQ_V2_MIN_POLL_INTERVAL_SECONDS) * 1000;
 	}
 
 	public shutdown(): void {
 		this.washerServiceInstance?.stopPolling();
+		this.airConditionerServiceInstance?.stopPolling();
 	}
 }
