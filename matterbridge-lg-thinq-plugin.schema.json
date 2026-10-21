@@ -21,7 +21,7 @@
 			"properties": {
 				"loginType": {
 					"title": "Login Type",
-					"description": "account = username/password, token = refresh token, pat = Personal Access Token (official ThinQ Connect API, validation only for now).",
+					"description": "account = username/password, token = refresh token, pat = Personal Access Token (official ThinQ Connect API: registers washers only and lets Google Home turn them on/off; air conditioners are not supported with PAT yet).",
 					"type": "string",
 					"enum": ["account", "token", "pat"],
 					"default": "account"

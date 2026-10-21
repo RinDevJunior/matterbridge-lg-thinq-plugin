@@ -22,11 +22,13 @@ npm run cli -- --command <command> [options]
 
 ## Commands
 
-| Command   | Options                             | Description                                          |
-| --------- | ----------------------------------- | ---------------------------------------------------- |
-| `login`   | `--type`, `--country`, `--language` | Authenticate and save session                        |
-| `devices` |                                     | List all discovered ThinQ devices (requires `login`) |
-| `help`    |                                     | Show help message                                    |
+| Command           | Options                                    | Description                                            |
+| ----------------- | ------------------------------------------ | ------------------------------------------------------ |
+| `login`           | `--type`, `--country`, `--language`        | Authenticate and save session                          |
+| `devices`         |                                            | List all discovered ThinQ devices (requires `login`)   |
+| `connect-probe`   | `--device-id`, `--raw`                     | Read-only ThinQ Connect probe (requires PAT `login`)   |
+| `connect-control` | `--device-id`, `--send`, `--yes`, `--wait` | Send one guarded washer command (requires PAT `login`) |
+| `help`            |                                            | Show help message                                      |
 
 ## Login Command
 
@@ -37,6 +39,7 @@ The `login` command guides you through authentication and saves your credentials
 - `--type`: Authentication method (default: `account`)
   - `account`: Username/password authentication
   - `token`: Refresh token authentication
+  - `pat`: ThinQ Connect Personal Access Token (see [PAT Login](#pat-login))
 - `--country`: Country code (default: `US`) — must match your LG ThinQ account region
 - `--language`: Language code (default: `en-US`)
 - `--debug`: Enable debug logging
@@ -122,6 +125,46 @@ Found 2 device(s):
    Model Name:    LRF-5678
    Online:        false
 ```
+
+## PAT Login
+
+Create a Personal Access Token at https://connect-pat.lgthinq.com, then run:
+
+```bash
+npm run cli -- --command login --type pat --country US
+```
+
+You will be prompted for the Personal Access Token. It is checked with a read-only call, then saved to `.cli-pat-session.json` (gitignored). The token is never printed in full; only a masked form is shown.
+
+## Connect-Probe Command
+
+Read-only. Prints the device profile and a state summary from the ThinQ Connect API. Requires a prior PAT login.
+
+- `--device-id`: probe one device (default: every device visible to the token)
+- `--raw`: also print the raw profile/state JSON
+
+```bash
+npm run cli -- --command connect-probe --device-id <deviceId>
+```
+
+## Connect-Control Command
+
+Sends ONE guarded washer command through the ThinQ Connect API. Requires a prior PAT login.
+
+- `--device-id`: washer device id (required)
+- `--send`: `POWER_ON`, `POWER_OFF` or `START` (`STOP` is refused)
+- `--yes`: really send the command. Without it, the command is a dry run and nothing is sent.
+- `--wait`: seconds to wait before reading the state again (default: 3)
+
+The command is refused while the washer is `RUNNING` or `PAUSE`, or if the profile does not list the value as writable. The PAT is never printed.
+
+```bash
+npm run cli -- --command connect-control --device-id <deviceId> --send POWER_ON --yes
+```
+
+### cli-runner MCP tool
+
+The Claude `cli-runner` tool exposes the same commands as `connect-probe` and `connect-control`. Params: `deviceId`, `raw` (probe), and for control `sendValue`, `wait` (seconds, default 3, max 20) and `yes`. `yes` must be the boolean `true` to send; anything else is a dry run.
 
 ## Session File
 
