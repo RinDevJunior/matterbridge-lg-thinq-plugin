@@ -16,6 +16,7 @@ import type {
 	ThinqV2AirConditionerService,
 	ThinqV2AirConditionerState,
 } from './thinqV2AirConditionerService.js';
+import type { ThinqV2MatterIdentityOverride } from './thinqV2MatterIdentity.js';
 
 type FanTier = 'complete' | 'default' | 'onOff';
 type WindStrength = 'LOW' | 'MID' | 'HIGH' | 'AUTO';
@@ -108,6 +109,7 @@ export function buildThinqV2AirConditionerEndpoint(
 		'setPower' | 'setCoolMode' | 'setTargetTemperature' | 'setWindStrength' | 'setSwing'
 	>,
 	logger: AnsiLogger,
+	identity: ThinqV2MatterIdentityOverride = {},
 ): MatterbridgeEndpoint {
 	const { profile } = ac;
 	const limits = thermostatLimitsCelsius(ac);
@@ -124,10 +126,10 @@ export function buildThinqV2AirConditionerEndpoint(
 		.createDefaultBasicInformationClusterServer(
 			ac.name,
 			ac.deviceId,
-			0xfff1,
-			'Matterbridge',
-			0x8000,
-			'LG Air Conditioner',
+			identity.vendorId ?? 0xfff1,
+			identity.vendorName ?? 'Matterbridge',
+			identity.productId ?? 0x8000,
+			identity.productName ?? 'LG Air Conditioner',
 		)
 		.createDefaultPowerSourceWiredClusterServer()
 		.createDeadFrontOnOffClusterServer(ac.initialState?.powerOn ?? false)

@@ -1,4 +1,4 @@
-import { MatterbridgeEndpoint } from 'matterbridge';
+import { MatterbridgeEndpoint, powerSource, roomAirConditioner } from 'matterbridge';
 import {
 	FanControl,
 	HepaFilterMonitoring,
@@ -24,6 +24,7 @@ import type {
 	ThinqV2AirConditionerService,
 	ThinqV2AirConditionerState,
 } from '../../thinqV2/thinqV2AirConditionerService.js';
+import type { ThinqV2MatterIdentityOverride } from '../../thinqV2/thinqV2MatterIdentity.js';
 import { createMockLogger } from '../helpers/testUtils.js';
 import { BEDROOM_PROFILE, STUDY_PROFILE } from '../helpers/thinqV2AirConditionerFixtures.js';
 
@@ -1006,6 +1007,87 @@ describe('thinqV2AirConditionerEndpoint', () => {
 
 			// Assert
 			expect(result).toBe(indication);
+		});
+	});
+
+	describe('buildThinqV2AirConditionerEndpoint identity overrides', () => {
+		const AC_IDENTITY_CASES: {
+			field: string;
+			identity: ThinqV2MatterIdentityOverride;
+			expected: [number, string, number, string];
+		}[] = [
+			{
+				field: 'no override (defaults)',
+				identity: {},
+				expected: [0xfff1, 'Matterbridge', 0x8000, 'LG Air Conditioner'],
+			},
+			{
+				field: 'vendorId',
+				identity: { vendorId: 0x1234 },
+				expected: [0x1234, 'Matterbridge', 0x8000, 'LG Air Conditioner'],
+			},
+			{
+				field: 'vendorName',
+				identity: { vendorName: 'Acme' },
+				expected: [0xfff1, 'Acme', 0x8000, 'LG Air Conditioner'],
+			},
+			{
+				field: 'productId',
+				identity: { productId: 0x8123 },
+				expected: [0xfff1, 'Matterbridge', 0x8123, 'LG Air Conditioner'],
+			},
+			{
+				field: 'productName',
+				identity: { productName: 'Study AC' },
+				expected: [0xfff1, 'Matterbridge', 0x8000, 'Study AC'],
+			},
+			{
+				field: 'undefined vendorId falls back to default',
+				identity: { vendorId: undefined, productName: 'Study AC' },
+				expected: [0xfff1, 'Matterbridge', 0x8000, 'Study AC'],
+			},
+		];
+
+		it.each(AC_IDENTITY_CASES)(
+			'should apply only the $field identity field to basic information',
+			({ identity, expected }) => {
+				// Arrange & Act
+				buildThinqV2AirConditionerEndpoint(buildStudyAc(), service, logger, identity);
+
+				// Assert
+				expect(mocks.endpoint.createDefaultBasicInformationClusterServer).toHaveBeenCalledWith(
+					'Study Room AC',
+					'study-ac',
+					...expected,
+				);
+			},
+		);
+
+		it('should keep the deviceId as serial number and the name-deviceId as uniqueId when every identity field is overridden', () => {
+			// Arrange
+			const identity: ThinqV2MatterIdentityOverride = {
+				vendorId: 0x1234,
+				vendorName: 'Acme',
+				productId: 0x8123,
+				productName: 'Study AC',
+			};
+
+			// Act
+			buildThinqV2AirConditionerEndpoint(buildStudyAc(), service, logger, identity);
+
+			// Assert
+			expect(mocks.endpoint.createDefaultBasicInformationClusterServer).toHaveBeenCalledWith(
+				'Study Room AC',
+				'study-ac',
+				0x1234,
+				'Acme',
+				0x8123,
+				'Study AC',
+			);
+			expect(vi.mocked(MatterbridgeEndpoint)).toHaveBeenCalledWith(
+				[roomAirConditioner, powerSource],
+				expect.objectContaining({ id: 'StudyRoomAC-study-ac' }),
+			);
 		});
 	});
 });

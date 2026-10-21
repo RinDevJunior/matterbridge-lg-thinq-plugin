@@ -26,6 +26,7 @@ import { ThinqServiceV2Container } from './thinqV2/thinqServiceV2Container.js';
 import { applyThinqV2AirConditionerState } from './thinqV2/thinqV2AirConditionerEndpoint.js';
 import { registerThinqV2AirConditioners } from './thinqV2/thinqV2AirConditionerRegistration.js';
 import type { ThinqV2AirConditioner } from './thinqV2/thinqV2AirConditionerService.js';
+import type { ThinqV2MatterIdentityOverride } from './thinqV2/thinqV2MatterIdentity.js';
 import { applyThinqV2WasherState, buildThinqV2WasherEndpoint } from './thinqV2/thinqV2WasherEndpoint.js';
 import type { ThinqV2Washer } from './thinqV2/thinqV2WasherService.js';
 
@@ -263,7 +264,12 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 		this.thinqV2Washers = await service.discoverWashers();
 
 		for (const washer of this.thinqV2Washers) {
-			const endpoint = buildThinqV2WasherEndpoint(washer, service, this.log);
+			const endpoint = buildThinqV2WasherEndpoint(
+				washer,
+				service,
+				this.log,
+				this.resolveThinqV2MatterIdentity(washer.deviceId),
+			);
 			await this.registerDevice(endpoint);
 			this.registry.register(washer.deviceId, endpoint);
 		}
@@ -275,6 +281,7 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 				service: container.getAirConditionerService(),
 				logger: this.log,
 				isIgnored: (id) => this.configManager.isDeviceIgnored(id),
+				resolveIdentity: (id) => this.resolveThinqV2MatterIdentity(id),
 				registerDevice: (endpoint) => this.registerDevice(endpoint),
 				unregisterIgnoredDevice: (id, endpoint) => this.unregisterIgnoredDevice(id, endpoint),
 				remember: (id, endpoint) => this.registry.register(id, endpoint),
@@ -291,6 +298,22 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 				'ThinQ Connect (PAT): no washer or air conditioner found. Only washers and air conditioners are supported with a Personal Access Token in this version.',
 			);
 		}
+	}
+
+	/**
+	 * Resolves the same per-device Matter overrides V1 applies (`overrideMatterConfiguration` gated),
+	 * as plain data. Undefined fields fall back to the V2 builder defaults.
+	 */
+	private resolveThinqV2MatterIdentity(deviceId: string): ThinqV2MatterIdentityOverride {
+		const vendor = this.configManager.overrideMatterConfiguration
+			? this.configManager.matterOverrideSettings
+			: undefined;
+		return {
+			vendorId: vendor?.matterVendorId,
+			vendorName: vendor?.matterVendorName,
+			productId: this.configManager.getProductIdForDevice(deviceId),
+			productName: this.configManager.getProductNameForDevice(deviceId),
+		};
 	}
 
 	private startThinqV2Polling(): void {

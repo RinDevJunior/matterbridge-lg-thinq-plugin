@@ -8,6 +8,7 @@ import type {
 	ThinqV2AirConditioner,
 	ThinqV2AirConditionerService,
 } from '../../thinqV2/thinqV2AirConditionerService.js';
+import type { ThinqV2MatterIdentityOverride } from '../../thinqV2/thinqV2MatterIdentity.js';
 import { asPartial, createMockLogger } from '../helpers/testUtils.js';
 import { STUDY_PROFILE } from '../helpers/thinqV2AirConditionerFixtures.js';
 
@@ -138,5 +139,44 @@ describe('registerThinqV2AirConditioners', () => {
 		// Act & Assert
 		await expect(registerThinqV2AirConditioners(deps)).rejects.toThrow('discovery unavailable');
 		expect(deps.registerDevice).not.toHaveBeenCalled();
+	});
+
+	describe('identity resolution', () => {
+		it('should pass the identity returned by resolveIdentity for each device to the endpoint builder', async () => {
+			// Arrange
+			const studyAc = buildAc('study-ac', 'Study Room AC');
+			const bedroomAc = buildAc('bedroom-ac', 'Bedroom AC');
+			deps.service.discoverAirConditioners.mockResolvedValue([studyAc, bedroomAc]);
+			const resolveIdentity = vi.fn<(deviceId: string) => ThinqV2MatterIdentityOverride>((deviceId) =>
+				deviceId === 'study-ac' ? { productName: 'Study AC' } : { vendorName: 'Acme' },
+			);
+
+			// Act
+			await registerThinqV2AirConditioners({ ...deps, resolveIdentity });
+
+			// Assert
+			expect(resolveIdentity).toHaveBeenCalledWith('study-ac');
+			expect(resolveIdentity).toHaveBeenCalledWith('bedroom-ac');
+			expect(buildThinqV2AirConditionerEndpoint).toHaveBeenCalledWith(studyAc, deps.service, logger, {
+				productName: 'Study AC',
+			});
+			expect(buildThinqV2AirConditionerEndpoint).toHaveBeenCalledWith(bedroomAc, deps.service, logger, {
+				vendorName: 'Acme',
+			});
+		});
+
+		it('should build and register the air conditioner with no identity override when resolveIdentity is absent', async () => {
+			// Arrange
+			const studyAc = buildAc('study-ac', 'Study Room AC');
+			deps.service.discoverAirConditioners.mockResolvedValue([studyAc]);
+
+			// Act
+			const result = await registerThinqV2AirConditioners(deps);
+
+			// Assert
+			expect(vi.mocked(buildThinqV2AirConditionerEndpoint).mock.calls[0]?.[3]).toBeUndefined();
+			expect(deps.registerDevice).toHaveBeenCalledWith(endpointFor('study-ac'));
+			expect(result).toEqual([studyAc]);
+		});
 	});
 });

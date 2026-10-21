@@ -3,6 +3,7 @@ import type { AnsiLogger } from 'matterbridge/logger';
 
 import { buildThinqV2AirConditionerEndpoint } from './thinqV2AirConditionerEndpoint.js';
 import type { ThinqV2AirConditioner, ThinqV2AirConditionerService } from './thinqV2AirConditionerService.js';
+import type { ThinqV2MatterIdentityOverride } from './thinqV2MatterIdentity.js';
 
 export interface ThinqV2AirConditionerRegistrationDeps {
 	service: Pick<
@@ -11,6 +12,7 @@ export interface ThinqV2AirConditionerRegistrationDeps {
 	>;
 	logger: AnsiLogger;
 	isIgnored: (deviceId: string) => boolean;
+	resolveIdentity?: (deviceId: string) => ThinqV2MatterIdentityOverride;
 	registerDevice: (endpoint: MatterbridgeEndpoint) => Promise<void>;
 	unregisterIgnoredDevice: (deviceId: string, endpoint: MatterbridgeEndpoint) => Promise<void>;
 	remember: (deviceId: string, endpoint: MatterbridgeEndpoint) => void;
@@ -20,12 +22,12 @@ export interface ThinqV2AirConditionerRegistrationDeps {
 export async function registerThinqV2AirConditioners(
 	deps: ThinqV2AirConditionerRegistrationDeps,
 ): Promise<ThinqV2AirConditioner[]> {
-	const { service, logger, isIgnored, registerDevice, unregisterIgnoredDevice, remember } = deps;
+	const { service, logger, isIgnored, resolveIdentity, registerDevice, unregisterIgnoredDevice, remember } = deps;
 	const registered: ThinqV2AirConditioner[] = [];
 
 	for (const ac of await service.discoverAirConditioners()) {
 		try {
-			const endpoint = buildThinqV2AirConditionerEndpoint(ac, service, logger);
+			const endpoint = buildThinqV2AirConditionerEndpoint(ac, service, logger, resolveIdentity?.(ac.deviceId));
 			if (isIgnored(ac.deviceId)) {
 				await unregisterIgnoredDevice(ac.deviceId, endpoint);
 				continue;

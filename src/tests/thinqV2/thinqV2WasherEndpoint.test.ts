@@ -1,7 +1,9 @@
+import { LaundryWasher } from 'matterbridge/devices';
 import { OnOff } from 'matterbridge/matter/clusters';
 import type { Mock } from 'vitest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { ThinqV2MatterIdentityOverride } from '../../thinqV2/thinqV2MatterIdentity.js';
 import { applyThinqV2WasherState, buildThinqV2WasherEndpoint } from '../../thinqV2/thinqV2WasherEndpoint.js';
 import type { ThinqV2Washer, ThinqV2WasherState } from '../../thinqV2/thinqV2WasherService.js';
 import { createMockLogger } from '../helpers/testUtils.js';
@@ -282,6 +284,68 @@ describe('thinqV2WasherEndpoint', () => {
 			// Assert
 			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
 			expect(logger.debug).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	describe('buildThinqV2WasherEndpoint identity overrides', () => {
+		const WASHER_IDENTITY_CASES: {
+			field: string;
+			identity: ThinqV2MatterIdentityOverride;
+			expected: [number, string, number, string];
+		}[] = [
+			{ field: 'no override (defaults)', identity: {}, expected: [0xfff1, 'Matterbridge', 0x8001, 'LG Washer'] },
+			{ field: 'vendorId', identity: { vendorId: 0x1234 }, expected: [0x1234, 'Matterbridge', 0x8001, 'LG Washer'] },
+			{ field: 'vendorName', identity: { vendorName: 'Acme' }, expected: [0xfff1, 'Acme', 0x8001, 'LG Washer'] },
+			{ field: 'productId', identity: { productId: 0x8123 }, expected: [0xfff1, 'Matterbridge', 0x8123, 'LG Washer'] },
+			{
+				field: 'productName',
+				identity: { productName: 'Den Washer' },
+				expected: [0xfff1, 'Matterbridge', 0x8001, 'Den Washer'],
+			},
+			{
+				field: 'undefined vendorId falls back to default',
+				identity: { vendorId: undefined, productName: 'Den Washer' },
+				expected: [0xfff1, 'Matterbridge', 0x8001, 'Den Washer'],
+			},
+		];
+
+		it.each(WASHER_IDENTITY_CASES)(
+			'should apply only the $field identity field to basic information',
+			({ identity, expected }) => {
+				// Arrange & Act
+				buildThinqV2WasherEndpoint(WASHER, service, logger, identity);
+
+				// Assert
+				expect(mocks.endpoint.createDefaultBasicInformationClusterServer).toHaveBeenCalledWith(
+					'Laundry',
+					'w1',
+					...expected,
+				);
+			},
+		);
+
+		it('should keep the deviceId as serial number and uniqueId when every identity field is overridden', () => {
+			// Arrange
+			const identity: ThinqV2MatterIdentityOverride = {
+				vendorId: 0x1234,
+				vendorName: 'Acme',
+				productId: 0x8123,
+				productName: 'Den Washer',
+			};
+
+			// Act
+			buildThinqV2WasherEndpoint(WASHER, service, logger, identity);
+
+			// Assert
+			expect(mocks.endpoint.createDefaultBasicInformationClusterServer).toHaveBeenCalledWith(
+				'Laundry',
+				'w1',
+				0x1234,
+				'Acme',
+				0x8123,
+				'Den Washer',
+			);
+			expect(vi.mocked(LaundryWasher)).toHaveBeenCalledWith('Laundry', 'w1');
 		});
 	});
 });

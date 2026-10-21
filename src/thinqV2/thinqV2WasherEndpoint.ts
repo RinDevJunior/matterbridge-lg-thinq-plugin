@@ -3,6 +3,7 @@ import { LaundryWasher } from 'matterbridge/devices';
 import type { AnsiLogger } from 'matterbridge/logger';
 import { OnOff } from 'matterbridge/matter/clusters';
 
+import type { ThinqV2MatterIdentityOverride } from './thinqV2MatterIdentity.js';
 import type { ThinqV2Washer, ThinqV2WasherService, ThinqV2WasherState } from './thinqV2WasherService.js';
 
 /**
@@ -14,15 +15,16 @@ export function buildThinqV2WasherEndpoint(
 	washer: ThinqV2Washer,
 	service: Pick<ThinqV2WasherService, 'setPower'>,
 	logger: AnsiLogger,
+	identity: ThinqV2MatterIdentityOverride = {},
 ): MatterbridgeEndpoint {
 	const endpoint = new LaundryWasher(washer.name, washer.deviceId);
 	endpoint.createDefaultBasicInformationClusterServer(
 		washer.name,
 		washer.deviceId,
-		0xfff1,
-		'Matterbridge',
-		0x8001,
-		'LG Washer',
+		identity.vendorId ?? 0xfff1,
+		identity.vendorName ?? 'Matterbridge',
+		identity.productId ?? 0x8001,
+		identity.productName ?? 'LG Washer',
 	);
 	// Standalone Matter node (own pairing code), matching the account-login washer.
 	endpoint.mode = 'server';
