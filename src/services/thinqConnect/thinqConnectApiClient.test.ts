@@ -11,6 +11,11 @@ const FAKE_PAT = 'pat-secret-1234567890';
 const AIC_DEVICES_URL = 'https://api-aic.lgthinq.com/devices';
 const KIC_DEVICES_URL = 'https://api-kic.lgthinq.com/devices';
 
+/** Builds a PAT of the given length from allowlisted characters only. */
+function buildPat(length: number): string {
+	return 'Ab1._~+/=-'.repeat(Math.ceil(length / 10)).slice(0, length);
+}
+
 function captureError(fn: () => unknown): unknown {
 	try {
 		fn();
@@ -274,6 +279,178 @@ describe('ThinqConnectApiClient', () => {
 		});
 	});
 
+	describe('personal access token validation', () => {
+		it.each([
+			['whitespace and newlines only', ' \n\t '],
+			['an empty string', ''],
+		])('should throw ThinqConnectApiError with the required message when PAT is %s', (_label, pat) => {
+			// Act
+			const error = captureError(() => new ThinqConnectApiClient(pat, 'US', mockLogger));
+
+			// Assert
+			expect(error).toBeInstanceOf(ThinqConnectApiError);
+			expect((error as ThinqConnectApiError).message).toBe('A ThinQ Personal Access Token is required');
+			expect(mockAxios.history.get).toHaveLength(0);
+		});
+
+		it.each([
+			['shorter than 20 characters', buildPat(19)],
+			['longer than 512 characters', buildPat(513)],
+			['containing a space', 'abcdefghij klmnopqrstuvwxyz'],
+			['containing a tab', 'abcdefghij\tklmnopqrstuvwxyz'],
+			['containing a newline', 'abcdefghij\nklmnopqrstuvwxyz'],
+			['containing a carriage return', 'abcdefghij\rklmnopqrstuvwxyz'],
+			['containing a NUL control character', 'abcdefghij\u0000klmnopqrstuvwxyz'],
+			['containing a BEL control character', 'abcdefghij\u0007klmnopqrstuvwxyz'],
+			['containing an exclamation mark', 'abcdefghij!klmnopqrstuvwxyz'],
+			['containing an at sign', 'abcdefghij@klmnopqrstuvwxyz'],
+			['containing a hash', 'abcdefghij#klmnopqrstuvwxyz'],
+			['containing a percent sign', 'abcdefghij%klmnopqrstuvwxyz'],
+			['containing a question mark', 'abcdefghij?klmnopqrstuvwxyz'],
+			['containing a backslash', 'abcdefghij\\klmnopqrstuvwxyz'],
+			['containing a non-ASCII letter', 'abcdefghijéklmnopqrstuvwxyz'],
+		])('should throw ThinqConnectApiError with resultCode 1103 when PAT is %s', (_label, pat) => {
+			// Act
+			const error = captureError(() => new ThinqConnectApiClient(pat, 'US', mockLogger));
+
+			// Assert
+			expect(error).toBeInstanceOf(ThinqConnectApiError);
+			expect((error as ThinqConnectApiError).metadata).toEqual({ resultCode: '1103' });
+			expect((error as ThinqConnectApiError).message).not.toContain(pat);
+			expect(mockAxios.history.get).toHaveLength(0);
+		});
+
+		it.each([
+			['20 characters (lower bound)', 20],
+			['512 characters (upper bound)', 512],
+		])('should send the token as Bearer auth when PAT is %s', async (_label, length) => {
+			// Arrange
+			const pat = buildPat(length);
+			mockAxios.onGet(AIC_DEVICES_URL).reply(200, { response: [] });
+			const client = new ThinqConnectApiClient(pat, 'US', mockLogger);
+
+			// Act
+			await client.getDevices();
+
+			// Assert
+			expect(mockAxios.history.get[0].headers?.['Authorization']).toBe(`Bearer ${pat}`);
+		});
+
+		it('should accept every allowlisted character when PAT uses letters, digits and ._~+/=-', async () => {
+			// Arrange
+			const pat = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~+/=-';
+			mockAxios.onGet(AIC_DEVICES_URL).reply(200, { response: [] });
+			const client = new ThinqConnectApiClient(pat, 'US', mockLogger);
+
+			// Act
+			await client.getDevices();
+
+			// Assert
+			expect(mockAxios.history.get[0].headers?.['Authorization']).toBe(`Bearer ${pat}`);
+		});
+
+		it('should trim leading and trailing whitespace before sending the token', async () => {
+			// Arrange
+			const pat = buildPat(30);
+			mockAxios.onGet(AIC_DEVICES_URL).reply(200, { response: [] });
+			const client = new ThinqConnectApiClient(`  ${pat}\n`, 'US', mockLogger);
+
+			// Act
+			await client.getDevices();
+
+			// Assert
+			expect(mockAxios.history.get[0].headers?.['Authorization']).toBe(`Bearer ${pat}`);
+		});
+	});
+
+	describe('country validation', () => {
+		it.each(['', '   ', 'ZZ', 'US/../x', 'https://evil.example', 'US?x=1'])(
+			'should throw ThinqConnectApiError with resultCode 1307 when country is "%s"',
+			(country) => {
+				// Act
+				const error = captureError(() => new ThinqConnectApiClient(FAKE_PAT, country, mockLogger));
+
+				// Assert
+				expect(error).toBeInstanceOf(ThinqConnectApiError);
+				expect((error as ThinqConnectApiError).metadata).toEqual({ resultCode: '1307' });
+				expect(mockAxios.history.get).toHaveLength(0);
+			},
+		);
+
+		it.each([
+			['DE', 'https://api-eic.lgthinq.com/devices'],
+			['jp', 'https://api-kic.lgthinq.com/devices'],
+			[' ca ', AIC_DEVICES_URL],
+		])('should build the base url from the region table when country is "%s"', async (country, expectedUrl) => {
+			// Arrange
+			mockAxios.onGet(expectedUrl).reply(200, { response: [] });
+			const client = new ThinqConnectApiClient(FAKE_PAT, country, mockLogger);
+
+			// Act
+			await client.getDevices();
+
+			// Assert
+			expect(mockAxios.history.get[0].url).toBe(expectedUrl);
+		});
+	});
+
+	describe('device id validation', () => {
+		const PAYLOAD = { operation: { washerOperationMode: 'START' } };
+		const DEVICE_CALLS: [string, (client: ThinqConnectApiClient, deviceId: string) => Promise<unknown>][] = [
+			['getDeviceProfile', (client, deviceId) => client.getDeviceProfile(deviceId)],
+			['getDeviceState', (client, deviceId) => client.getDeviceState(deviceId)],
+			['controlDevice', (client, deviceId) => client.controlDevice(deviceId, PAYLOAD)],
+		];
+		const INVALID_DEVICE_IDS = ['', 'a'.repeat(129), 'TQS/1', 'a?b', 'a#b', 'a%2Fb', '..', 'a..b', 'a b', '../other'];
+
+		describe.each(DEVICE_CALLS)('%s', (_name, call) => {
+			it.each(INVALID_DEVICE_IDS)('should reject device id "%s" with no request made', async (deviceId) => {
+				// Arrange
+				const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+				// Act
+				const error = await captureAsyncError(() => call(client, deviceId));
+
+				// Assert
+				expect(error).toBeInstanceOf(ThinqConnectApiError);
+				expect(mockAxios.history.get).toHaveLength(0);
+				expect(mockAxios.history.post).toHaveLength(0);
+			});
+		});
+
+		it('should build the profile, state and control urls when device id is valid', async () => {
+			// Arrange
+			const base = 'https://api-aic.lgthinq.com/devices/abc-123_DEF';
+			mockAxios.onGet(`${base}/profile`).reply(200, { response: {} });
+			mockAxios.onGet(`${base}/state`).reply(200, { response: {} });
+			mockAxios.onPost(`${base}/control`).reply(200, { response: {} });
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act
+			await client.getDeviceProfile('abc-123_DEF');
+			await client.getDeviceState('abc-123_DEF');
+			await client.controlDevice('abc-123_DEF', PAYLOAD);
+
+			// Assert
+			expect(mockAxios.history.get.map((request) => request.url)).toEqual([`${base}/profile`, `${base}/state`]);
+			expect(mockAxios.history.post[0].url).toBe(`${base}/control`);
+		});
+
+		it('should accept a device id of exactly 128 characters', async () => {
+			// Arrange
+			const deviceId = 'a'.repeat(128);
+			const url = `https://api-aic.lgthinq.com/devices/${deviceId}/state`;
+			mockAxios.onGet(url).reply(200, { response: {} });
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act
+			await client.getDeviceState(deviceId);
+
+			// Assert
+			expect(mockAxios.history.get[0].url).toBe(url);
+		});
+	});
+
 	describe('secret safety', () => {
 		it('should not leak the PAT into logger calls after a successful call', async () => {
 			// Arrange
@@ -345,17 +522,29 @@ describe('ThinqConnectApiClient', () => {
 			expect(headers['x-message-id']).toMatch(/^[A-Za-z0-9_-]{22}$/);
 		});
 
-		it('should url-encode the device id when it contains a slash', async () => {
+		it('should throw ThinqConnectApiError and make no request when device id contains a slash', async () => {
 			// Arrange
-			const encodedUrl = 'https://api-aic.lgthinq.com/devices/TQS%2F1/control';
-			mockAxios.onPost(encodedUrl).reply(200, { response: {} });
 			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
 
 			// Act
-			await client.controlDevice('TQS/1', START_PAYLOAD);
+			const error = await captureAsyncError(() => client.controlDevice('TQS/1', START_PAYLOAD));
 
 			// Assert
-			expect(mockAxios.history.post[0].url).toBe(encodedUrl);
+			expect(error).toBeInstanceOf(ThinqConnectApiError);
+			expect(mockAxios.history.post).toHaveLength(0);
+		});
+
+		it('should build the control url when device id uses allowed characters', async () => {
+			// Arrange
+			const controlUrl = 'https://api-aic.lgthinq.com/devices/abc-123_DEF/control';
+			mockAxios.onPost(controlUrl).reply(200, { response: {} });
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act
+			await client.controlDevice('abc-123_DEF', START_PAYLOAD);
+
+			// Assert
+			expect(mockAxios.history.post[0].url).toBe(controlUrl);
 		});
 
 		it('should return the response object when LG replies with a response object', async () => {
@@ -490,17 +679,29 @@ describe('ThinqConnectApiClient', () => {
 			expect(mockAxios.history.get[0].url).toBe(KIC_PROFILE_URL);
 		});
 
-		it('should url-encode the device id when it contains a slash', async () => {
+		it('should throw ThinqConnectApiError and make no request when device id contains a slash', async () => {
 			// Arrange
-			const encodedUrl = 'https://api-aic.lgthinq.com/devices/TQS%2F1/profile';
-			mockAxios.onGet(encodedUrl).reply(200, { response: {} });
 			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
 
 			// Act
-			await client.getDeviceProfile('TQS/1');
+			const error = await captureAsyncError(() => client.getDeviceProfile('TQS/1'));
 
 			// Assert
-			expect(mockAxios.history.get[0].url).toBe(encodedUrl);
+			expect(error).toBeInstanceOf(ThinqConnectApiError);
+			expect(mockAxios.history.get).toHaveLength(0);
+		});
+
+		it('should build the profile url when device id uses allowed characters', async () => {
+			// Arrange
+			const profileUrl = 'https://api-aic.lgthinq.com/devices/abc-123_DEF/profile';
+			mockAxios.onGet(profileUrl).reply(200, { response: {} });
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act
+			await client.getDeviceProfile('abc-123_DEF');
+
+			// Assert
+			expect(mockAxios.history.get[0].url).toBe(profileUrl);
 		});
 
 		it('should send the same auth and identity headers as getDevices when reading the state', async () => {
