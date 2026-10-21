@@ -8,6 +8,7 @@ import {
 	isWasherPoweredOn,
 	readWasherCurrentState,
 	readWasherOperationModeProfile,
+	readWasherRemainingSeconds,
 	type WasherOperationModeProfile,
 	type WasherPowerCommand,
 } from '../services/thinqConnect/thinqConnectWasher.js';
@@ -25,6 +26,7 @@ export interface ThinqConnectWasher {
 export interface ThinqConnectWasherState {
 	currentState?: string;
 	powerOn?: boolean;
+	remainingSeconds?: number;
 }
 
 export type ThinqConnectWasherPowerOutcome =
@@ -86,7 +88,11 @@ export class ThinqConnectWasherService {
 	public async readState(washer: ThinqConnectWasher): Promise<ThinqConnectWasherState> {
 		const payload = await this.client.getDeviceState(washer.deviceId);
 		const currentState = readWasherCurrentState(payload, washer.locationName);
-		const state: ThinqConnectWasherState = { currentState, powerOn: isWasherPoweredOn(currentState) };
+		const state: ThinqConnectWasherState = {
+			currentState,
+			powerOn: isWasherPoweredOn(currentState),
+			remainingSeconds: readWasherRemainingSeconds(payload, washer.locationName),
+		};
 		this.lastState.set(washer.deviceId, state);
 		return state;
 	}

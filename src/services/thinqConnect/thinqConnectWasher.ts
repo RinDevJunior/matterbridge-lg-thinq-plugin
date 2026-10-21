@@ -77,21 +77,44 @@ export function readWasherOperationModeProfile(
 	};
 }
 
+function selectWasherBlock(state: ThinqConnectPayload | undefined, locationName: string | undefined): unknown {
+	if (!Array.isArray(state)) {
+		return state;
+	}
+	const match = locationName === undefined ? undefined : state.find((entry) => locationNameOf(entry) === locationName);
+	return match ?? state[0];
+}
+
 export function readWasherCurrentState(
 	state: ThinqConnectPayload | undefined,
 	locationName: string | undefined,
 ): string | undefined {
-	let block: unknown = state;
-	if (Array.isArray(state)) {
-		const match =
-			locationName === undefined ? undefined : state.find((entry) => locationNameOf(entry) === locationName);
-		block = match ?? state[0];
-	}
+	const block = selectWasherBlock(state, locationName);
 	if (!isPlainObject(block)) {
 		return undefined;
 	}
 	const currentState = findKey(block, 'currentState');
 	return typeof currentState === 'string' ? currentState : undefined;
+}
+
+/** Remaining cycle time in seconds from the same block as `currentState`; `undefined` when unreadable. */
+export function readWasherRemainingSeconds(
+	state: ThinqConnectPayload | undefined,
+	locationName: string | undefined,
+): number | undefined {
+	const block = selectWasherBlock(state, locationName);
+	if (!isPlainObject(block) || !isPlainObject(block.timer)) {
+		return undefined;
+	}
+	const { remainHour, remainMinute } = block.timer;
+	const hour =
+		typeof remainHour === 'number' && Number.isFinite(remainHour) && remainHour >= 0 ? remainHour : undefined;
+	const minute =
+		typeof remainMinute === 'number' && Number.isFinite(remainMinute) && remainMinute >= 0 ? remainMinute : undefined;
+	if (hour === undefined && minute === undefined) {
+		return undefined;
+	}
+	return (hour ?? 0) * 3600 + (minute ?? 0) * 60;
 }
 
 export function isWasherPoweredOn(currentState: string | undefined): boolean | undefined {

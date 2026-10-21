@@ -8,6 +8,7 @@ import {
 	isWasherPoweredOn,
 	readWasherCurrentState,
 	readWasherOperationModeProfile,
+	readWasherRemainingSeconds,
 	type WasherOperationModeProfile,
 	type WasherPowerCommand,
 } from './thinqConnectWasher.js';
@@ -131,6 +132,133 @@ describe('thinqConnectWasher', () => {
 
 			// Assert
 			expect(result).toEqual({ writable: true, allowedValues: [] });
+		});
+	});
+
+	describe('readWasherRemainingSeconds', () => {
+		const twoLocations: ThinqConnectPayload = [
+			{ location: { locationName: 'A' }, timer: { remainHour: 2, remainMinute: 0 } },
+			{ location: { locationName: 'MAIN' }, timer: { remainHour: 0, remainMinute: 45 } },
+		];
+
+		it('should convert remainHour and remainMinute to seconds for an array state', () => {
+			// Arrange
+			const state: ThinqConnectPayload = [
+				{ location: { locationName: 'MAIN' }, timer: { remainHour: 1, remainMinute: 30 } },
+			];
+
+			// Act
+			const result = readWasherRemainingSeconds(state, 'MAIN');
+
+			// Assert
+			expect(result).toBe(5400);
+		});
+
+		it('should pick the block matching the locationName instead of the first entry', () => {
+			// Act
+			const result = readWasherRemainingSeconds(twoLocations, 'MAIN');
+
+			// Assert
+			expect(result).toBe(2700);
+		});
+
+		it('should fall back to the first entry when the locationName matches nothing', () => {
+			// Act
+			const result = readWasherRemainingSeconds(twoLocations, 'unknown-location');
+
+			// Assert
+			expect(result).toBe(7200);
+		});
+
+		it('should read the timer from a plain-object (non-array) state', () => {
+			// Arrange
+			const state: ThinqConnectPayload = { timer: { remainHour: 0, remainMinute: 10 } };
+
+			// Act
+			const result = readWasherRemainingSeconds(state, 'MAIN');
+
+			// Assert
+			expect(result).toBe(600);
+		});
+
+		it('should count only remainHour when remainMinute is missing', () => {
+			// Arrange
+			const state: ThinqConnectPayload = { timer: { remainHour: 2 } };
+
+			// Act
+			const result = readWasherRemainingSeconds(state, 'MAIN');
+
+			// Assert
+			expect(result).toBe(7200);
+		});
+
+		it('should count only remainMinute when remainHour is missing', () => {
+			// Arrange
+			const state: ThinqConnectPayload = { timer: { remainMinute: 5 } };
+
+			// Act
+			const result = readWasherRemainingSeconds(state, 'MAIN');
+
+			// Assert
+			expect(result).toBe(300);
+		});
+
+		it('should return 0, not undefined, when both remainHour and remainMinute are 0', () => {
+			// Arrange
+			const state: ThinqConnectPayload = { timer: { remainHour: 0, remainMinute: 0 } };
+
+			// Act
+			const result = readWasherRemainingSeconds(state, 'MAIN');
+
+			// Assert
+			expect(result).toBe(0);
+		});
+
+		it('should return undefined when the timer is missing', () => {
+			// Arrange
+			const state: ThinqConnectPayload = [
+				{ location: { locationName: 'MAIN' }, runState: { currentState: 'RUNNING' } },
+			];
+
+			// Act
+			const result = readWasherRemainingSeconds(state, 'MAIN');
+
+			// Assert
+			expect(result).toBeUndefined();
+		});
+
+		it('should return undefined when the state is undefined', () => {
+			// Act
+			const result = readWasherRemainingSeconds(undefined, 'MAIN');
+
+			// Assert
+			expect(result).toBeUndefined();
+		});
+
+		it('should return undefined when the selected block is not an object', () => {
+			// Arrange
+			const state: ThinqConnectPayload = ['not-an-object'];
+
+			// Act
+			const result = readWasherRemainingSeconds(state, undefined);
+
+			// Assert
+			expect(result).toBeUndefined();
+		});
+
+		it.each<[string, Record<string, unknown>]>([
+			['numeric strings', { remainHour: '1', remainMinute: '30' }],
+			['NaN', { remainHour: Number.NaN, remainMinute: Number.NaN }],
+			['negative values', { remainHour: -1, remainMinute: -5 }],
+		])('should return undefined when both values are invalid (%s)', (_label, timer) => {
+			// Arrange
+			const state: ThinqConnectPayload = { timer };
+
+			// Act
+			const result = readWasherRemainingSeconds(state, 'MAIN');
+
+			// Assert
+			expect(result).toBeUndefined();
 		});
 	});
 

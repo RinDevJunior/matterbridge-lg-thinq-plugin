@@ -34,8 +34,19 @@ const WASHER_PROFILE: ThinqConnectPayload = [
 	},
 ];
 
-function washerState(currentState: string, locationName = 'MAIN'): ThinqConnectPayload {
-	return [{ location: { locationName }, runState: { currentState }, operation: { washerOperationMode: 'POWER_ON' } }];
+function washerState(
+	currentState: string,
+	locationName = 'MAIN',
+	timer?: { remainHour?: number; remainMinute?: number },
+): ThinqConnectPayload {
+	return [
+		{
+			location: { locationName },
+			runState: { currentState },
+			...(timer === undefined ? {} : { timer }),
+			operation: { washerOperationMode: 'POWER_ON' },
+		},
+	];
 }
 
 const WASHER: ThinqConnectWasher = {
@@ -178,6 +189,28 @@ describe('ThinqConnectWasherService', () => {
 
 			// Assert
 			expect(state).toEqual({ currentState: 'RUNNING', powerOn: true });
+		});
+
+		it('should include remainingSeconds computed from the timer', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(washerState('RUNNING', 'MAIN', { remainHour: 0, remainMinute: 45 }));
+
+			// Act
+			const state = await service.readState(WASHER);
+
+			// Assert
+			expect(state).toEqual({ currentState: 'RUNNING', powerOn: true, remainingSeconds: 2700 });
+		});
+
+		it('should leave remainingSeconds undefined when the state has no timer', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(washerState('RUNNING'));
+
+			// Act
+			const state = await service.readState(WASHER);
+
+			// Assert
+			expect(state.remainingSeconds).toBeUndefined();
 		});
 
 		it('should return powerOn false when the washer is POWER_OFF', async () => {
@@ -531,6 +564,23 @@ describe('ThinqConnectWasherService', () => {
 			// Assert
 			expect(listener).toHaveBeenCalledTimes(1);
 			expect(listener).toHaveBeenCalledWith('w1', { currentState: 'RUNNING', powerOn: true });
+		});
+
+		it('should pass remainingSeconds to the listener during polling', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(washerState('RUNNING', 'MAIN', { remainHour: 1, remainMinute: 30 }));
+			const listener = vi.fn();
+
+			// Act
+			service.startPolling(60000, [WASHER], listener);
+			await vi.advanceTimersByTimeAsync(0);
+
+			// Assert
+			expect(listener).toHaveBeenCalledWith('w1', {
+				currentState: 'RUNNING',
+				powerOn: true,
+				remainingSeconds: 5400,
+			});
 		});
 
 		it('should run a subsequent tick after each intervalMs', async () => {

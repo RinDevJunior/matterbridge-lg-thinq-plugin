@@ -1,5 +1,5 @@
 import { LaundryWasher } from 'matterbridge/devices';
-import { OnOff } from 'matterbridge/matter/clusters';
+import { OnOff, OperationalState } from 'matterbridge/matter/clusters';
 import type { Mock } from 'vitest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -7,6 +7,7 @@ import type { ThinqConnectMatterIdentityOverride } from '../../thinqConnect/thin
 import {
 	applyThinqConnectWasherState,
 	buildThinqConnectWasherEndpoint,
+	mapThinqConnectWasherState,
 } from '../../thinqConnect/thinqConnectWasherEndpoint.js';
 import type { ThinqConnectWasher, ThinqConnectWasherState } from '../../thinqConnect/thinqConnectWasherService.js';
 import { createMockLogger } from '../helpers/testUtils.js';
@@ -260,6 +261,253 @@ describe('thinqConnectWasherEndpoint', () => {
 
 			// Assert
 			expect(logger.error).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('mapThinqConnectWasherState', () => {
+		const { Running, Paused, Stopped, Error: ErrorState } = OperationalState.OperationalStateEnum;
+
+		it.each([
+			'RUNNING',
+			'SOAKING',
+			'DETECTING',
+			'RINSING',
+			'DETERGENT_AMOUNT',
+			'DRYING',
+			'PREWASH',
+			'STEAM_SOFTENING',
+			'SPINNING',
+			'DISPENSING',
+			'ADD_DRAIN',
+		])('should map %s to Running', (currentState) => {
+			// Act
+			const result = mapThinqConnectWasherState(currentState);
+
+			// Assert
+			expect(result).toBe(Running);
+		});
+
+		it.each(['PAUSE', 'RINSE_HOLD'])('should map %s to Paused', (currentState) => {
+			// Act
+			const result = mapThinqConnectWasherState(currentState);
+
+			// Assert
+			expect(result).toBe(Paused);
+		});
+
+		it('should map ERROR to Error', () => {
+			// Act
+			const result = mapThinqConnectWasherState('ERROR');
+
+			// Assert
+			expect(result).toBe(ErrorState);
+		});
+
+		it.each([
+			'POWER_OFF',
+			'INITIAL',
+			'END',
+			'RESERVED',
+			'REFRESHING',
+			'FROZEN_PREVENT_INITIAL',
+			'FROZEN_PREVENT_RUNNING',
+			'FROZEN_PREVENT_PAUSE',
+		])('should map %s to Stopped', (currentState) => {
+			// Act
+			const result = mapThinqConnectWasherState(currentState);
+
+			// Assert
+			expect(result).toBe(Stopped);
+		});
+
+		it.each(['SOMETHING_NEW', 'running', ''])(
+			'should map unknown or non-canonical %j to Stopped, never Running',
+			(currentState) => {
+				// Act
+				const result = mapThinqConnectWasherState(currentState);
+
+				// Assert
+				expect(result).toBe(Stopped);
+			},
+		);
+
+		it('should map undefined to Stopped', () => {
+			// Act
+			const result = mapThinqConnectWasherState(undefined);
+
+			// Assert
+			expect(result).toBe(Stopped);
+		});
+	});
+
+	describe('applyThinqConnectWasherState operational state', () => {
+		const { Running, Paused, Stopped, Error: ErrorState } = OperationalState.OperationalStateEnum;
+
+		it('should write OnOff true, Running, NoError and the remaining countdown for RUNNING', async () => {
+			// Arrange
+			const endpoint = buildThinqConnectWasherEndpoint(WASHER, service, logger);
+			const state: ThinqConnectWasherState = { currentState: 'RUNNING', powerOn: true, remainingSeconds: 5400 };
+
+			// Act
+			await applyThinqConnectWasherState(endpoint, state, logger);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledTimes(4);
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', true, logger);
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalState',
+				Running,
+				logger,
+			);
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalError',
+				{ errorStateId: OperationalState.ErrorState.NoError },
+				logger,
+			);
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OperationalState.id, 'countdownTime', 5400, logger);
+		});
+
+		it('should write Paused and keep the remaining countdown for PAUSE', async () => {
+			// Arrange
+			const endpoint = buildThinqConnectWasherEndpoint(WASHER, service, logger);
+			const state: ThinqConnectWasherState = { currentState: 'PAUSE', powerOn: true, remainingSeconds: 600 };
+
+			// Act
+			await applyThinqConnectWasherState(endpoint, state, logger);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalState',
+				Paused,
+				logger,
+			);
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OperationalState.id, 'countdownTime', 600, logger);
+		});
+
+		it('should write OnOff false, Stopped, NoError and countdown 0 for POWER_OFF', async () => {
+			// Arrange
+			const endpoint = buildThinqConnectWasherEndpoint(WASHER, service, logger);
+			const state: ThinqConnectWasherState = { currentState: 'POWER_OFF', powerOn: false };
+
+			// Act
+			await applyThinqConnectWasherState(endpoint, state, logger);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', false, logger);
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalState',
+				Stopped,
+				logger,
+			);
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalError',
+				{ errorStateId: OperationalState.ErrorState.NoError },
+				logger,
+			);
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OperationalState.id, 'countdownTime', 0, logger);
+		});
+
+		it('should write Error and UnableToCompleteOperation for ERROR', async () => {
+			// Arrange
+			const endpoint = buildThinqConnectWasherEndpoint(WASHER, service, logger);
+			const state: ThinqConnectWasherState = { currentState: 'ERROR', powerOn: true };
+
+			// Act
+			await applyThinqConnectWasherState(endpoint, state, logger);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalState',
+				ErrorState,
+				logger,
+			);
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalError',
+				{ errorStateId: OperationalState.ErrorState.UnableToCompleteOperation },
+				logger,
+			);
+		});
+
+		it('should write Stopped and countdown 0 for INITIAL even when remainingSeconds is set', async () => {
+			// Arrange
+			const endpoint = buildThinqConnectWasherEndpoint(WASHER, service, logger);
+			const state: ThinqConnectWasherState = { currentState: 'INITIAL', powerOn: true, remainingSeconds: 7080 };
+
+			// Act
+			await applyThinqConnectWasherState(endpoint, state, logger);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalState',
+				Stopped,
+				logger,
+			);
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OperationalState.id, 'countdownTime', 0, logger);
+		});
+
+		it('should write a null countdown when RUNNING has no remaining time', async () => {
+			// Arrange
+			const endpoint = buildThinqConnectWasherEndpoint(WASHER, service, logger);
+			const state: ThinqConnectWasherState = { currentState: 'RUNNING', powerOn: true, remainingSeconds: undefined };
+
+			// Act
+			await applyThinqConnectWasherState(endpoint, state, logger);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OperationalState.id, 'countdownTime', null, logger);
+		});
+
+		it('should write Stopped with one debug log naming the state when the state is unknown', async () => {
+			// Arrange
+			const endpoint = buildThinqConnectWasherEndpoint(WASHER, service, logger);
+			const state: ThinqConnectWasherState = { currentState: 'SOMETHING_NEW', powerOn: true, remainingSeconds: 120 };
+
+			// Act
+			await applyThinqConnectWasherState(endpoint, state, logger);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', true, logger);
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalState',
+				Stopped,
+				logger,
+			);
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OperationalState.id, 'countdownTime', 0, logger);
+			expect(logger.debug).toHaveBeenCalledTimes(1);
+			expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining('SOMETHING_NEW'));
+		});
+
+		it('should write exactly one OnOff attribute and no OperationalState when only powerOn is given', async () => {
+			// Arrange
+			const endpoint = buildThinqConnectWasherEndpoint(WASHER, service, logger);
+			const state: ThinqConnectWasherState = { powerOn: true };
+
+			// Act
+			await applyThinqConnectWasherState(endpoint, state, logger);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledTimes(1);
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', true, logger);
+		});
+
+		it('should propagate an updateAttribute rejection to the caller', async () => {
+			// Arrange
+			const endpoint = buildThinqConnectWasherEndpoint(WASHER, service, logger);
+			mocks.endpoint.updateAttribute.mockRejectedValueOnce(new Error('write failed'));
+
+			// Act & Assert
+			await expect(
+				applyThinqConnectWasherState(endpoint, { currentState: 'RUNNING', powerOn: true }, logger),
+			).rejects.toThrow('write failed');
 		});
 	});
 

@@ -27,10 +27,8 @@ import { registerThinqConnectAirConditioners } from './thinqConnect/thinqConnect
 import type { ThinqConnectAirConditioner } from './thinqConnect/thinqConnectAirConditionerService.js';
 import type { ThinqConnectMatterIdentityOverride } from './thinqConnect/thinqConnectMatterIdentity.js';
 import { ThinqConnectServiceContainer } from './thinqConnect/thinqConnectServiceContainer.js';
-import {
-	applyThinqConnectWasherState,
-	buildThinqConnectWasherEndpoint,
-} from './thinqConnect/thinqConnectWasherEndpoint.js';
+import { applyThinqConnectWasherState } from './thinqConnect/thinqConnectWasherEndpoint.js';
+import { registerThinqConnectWashers } from './thinqConnect/thinqConnectWasherRegistration.js';
 import type { ThinqConnectWasher } from './thinqConnect/thinqConnectWasherService.js';
 
 export default function initializePlugin(
@@ -264,18 +262,15 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 		}
 		const service = container.getWasherService();
 
-		this.thinqConnectWashers = await service.discoverWashers();
-
-		for (const washer of this.thinqConnectWashers) {
-			const endpoint = buildThinqConnectWasherEndpoint(
-				washer,
-				service,
-				this.log,
-				this.resolveThinqConnectMatterIdentity(washer.deviceId),
-			);
-			await this.registerDevice(endpoint);
-			this.registry.register(washer.deviceId, endpoint);
-		}
+		this.thinqConnectWashers = await registerThinqConnectWashers({
+			service,
+			logger: this.log,
+			isIgnored: (id) => this.configManager.isDeviceIgnored(id),
+			resolveIdentity: (id) => this.resolveThinqConnectMatterIdentity(id),
+			registerDevice: (endpoint) => this.registerDevice(endpoint),
+			unregisterIgnoredDevice: (id, endpoint) => this.unregisterIgnoredDevice(id, endpoint),
+			remember: (id, endpoint) => this.registry.register(id, endpoint),
+		});
 
 		this.log.notice(`ThinQ Connect (PAT): registered ${this.thinqConnectWashers.length} washer(s).`);
 
