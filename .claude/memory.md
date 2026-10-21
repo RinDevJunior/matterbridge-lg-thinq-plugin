@@ -27,7 +27,7 @@ It is version-controlled — commit and push changes so teammates can pull the l
 
 <!-- Coding patterns established in this project -->
 
-- **Commit messages:** `<type>(<optional scope>): <short summary>` + optional why-body. Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `style`, `perf`. Imperative mood; no `Co-Authored-By`.
+- **Commit messages:** `<type>: <short summary>` + optional why-body, per `.claude/templates/commit-message.md` (PRs: `pull-request.md`). Imperative mood; no scope; no `Co-Authored-By`.
 - Per-device override pattern: array of objects with key (`serialNumber`) + value (`productName`), gated by a boolean in `advancedFeature.settings`. See `DeviceProductNameOverride` (`RoborockPluginPlatformConfig.ts:58`).
 - New config sections in schema use JSON Schema `if/then` blocks under `advancedFeature.allOf`.
 - **Agent frontmatter:** `effort`/`maxTurns` after `color`, before `tools`; `tools` MUST be a comma-separated string — YAML block lists silently fail and the subagent falls back to Read/Write/Edit/Bash only.
