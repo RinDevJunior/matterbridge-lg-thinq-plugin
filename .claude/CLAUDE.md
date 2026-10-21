@@ -23,6 +23,7 @@ Activate the Engineer Manager persona via `/config` → **Output style** → Eng
 - Be concise — no yapping, details only when asked.
 - Never mix logic and test changes in one step.
 - No `Co-Authored-By` in commits. Subagents never run `git commit`/`git push`.
+- Commit messages MUST follow `.claude/templates/commit-message.md`; PR descriptions MUST follow `.claude/templates/pull-request.md`.
 
 ## Verification
 

@@ -139,26 +139,17 @@ npm run diff:ci
 
 If default `staged` has no changes, say so and note unstaged changes.
 
-Draft message(s) using repository conventional style:
+Draft message(s) following `.claude/templates/commit-message.md` (no scope, no `Co-Authored-By`):
 
 ```
-<type>(<optional scope>): <short summary>
+<type>: <short summary>
 
 <optional body — why, not a file list>
 ```
 
-| Type       | When                               |
-| ---------- | ---------------------------------- |
-| `feat`     | New behavior or capability         |
-| `fix`      | Bug fix                            |
-| `docs`     | Documentation only                 |
-| `chore`    | Tooling, config, agents, deps      |
-| `refactor` | Code restructure, same behavior    |
-| `test`     | Tests only                         |
-| `style`    | Formatting, lint — no logic change |
-| `perf`     | Performance improvement            |
+Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `style`, `perf` (see the template for when to use each).
 
-**Message rules:** imperative mood; subject ≤ 72 characters when practical; no `Co-Authored-By`; body explains **why**, not a file list.
+**Message rules:** imperative mood; subject ≤ 72 characters; no `Co-Authored-By`; body explains **why**, not a file list. If the session supplies an attribution line (`Claude-Session: …`), end the message with it; never hard-code it. If drafting a PR title/body, follow `.claude/templates/pull-request.md`.
 
 Provide: **Recommended**, up to 2 **Alternatives**, and **Notes**.
 
