@@ -52,4 +52,14 @@ describe('HELP_TEXT', () => {
 		expect(HELP_TEXT).toContain('Connect-probe options:');
 		expect(HELP_TEXT).toMatch(/--command .*connect-probe/);
 	});
+
+	it('should document the connect-control command, its options and an example', () => {
+		// Assert
+		expect(HELP_TEXT).toContain('connect-control');
+		expect(HELP_TEXT).toContain('Connect-control options:');
+		expect(HELP_TEXT).toContain('--send');
+		expect(HELP_TEXT).toContain('--yes');
+		expect(HELP_TEXT).toContain('--wait');
+		expect(HELP_TEXT).toMatch(/--command .*connect-control/);
+	});
 });

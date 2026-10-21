@@ -45,7 +45,7 @@ interface ThinqConnectResourceResponse {
 	response?: unknown;
 }
 
-/** Read-only client for the official LG ThinQ Connect API, authenticated with a Personal Access Token. */
+/** Client for the official LG ThinQ Connect API, authenticated with a Personal Access Token; the only write is `controlDevice`. */
 export class ThinqConnectApiClient {
 	private readonly baseUrl: string;
 	private readonly countryCode: string;
@@ -76,6 +76,18 @@ export class ThinqConnectApiClient {
 		return this.getResource(deviceId, 'state');
 	}
 
+	public async controlDevice(deviceId: string, payload: ThinqConnectResource): Promise<ThinqConnectResource> {
+		const data = await this.post<ThinqConnectResourceResponse>(
+			`/devices/${encodeURIComponent(deviceId)}/control`,
+			payload,
+			{ 'x-conditional-control': 'true' },
+		);
+		const response = data?.response;
+		return typeof response === 'object' && response !== null && !Array.isArray(response)
+			? (response as ThinqConnectResource)
+			: {};
+	}
+
 	public async validateToken(): Promise<ThinqConnectValidationResult> {
 		const devices = await this.getDevices();
 		return { deviceCount: devices.length, devices };
@@ -95,6 +107,20 @@ export class ThinqConnectApiClient {
 		try {
 			const { data } = await axios.get<T>(url, {
 				headers: this.buildHeaders(),
+				timeout: REQUEST_TIMEOUT_MS,
+			});
+			return data;
+		} catch (error) {
+			throw this.toApiError(error);
+		}
+	}
+
+	private async post<T>(path: string, body: unknown, extraHeaders: Record<string, string> = {}): Promise<T> {
+		const url = `${this.baseUrl}${path}`;
+		this.logger.debug(`ThinQ Connect request -> POST ${url}`);
+		try {
+			const { data } = await axios.post<T>(url, body, {
+				headers: { ...this.buildHeaders(), 'Content-Type': 'application/json', ...extraHeaders },
 				timeout: REQUEST_TIMEOUT_MS,
 			});
 			return data;

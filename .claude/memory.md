@@ -34,6 +34,8 @@ It is version-controlled — commit and push changes so teammates can pull the l
 - **Subagent toolsets (macOS, re-verified Jul 10 2026):** native `Glob`/`Grep` absent from Task subagents — `mcp__glob-grep__*` is the only working search. `LSP` newly reachable in wildcard-tools subagents via deferred ToolSearch (one probe; explicit `tools:` lists historically never got it) — don't rely on it in agent definitions.
 - **Subagent task tracking:** `TaskCreate`/`TaskUpdate`/`TodoWrite` never reach Task subagents (verified Jul 10 2026, direct-executor probe) — never list them in agent frontmatter; EM tracks pipeline steps in the main session, subagents report plain text (use a `progress.md` file in the task folder if live status is ever needed).
 - **ThinQ Connect (PAT, Oct 21, 2026):** `src/services/thinqConnect/` is separate from EMP `services/thinq/`; `ThinqConnectApiError` (`THINQ_CONNECT_ERROR`) carries `resultCode` in metadata. Axios errors map via `axios.isAxiosError`.
+- **ThinQ Connect control (Oct 21, 2026):** `ThinqConnectApiClient.controlDevice` = POST `/devices/{id}/control` + `x-conditional-control:true`; CLI `connect-control` dry-run unless `--yes`, STOP/POWER_OFF refused at parse time.
+- **`format:ci` rewrites files in place** (reports `FORMAT: N file(s)`); re-run `format:ci` until `FORMAT PASS` before lint/type-check.
 - **Env pitfall (Oct 21, 2026):** `node_modules/matterbridge` can be an EMPTY dir → `type-check:ci` fails with TS2307/TS2339 cascade on every file. Not a code error; check `ls node_modules/matterbridge` before blaming code, and leave the reinstall to compiler.
 
 ## Decisions Made
