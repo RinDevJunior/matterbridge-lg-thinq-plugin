@@ -21,9 +21,9 @@
 			"properties": {
 				"loginType": {
 					"title": "Login Type",
-					"description": "Authenticate with a ThinQ account (username/password) or a pre-issued refresh token.",
+					"description": "account = username/password, token = refresh token, pat = Personal Access Token (official ThinQ Connect API, validation only for now).",
 					"type": "string",
-					"enum": ["account", "token"],
+					"enum": ["account", "token", "pat"],
 					"default": "account"
 				},
 				"country": {
@@ -498,6 +498,26 @@
 								}
 							},
 							"required": ["refreshToken"]
+						},
+						"else": {
+							"if": {
+								"properties": {
+									"loginType": {
+										"const": "pat"
+									}
+								}
+							},
+							"then": {
+								"properties": {
+									"personalAccessToken": {
+										"title": "Personal Access Token",
+										"description": "Create at https://connect-pat.lgthinq.com. Used with the Country above.",
+										"type": "string",
+										"ui:widget": "password"
+									}
+								},
+								"required": ["personalAccessToken"]
+							}
 						}
 					}
 				}

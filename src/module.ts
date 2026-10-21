@@ -96,6 +96,11 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 			return;
 		}
 
+		if (this.configManager.thinqLoginType === 'pat') {
+			await this.validateThinqConnectToken();
+			return;
+		}
+
 		try {
 			await this.startThinqDevices();
 		} catch (error) {
@@ -217,25 +222,45 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 	}
 
 	/**
+	 * Validates the ThinQ Connect Personal Access Token with a read-only device listing.
+	 * Does not mark startup as completed; device control via PAT is not enabled yet.
+	 */
+	private async validateThinqConnectToken(): Promise<void> {
+		try {
+			const result = await this.thinqServices.getConnectApiClient().validateToken();
+			this.log.notice(
+				`ThinQ Connect: Personal Access Token accepted, ${result.deviceCount} device(s) visible. Device control via PAT is not enabled yet.`,
+			);
+		} catch (error) {
+			this.log.error(
+				`ThinQ Connect: Personal Access Token validation failed: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+	}
+
+	/**
 	 * Authenticates against LG ThinQ (account or token strategy), discovers AirConditioner devices,
 	 * and registers each of them with Matterbridge. Ports the sibling plugin's discovery/configure split.
 	 */
 	private async startThinqDevices(): Promise<void> {
+		const loginType = this.configManager.thinqLoginType;
+		if (loginType === 'pat') {
+			throw new Error('startThinqDevices called with a Personal Access Token login (EMP login required).');
+		}
+
 		const userDataRepository = this.thinqServices.getUserDataRepository();
 		let userData = this.configManager.isForceAuthenticationEnabled
 			? undefined
 			: await userDataRepository.loadUserData();
 
 		if (!userData) {
-			userData = await this.thinqServices
-				.getAuthenticationCoordinator()
-				.authenticate(this.configManager.thinqLoginType, {
-					username: this.configManager.thinqUsername,
-					password: this.configManager.thinqPassword,
-					refreshToken: this.configManager.thinqRefreshToken,
-					country: this.configManager.country,
-					language: this.configManager.language,
-				});
+			userData = await this.thinqServices.getAuthenticationCoordinator().authenticate(loginType, {
+				username: this.configManager.thinqUsername,
+				password: this.configManager.thinqPassword,
+				refreshToken: this.configManager.thinqRefreshToken,
+				country: this.configManager.country,
+				language: this.configManager.language,
+			});
 		}
 
 		if (!userData) {

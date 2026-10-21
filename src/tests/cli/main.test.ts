@@ -211,4 +211,28 @@ describe('main', () => {
 		expect(processExitSpy).not.toHaveBeenCalled();
 		expect(consoleErrorSpy).not.toHaveBeenCalled();
 	});
+
+	it('should call cmdLogin with type "pat" and country KR when --type pat --country KR are given', async () => {
+		// Arrange
+		vi.mocked(parseArgs).mockReturnValue({ command: 'login', type: 'pat', country: 'KR' });
+		vi.mocked(cmdLogin).mockResolvedValue(undefined);
+
+		// Act
+		await main();
+
+		// Assert
+		expect(cmdLogin).toHaveBeenCalledWith('pat', 'KR', 'en-US', expect.any(Object));
+	});
+
+	it('should default login type to "account" when --type is omitted', async () => {
+		// Arrange
+		vi.mocked(parseArgs).mockReturnValue({ command: 'login' });
+		vi.mocked(cmdLogin).mockResolvedValue(undefined);
+
+		// Act
+		await main();
+
+		// Assert
+		expect(cmdLogin).toHaveBeenCalledWith('account', 'US', 'en-US', expect.any(Object));
+	});
 });

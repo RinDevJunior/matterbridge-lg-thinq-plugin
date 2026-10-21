@@ -2,7 +2,7 @@ import { AnsiLogger, LogLevel } from 'matterbridge/logger';
 
 import { cmdDevices } from './commands/devices.js';
 import { cmdEnergy, parseEnergyOptions } from './commands/energy.js';
-import { cmdLogin } from './commands/login.js';
+import { type CliLoginType, cmdLogin } from './commands/login.js';
 import { HELP_TEXT } from './help.js';
 import { loadSession } from './session.js';
 import { parseArgs } from './utils.js';
@@ -22,7 +22,7 @@ export async function main(): Promise<void> {
 
 	try {
 		if (command === 'login') {
-			const type = (args['type'] || 'account') as 'account' | 'token';
+			const type = (args['type'] || 'account') as CliLoginType;
 			const country = args['country'] || 'US';
 			const language = args['language'] || 'en-US';
 

@@ -22,3 +22,6 @@ export {
 	ManualProcessNeededError,
 	TokenExpiredError,
 } from './AuthenticationError.js';
+
+// ThinQ Connect API errors
+export { ThinqConnectApiError } from './ThinqConnectApiError.js';

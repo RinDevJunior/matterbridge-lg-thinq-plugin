@@ -1075,4 +1075,187 @@ describe('PlatformConfigManager', () => {
 			expect(getResult).toEqual({});
 		});
 	});
+
+	describe('pat login type', () => {
+		it('should return "pat" from thinqLoginType when loginType is pat', () => {
+			// Arrange
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					devices: [],
+					loginType: 'pat',
+					country: 'US',
+					language: 'en-US',
+					personalAccessToken: 'pat-secret-1234567890',
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			// Act
+			const loginType = manager.thinqLoginType;
+
+			// Assert
+			expect(loginType).toBe('pat');
+		});
+
+		it('should return the stored value from thinqPersonalAccessToken when present', () => {
+			// Arrange
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					devices: [],
+					loginType: 'pat',
+					country: 'US',
+					language: 'en-US',
+					personalAccessToken: 'pat-secret-1234567890',
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			// Act
+			const token = manager.thinqPersonalAccessToken;
+
+			// Assert
+			expect(token).toBe('pat-secret-1234567890');
+		});
+
+		it('should return undefined from thinqPersonalAccessToken when absent', () => {
+			// Arrange
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					devices: [],
+					loginType: 'pat',
+					country: 'US',
+					language: 'en-US',
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			// Act
+			const token = manager.thinqPersonalAccessToken;
+
+			// Assert
+			expect(token).toBeUndefined();
+		});
+
+		it('should return true from validateConfig when pat has token and country', () => {
+			// Arrange
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					devices: [],
+					loginType: 'pat',
+					country: 'US',
+					language: 'en-US',
+					personalAccessToken: 'pat-secret-1234567890',
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			// Act
+			const result = manager.validateConfig();
+
+			// Assert
+			expect(result).toBe(true);
+		});
+
+		it('should return false from validateConfig when pat has no token', () => {
+			// Arrange
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					devices: [],
+					loginType: 'pat',
+					country: 'US',
+					language: 'en-US',
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			// Act
+			const result = manager.validateConfig();
+
+			// Assert
+			expect(result).toBe(false);
+		});
+
+		it('should return false from validateConfig when pat has token but empty country', () => {
+			// Arrange
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					devices: [],
+					loginType: 'pat',
+					country: '',
+					language: 'en-US',
+					personalAccessToken: 'pat-secret-1234567890',
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			// Act
+			const result = manager.validateConfig();
+
+			// Assert
+			expect(result).toBe(false);
+		});
+
+		it('should validate token login by refresh token only when a stray personalAccessToken is present', () => {
+			// Arrange
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					devices: [],
+					loginType: 'token',
+					country: 'US',
+					language: 'en-US',
+					refreshToken: 'refresh-123',
+					personalAccessToken: 'pat-secret-1234567890',
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			// Act
+			const result = manager.validateConfig();
+
+			// Assert
+			expect(result).toBe(true);
+		});
+
+		it('should validate account login by username and password only when a stray personalAccessToken is present', () => {
+			// Arrange
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					devices: [],
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					username: 'user@example.com',
+					password: 'secret',
+					personalAccessToken: 'pat-secret-1234567890',
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			// Act
+			const result = manager.validateConfig();
+
+			// Assert
+			expect(result).toBe(true);
+		});
+
+		it('should return false from validateConfig when account login has only a stray personalAccessToken', () => {
+			// Arrange
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					devices: [],
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					personalAccessToken: 'pat-secret-1234567890',
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			// Act
+			const result = manager.validateConfig();
+
+			// Assert
+			expect(result).toBe(false);
+		});
+	});
 });

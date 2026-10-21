@@ -5,8 +5,8 @@ vi.mock('node:fs');
 
 import fs from 'node:fs';
 
-import { loadSession, saveSession } from '../../cli/session.js';
-import type { CliSession } from '../../cli/types.js';
+import { loadPatSession, loadSession, savePatSession, saveSession } from '../../cli/session.js';
+import type { CliPatSession, CliSession } from '../../cli/types.js';
 
 describe('saveSession', () => {
 	beforeEach(() => {
@@ -194,5 +194,111 @@ describe('loadSession', () => {
 
 		// Assert
 		expect(result).toBeNull();
+	});
+});
+
+describe('savePatSession', () => {
+	const mockPatSession: CliPatSession = {
+		country: 'US',
+		personalAccessToken: 'pat-secret-1234567890',
+	};
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('should write the PAT session to .cli-pat-session.json', () => {
+		// Arrange
+		// (mockPatSession prepared above)
+
+		// Act
+		savePatSession(mockPatSession);
+
+		// Assert
+		expect(fs.writeFileSync).toHaveBeenCalledTimes(1);
+		expect(vi.mocked(fs.writeFileSync).mock.calls[0][0]).toBe('.cli-pat-session.json');
+	});
+
+	it('should write the PAT session as 2-space indented JSON', () => {
+		// Arrange
+		const expectedJson = JSON.stringify(mockPatSession, null, 2);
+
+		// Act
+		savePatSession(mockPatSession);
+
+		// Assert
+		expect(vi.mocked(fs.writeFileSync).mock.calls[0][1]).toBe(expectedJson);
+	});
+
+	it('should not write to the EMP session file', () => {
+		// Arrange
+		// (mockPatSession prepared above)
+
+		// Act
+		savePatSession(mockPatSession);
+
+		// Assert
+		expect(vi.mocked(fs.writeFileSync)).not.toHaveBeenCalledWith('.cli-session.json', expect.anything());
+	});
+});
+
+describe('loadPatSession', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('should round-trip the saved PAT session through the file', () => {
+		// Arrange
+		const mockPatSession: CliPatSession = {
+			country: 'KR',
+			personalAccessToken: 'pat-secret-1234567890',
+		};
+		let stored = '';
+		vi.mocked(fs.writeFileSync).mockImplementation((_path, data) => {
+			stored = typeof data === 'string' ? data : '';
+		});
+		vi.mocked(fs.readFileSync).mockImplementation(() => stored);
+
+		// Act
+		savePatSession(mockPatSession);
+		const result = loadPatSession();
+
+		// Assert
+		expect(result).toEqual(mockPatSession);
+		expect(fs.readFileSync).toHaveBeenCalledWith('.cli-pat-session.json', 'utf-8');
+	});
+
+	it('should return null when the PAT session file cannot be read', () => {
+		// Arrange
+		vi.mocked(fs.readFileSync).mockImplementation(() => {
+			throw new Error('ENOENT: no such file or directory');
+		});
+
+		// Act
+		const result = loadPatSession();
+
+		// Assert
+		expect(result).toBeNull();
+	});
+
+	it('should not read the EMP session file', () => {
+		// Arrange
+		vi.mocked(fs.readFileSync).mockImplementation(() => {
+			throw new Error('ENOENT: no such file or directory');
+		});
+
+		// Act
+		loadPatSession();
+
+		// Assert
+		expect(vi.mocked(fs.readFileSync)).not.toHaveBeenCalledWith('.cli-session.json', expect.anything());
 	});
 });
