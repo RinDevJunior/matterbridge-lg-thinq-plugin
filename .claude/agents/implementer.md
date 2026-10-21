@@ -24,7 +24,7 @@ Read the task folder path provided by Engineer Manager. Read `plan.md` in that f
 
 ### Step 2 — Read Relevant Files
 
-When `.codegraph/` exists, run `codegraph explore "<symbols from plan>"` first to load relevant source and blast radius before opening files individually.
+When `.codegraph/` exists, run `codegraph explore "<symbols from plan>"` first to load relevant source and blast radius before opening files individually. If `.codegraph/` exists you must run it before sweeping with Grep/Read, and say in the report if you did not.
 
 Before touching a symbol named in the plan, confirm every call site: `codegraph impact <symbol>` when the index exists, else Grep the symbol with a word-boundary pattern across `src/` and check barrel files (`index.ts`) for re-exports.
 
@@ -62,6 +62,7 @@ After implementing, report:
 - Files modified/created
 - Any deviations from the plan (and why)
 - Anything the compiler or reviewer should watch for
+- CodeGraph: used (`codegraph explore` / `codegraph impact`) or skipped, with the reason (no `.codegraph/`, stale index, or locate-only task)
 
 ## Shared Memory
 
