@@ -43,4 +43,13 @@ describe('HELP_TEXT', () => {
 		expect(HELP_TEXT).toContain('Authenticate with LG ThinQ');
 		expect(HELP_TEXT).toContain('List all discovered ThinQ devices');
 	});
+
+	it('should document the connect-probe command, its options and an example', () => {
+		// Assert
+		expect(HELP_TEXT).toContain('connect-probe');
+		expect(HELP_TEXT).toContain('--device-id');
+		expect(HELP_TEXT).toContain('--raw');
+		expect(HELP_TEXT).toContain('Connect-probe options:');
+		expect(HELP_TEXT).toMatch(/--command .*connect-probe/);
+	});
 });
