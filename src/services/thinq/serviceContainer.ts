@@ -8,7 +8,6 @@ import { AccountAuthStrategy } from '../authentication/AccountAuthStrategy.js';
 import { AuthenticationCoordinator } from '../authentication/AuthenticationCoordinator.js';
 import { TokenAuthStrategy } from '../authentication/TokenAuthStrategy.js';
 import { UserDataRepository } from '../authentication/UserDataRepository.js';
-import { ThinqConnectApiClient } from '../thinqConnect/thinqConnectApiClient.js';
 import { MqttKeyRepository } from './mqtt/mqttKeyRepository.js';
 import { ThinqMqttListener } from './mqtt/thinqMqttListener.js';
 import { ThinqSession } from './session.js';
@@ -27,7 +26,6 @@ export class ThinqServiceContainer {
 	private userDataRepositoryInstance: UserDataRepository | undefined;
 	private mqttKeyRepositoryInstance: MqttKeyRepository | undefined;
 	private mqttListenerInstance: ThinqMqttListener | undefined;
-	private connectApiClientInstance: ThinqConnectApiClient | undefined;
 
 	constructor(
 		private readonly logger: AnsiLogger,
@@ -69,15 +67,6 @@ export class ThinqServiceContainer {
 	public getDeviceService(): ThinqDeviceService {
 		this.deviceServiceInstance ??= new ThinqDeviceService(this.apiClientInstance, this.logger);
 		return this.deviceServiceInstance;
-	}
-
-	public getConnectApiClient(): ThinqConnectApiClient {
-		this.connectApiClientInstance ??= new ThinqConnectApiClient(
-			this.configManager.thinqPersonalAccessToken ?? '',
-			this.configManager.country,
-			this.logger,
-		);
-		return this.connectApiClientInstance;
 	}
 
 	public getFilterMonitoringService(): ThinqFilterMonitoringService {
