@@ -16,6 +16,7 @@ import type { CliPatSession } from '../../../cli/types.js';
 import { ThinqConnectApiError } from '../../../errors/index.js';
 import {
 	ThinqConnectApiClient,
+	type ThinqConnectPayload,
 	type ThinqConnectResource,
 } from '../../../services/thinqConnect/thinqConnectApiClient.js';
 import { asPartial, createMockLogger } from '../../helpers/testUtils.js';
@@ -47,6 +48,19 @@ function washerProfile(
 
 function washerState(currentState: string): ThinqConnectResource {
 	return { runState: { currentState }, operation: { washerOperationMode: 'POWER_OFF' } };
+}
+
+/** Washer profile as a per-location array (the shape LG returns for a multi-location washer). */
+function washerProfileArray(locationName: string): ThinqConnectPayload {
+	return [washerProfile(ALL_VALUES, ['w'], locationName)];
+}
+
+/** Washer state as a per-location array; each entry carries its own location and runState. */
+function washerStateArray(...entries: { locationName: string; currentState: string }[]): ThinqConnectPayload {
+	return entries.map(({ locationName, currentState }) => ({
+		location: { locationName },
+		runState: { currentState },
+	}));
 }
 
 const WRITABLE_SUMMARY: ConnectProbeSummary = {
@@ -413,6 +427,113 @@ describe('cmdConnectControl', () => {
 			expect(mockClient.controlDevice).not.toHaveBeenCalled();
 			expect(process.exitCode).toBe(1);
 		});
+	});
+
+	describe('washer array state safety', () => {
+		it.each(['RUNNING', 'PAUSE'])(
+			'should refuse without any POST when the array state is %s even with yes',
+			async (currentState) => {
+				// Arrange
+				mockClient.getDeviceState.mockResolvedValue(washerStateArray({ locationName: 'MAIN', currentState }));
+				const options = { ...BASE_OPTIONS, yes: true, send: 'START' };
+
+				// Act
+				await cmdConnectControl(SESSION, options, mockLogger);
+
+				// Assert
+				expect(mockClient.controlDevice).not.toHaveBeenCalled();
+				expect(printedOutput()).toContain('Refused');
+				expect(process.exitCode).toBe(1);
+			},
+		);
+
+		it.each(['INITIAL', 'POWER_OFF'])(
+			'should send one POST when the array state is %s and yes is set',
+			async (currentState) => {
+				// Arrange
+				mockClient.getDeviceState.mockResolvedValue(washerStateArray({ locationName: 'MAIN', currentState }));
+				const options = { ...BASE_OPTIONS, yes: true, send: 'START' };
+
+				// Act
+				await cmdConnectControl(SESSION, options, mockLogger);
+
+				// Assert
+				expect(mockClient.controlDevice.mock.calls).toEqual([
+					['dev-1', { location: { locationName: 'MAIN' }, operation: { washerOperationMode: 'START' } }],
+				]);
+				expect(process.exitCode).toBeUndefined();
+			},
+		);
+
+		it('should send one POST using the matching MINI entry when the array has two locations and MINI is idle', async () => {
+			// Arrange
+			mockClient.getDeviceProfile.mockResolvedValue(washerProfileArray('MINI'));
+			mockClient.getDeviceState.mockResolvedValue(
+				washerStateArray(
+					{ locationName: 'MAIN', currentState: 'RUNNING' },
+					{ locationName: 'MINI', currentState: 'POWER_OFF' },
+				),
+			);
+			const options = { ...BASE_OPTIONS, yes: true, send: 'START' };
+
+			// Act
+			await cmdConnectControl(SESSION, options, mockLogger);
+
+			// Assert
+			expect(mockClient.controlDevice.mock.calls).toEqual([
+				['dev-1', { location: { locationName: 'MINI' }, operation: { washerOperationMode: 'START' } }],
+			]);
+			expect(process.exitCode).toBeUndefined();
+		});
+
+		it('should refuse without any POST when the matching MINI entry is RUNNING and the other entry is idle', async () => {
+			// Arrange
+			mockClient.getDeviceProfile.mockResolvedValue(washerProfileArray('MINI'));
+			mockClient.getDeviceState.mockResolvedValue(
+				washerStateArray(
+					{ locationName: 'MAIN', currentState: 'POWER_OFF' },
+					{ locationName: 'MINI', currentState: 'RUNNING' },
+				),
+			);
+			const options = { ...BASE_OPTIONS, yes: true, send: 'START' };
+
+			// Act
+			await cmdConnectControl(SESSION, options, mockLogger);
+
+			// Assert
+			expect(mockClient.controlDevice).not.toHaveBeenCalled();
+			expect(printedOutput()).toContain('Refused');
+			expect(process.exitCode).toBe(1);
+		});
+
+		it('should send one POST when the state is an empty array because the washer is likely off', async () => {
+			// Arrange
+			mockClient.getDeviceState.mockResolvedValue([]);
+			const options = { ...BASE_OPTIONS, yes: true, send: 'POWER_ON' };
+
+			// Act
+			await cmdConnectControl(SESSION, options, mockLogger);
+
+			// Assert
+			expect(mockClient.controlDevice).toHaveBeenCalledTimes(1);
+			expect(process.exitCode).toBeUndefined();
+		});
+
+		it.each(['RUNNING', 'INITIAL'])(
+			'should never POST in a dry run when the array state is %s',
+			async (currentState) => {
+				// Arrange
+				mockClient.getDeviceState.mockResolvedValue(washerStateArray({ locationName: 'MAIN', currentState }));
+				const options = { ...BASE_OPTIONS, yes: false, send: 'START' };
+
+				// Act
+				await cmdConnectControl(SESSION, options, mockLogger);
+
+				// Assert
+				expect(mockClient.controlDevice).not.toHaveBeenCalled();
+				expect(printedOutput()).not.toContain('Sending...');
+			},
+		);
 	});
 
 	describe('location field in the body', () => {

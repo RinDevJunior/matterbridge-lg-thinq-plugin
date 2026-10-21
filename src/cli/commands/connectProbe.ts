@@ -3,6 +3,7 @@ import { AnsiLogger } from 'matterbridge/logger';
 import {
 	ThinqConnectApiClient,
 	type ThinqConnectDevice,
+	type ThinqConnectPayload,
 	type ThinqConnectResource,
 } from '../../services/thinqConnect/thinqConnectApiClient.js';
 import type { CliPatSession } from '../types.js';
@@ -50,11 +51,29 @@ function findKey(root: unknown, key: string, depth = 0): unknown {
 	return undefined;
 }
 
-function profileGroupNames(profile: ThinqConnectResource | undefined): string[] {
+function locationNameOf(item: unknown): string | undefined {
+	if (!isPlainObject(item) || !isPlainObject(item['location'])) {
+		return undefined;
+	}
+	const name = item['location']['locationName'];
+	return typeof name === 'string' ? name : undefined;
+}
+
+/** Washer state is a per-location array; pick the entry matching a profile location, else the first entry. */
+function selectStateBlock(state: ThinqConnectPayload | undefined, profile: ThinqConnectPayload | undefined): unknown {
+	if (!Array.isArray(state)) {
+		return state;
+	}
+	const profileRoot: unknown = isPlainObject(profile) ? (profile['property'] ?? profile) : profile;
+	const profileLocations = new Set(Array.isArray(profileRoot) ? profileRoot.map(locationNameOf) : []);
+	return state.find((item) => profileLocations.has(locationNameOf(item))) ?? state[0];
+}
+
+function profileGroupNames(profile: ThinqConnectPayload | undefined): string[] {
 	if (!profile) {
 		return [];
 	}
-	const root: unknown = profile['property'] ?? profile;
+	const root: unknown = isPlainObject(profile) ? (profile['property'] ?? profile) : profile;
 	if (isPlainObject(root)) {
 		return Object.keys(root);
 	}
@@ -73,10 +92,11 @@ function profileGroupNames(profile: ThinqConnectResource | undefined): string[] 
 }
 
 export function summarizeConnectProbe(
-	profile: ThinqConnectResource | undefined,
-	state: ThinqConnectResource | undefined,
+	profile: ThinqConnectPayload | undefined,
+	state: ThinqConnectPayload | undefined,
 ): ConnectProbeSummary {
 	const summary: ConnectProbeSummary = { profileGroups: profileGroupNames(profile) };
+	const stateBlock = selectStateBlock(state, profile);
 
 	const washerNode = findKey(profile, 'washerOperationMode');
 	if (isPlainObject(washerNode)) {
@@ -91,15 +111,15 @@ export function summarizeConnectProbe(
 		summary.remoteControlEnabled = { modes: stringItems(remoteNode['mode']) };
 	}
 
-	const currentOperationMode = findKey(state, 'washerOperationMode');
+	const currentOperationMode = findKey(stateBlock, 'washerOperationMode');
 	if (typeof currentOperationMode === 'string') {
 		summary.currentOperationMode = currentOperationMode;
 	}
-	const currentRemoteControlEnabled = findKey(state, 'remoteControlEnabled');
+	const currentRemoteControlEnabled = findKey(stateBlock, 'remoteControlEnabled');
 	if (typeof currentRemoteControlEnabled === 'boolean') {
 		summary.currentRemoteControlEnabled = currentRemoteControlEnabled;
 	}
-	const currentState = findKey(state, 'currentState');
+	const currentState = findKey(stateBlock, 'currentState');
 	if (typeof currentState === 'string') {
 		summary.currentState = currentState;
 	}
@@ -185,8 +205,8 @@ export async function cmdConnectProbe(
 			`Device: ${info?.alias ?? '(no alias)'} [${info?.deviceType ?? 'unknown'}] ${info?.modelName ?? ''} (${device.deviceId})`,
 		);
 
-		let profile: ThinqConnectResource | undefined;
-		let state: ThinqConnectResource | undefined;
+		let profile: ThinqConnectPayload | undefined;
+		let state: ThinqConnectPayload | undefined;
 		try {
 			profile = await client.getDeviceProfile(device.deviceId);
 		} catch (error) {
