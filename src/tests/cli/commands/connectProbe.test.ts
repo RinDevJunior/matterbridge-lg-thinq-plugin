@@ -5,6 +5,11 @@ vi.mock('../../../services/thinqConnect/thinqConnectApiClient.js', () => ({
 	ThinqConnectApiClient: vi.fn(),
 }));
 
+vi.mock('../../../cli/commands/connectEnergy.js', () => ({
+	printConnectEnergy: vi.fn(),
+}));
+
+import { printConnectEnergy } from '../../../cli/commands/connectEnergy.js';
 import type { ConnectProbeSummary } from '../../../cli/commands/connectProbe.js';
 import {
 	cmdConnectProbe,
@@ -517,6 +522,183 @@ describe('cmdConnectProbe', () => {
 		});
 	});
 
+	describe('raw device entry', () => {
+		const RAW_WASHER_ENTRY = {
+			deviceId: 'dev-1',
+			groupId: 'grp-1',
+			reportable: true,
+			deviceInfo: { alias: 'Washer', deviceType: 'DEVICE_WASHER', modelName: 'WM-1' },
+		};
+
+		const SECRET_WASHER_ENTRY = {
+			deviceId: 'dev-1',
+			deviceInfo: { alias: 'Washer', deviceType: 'DEVICE_WASHER', modelName: 'WM-1' },
+			serialNo: 'SN1234567890AB12',
+			macAddress: 'AABBCCDDEEFF',
+			accessToken: 'fake-entry-token-value',
+		};
+
+		it('should print the full raw entry and the device header when raw is true and the id is listed', async () => {
+			// Arrange
+			mockClient.getDevices.mockResolvedValue([RAW_WASHER_ENTRY, DEVICES[1]]);
+			mockClient.getDeviceProfile.mockResolvedValue(WASHER_PROFILE);
+			mockClient.getDeviceState.mockResolvedValue(WASHER_STATE);
+
+			// Act
+			await cmdConnectProbe(SESSION, { deviceId: 'dev-1', raw: true }, mockLogger);
+
+			// Assert
+			expect(mockClient.getDevices).toHaveBeenCalledTimes(1);
+			expect(printedOutput()).toContain('Device: Washer [DEVICE_WASHER] WM-1 (dev-1)');
+			expect(printedOutput()).toContain(`  raw device: ${JSON.stringify(RAW_WASHER_ENTRY, null, 2)}`);
+			expect(printedOutput()).toContain('"groupId": "grp-1"');
+			expect(printedOutput()).not.toContain('(device not present in GET /devices)');
+		});
+
+		it('should print a fallback entry and the not-present line when the id is not in the list', async () => {
+			// Arrange
+			mockClient.getDevices.mockResolvedValue([DEVICES[1]]);
+			mockClient.getDeviceProfile.mockResolvedValue(WASHER_PROFILE);
+			mockClient.getDeviceState.mockResolvedValue(WASHER_STATE);
+
+			// Act
+			await cmdConnectProbe(SESSION, { deviceId: 'washer-1', raw: true }, mockLogger);
+
+			// Assert
+			expect(printedOutput()).toContain(`  raw device: ${JSON.stringify({ deviceId: 'washer-1' }, null, 2)}`);
+			expect(printedOutput()).toContain('  (device not present in GET /devices)');
+			expect(mockClient.getDeviceProfile).toHaveBeenCalledWith('washer-1');
+			expect(mockClient.getDeviceState).toHaveBeenCalledWith('washer-1');
+			expect(process.exitCode).toBeUndefined();
+		});
+
+		it('should print Device list failed, probe profile and state and set exitCode 1 when getDevices rejects', async () => {
+			// Arrange
+			mockClient.getDevices.mockRejectedValue(new ThinqConnectApiError('ThinQ Connect request failed: timeout'));
+			mockClient.getDeviceProfile.mockResolvedValue(WASHER_PROFILE);
+			mockClient.getDeviceState.mockResolvedValue(WASHER_STATE);
+
+			// Act
+			await cmdConnectProbe(SESSION, { deviceId: 'washer-1', raw: true }, mockLogger);
+
+			// Assert
+			expect(consoleErrorSpy).toHaveBeenCalledWith('Device list failed:', 'ThinQ Connect request failed: timeout');
+			expect(process.exitCode).toBe(1);
+			expect(mockClient.getDeviceProfile).toHaveBeenCalledWith('washer-1');
+			expect(mockClient.getDeviceState).toHaveBeenCalledWith('washer-1');
+			expect(printedOutput()).toContain('  raw device: ');
+		});
+
+		it('should print one raw device block per listed device and call getDevices once when no id is given', async () => {
+			// Arrange
+			mockClient.getDevices.mockResolvedValue(DEVICES);
+			mockClient.getDeviceProfile.mockResolvedValue(WASHER_PROFILE);
+			mockClient.getDeviceState.mockResolvedValue(WASHER_STATE);
+
+			// Act
+			await cmdConnectProbe(SESSION, { raw: true }, mockLogger);
+
+			// Assert
+			expect(mockClient.getDevices).toHaveBeenCalledTimes(1);
+			expect(printedOutput().split('  raw device: ').length - 1).toBe(2);
+		});
+
+		it('should not call getDevices or print a raw device block when raw is false and the id is set', async () => {
+			// Arrange
+			mockClient.getDeviceProfile.mockResolvedValue(WASHER_PROFILE);
+			mockClient.getDeviceState.mockResolvedValue(WASHER_STATE);
+
+			// Act
+			await cmdConnectProbe(SESSION, { deviceId: 'washer-1', raw: false }, mockLogger);
+
+			// Assert
+			expect(mockClient.getDevices).not.toHaveBeenCalled();
+			expect(printedOutput()).not.toContain('raw device');
+		});
+
+		it('should mask serialNo and macAddress and redact the token when showSecrets is unset', async () => {
+			// Arrange
+			mockClient.getDevices.mockResolvedValue([SECRET_WASHER_ENTRY]);
+			mockClient.getDeviceProfile.mockResolvedValue(WASHER_PROFILE);
+			mockClient.getDeviceState.mockResolvedValue(WASHER_STATE);
+
+			// Act
+			await cmdConnectProbe(SESSION, { deviceId: 'dev-1', raw: true }, mockLogger);
+
+			// Assert
+			expect(printedOutput()).toContain('************AB12');
+			expect(printedOutput()).toContain('********EEFF');
+			expect(printedOutput()).not.toContain('SN1234567890AB12');
+			expect(printedOutput()).not.toContain('AABBCCDDEEFF');
+			expect(printedOutput()).toContain('"accessToken": "[REDACTED]"');
+			expect(printedOutput()).not.toContain('fake-entry-token-value');
+		});
+
+		it('should show serialNo and macAddress in full and keep the token redacted when showSecrets is true', async () => {
+			// Arrange
+			mockClient.getDevices.mockResolvedValue([SECRET_WASHER_ENTRY]);
+			mockClient.getDeviceProfile.mockResolvedValue(WASHER_PROFILE);
+			mockClient.getDeviceState.mockResolvedValue(WASHER_STATE);
+
+			// Act
+			await cmdConnectProbe(SESSION, { deviceId: 'dev-1', raw: true, showSecrets: true }, mockLogger);
+
+			// Assert
+			expect(printedOutput()).toContain('SN1234567890AB12');
+			expect(printedOutput()).toContain('AABBCCDDEEFF');
+			expect(printedOutput()).toContain('"accessToken": "[REDACTED]"');
+			expect(printedOutput()).not.toContain('fake-entry-token-value');
+		});
+
+		it('should print the raw device block even when the profile and state requests both fail', async () => {
+			// Arrange
+			mockClient.getDevices.mockResolvedValue([RAW_WASHER_ENTRY]);
+			mockClient.getDeviceProfile.mockRejectedValue(
+				new ThinqConnectApiError('ThinQ Connect request failed: socket hang up'),
+			);
+			mockClient.getDeviceState.mockRejectedValue(
+				new ThinqConnectApiError('ThinQ Connect request failed (HTTP 500)', undefined, 500),
+			);
+
+			// Act
+			await cmdConnectProbe(SESSION, { deviceId: 'dev-1', raw: true }, mockLogger);
+
+			// Assert
+			expect(printedOutput()).toContain('  raw device: ');
+			expect(process.exitCode).toBe(1);
+		});
+
+		it.each([{ showSecrets: false }, { showSecrets: true }])(
+			'should never print the PAT when showSecrets is $showSecrets',
+			async ({ showSecrets }) => {
+				// Arrange
+				mockClient.getDevices.mockResolvedValue([SECRET_WASHER_ENTRY]);
+				mockClient.getDeviceProfile.mockResolvedValue(WASHER_PROFILE);
+				mockClient.getDeviceState.mockResolvedValue(WASHER_STATE);
+
+				// Act
+				await cmdConnectProbe(SESSION, { deviceId: 'dev-1', raw: true, showSecrets }, mockLogger);
+
+				// Assert
+				const output = JSON.stringify([...consoleLogSpy.mock.calls, ...consoleErrorSpy.mock.calls]);
+				expect(output).not.toContain(FAKE_PAT);
+			},
+		);
+
+		it('should only call the GET methods of the client when raw is true and the id is set', async () => {
+			// Arrange
+			mockClient.getDevices.mockResolvedValue([RAW_WASHER_ENTRY]);
+			mockClient.getDeviceProfile.mockResolvedValue(WASHER_PROFILE);
+			mockClient.getDeviceState.mockResolvedValue(WASHER_STATE);
+
+			// Act
+			await cmdConnectProbe(SESSION, { deviceId: 'dev-1', raw: true }, mockLogger);
+
+			// Assert
+			expect(Object.keys(mockClient).sort()).toEqual(['getDeviceProfile', 'getDeviceState', 'getDevices']);
+		});
+	});
+
 	describe('partial failures', () => {
 		it('should print the profile error, still print the state summary and set exitCode 1 when only profile fails', async () => {
 			// Arrange
@@ -637,6 +819,61 @@ describe('cmdConnectProbe', () => {
 			// Assert
 			const output = JSON.stringify([...consoleLogSpy.mock.calls, ...consoleErrorSpy.mock.calls]);
 			expect(output).not.toContain(FAKE_PAT);
+		});
+	});
+
+	describe('energy option', () => {
+		it('should never call the energy printer when the energy option is undefined', async () => {
+			// Arrange
+			mockClient.getDevices.mockResolvedValue(DEVICES);
+			mockClient.getDeviceProfile.mockResolvedValue(WASHER_PROFILE);
+			mockClient.getDeviceState.mockResolvedValue(WASHER_STATE);
+
+			// Act
+			await cmdConnectProbe(SESSION, { raw: false }, mockLogger);
+
+			// Assert
+			expect(printConnectEnergy).not.toHaveBeenCalled();
+			expect(printedOutput()).not.toContain('energy');
+		});
+
+		it('should run the energy printer for the given device when energy is set', async () => {
+			// Arrange
+			mockClient.getDeviceProfile.mockResolvedValue(WASHER_PROFILE);
+			mockClient.getDeviceState.mockResolvedValue(WASHER_STATE);
+
+			// Act
+			await cmdConnectProbe(SESSION, { deviceId: 'washer-1', raw: false, energy: { period: 'DAILY' } }, mockLogger);
+
+			// Assert
+			expect(printConnectEnergy).toHaveBeenCalledTimes(1);
+			expect(printConnectEnergy).toHaveBeenCalledWith(expect.anything(), 'washer-1', { period: 'DAILY' });
+		});
+
+		it('should run the energy printer once per listed device, in order, when energy is set', async () => {
+			// Arrange
+			mockClient.getDevices.mockResolvedValue(DEVICES);
+			mockClient.getDeviceProfile.mockResolvedValue(WASHER_PROFILE);
+			mockClient.getDeviceState.mockResolvedValue(WASHER_STATE);
+
+			// Act
+			await cmdConnectProbe(SESSION, { raw: false, energy: { period: 'MONTHLY' } }, mockLogger);
+
+			// Assert
+			expect(vi.mocked(printConnectEnergy).mock.calls.map((call) => call[1])).toEqual(['dev-1', 'dev-2']);
+			expect(printConnectEnergy).toHaveBeenCalledWith(expect.anything(), 'dev-1', { period: 'MONTHLY' });
+		});
+
+		it('should skip the energy printer for a device whose profile and state both failed', async () => {
+			// Arrange
+			mockClient.getDeviceProfile.mockRejectedValue(new ThinqConnectApiError('profile down', undefined, 500));
+			mockClient.getDeviceState.mockRejectedValue(new ThinqConnectApiError('state down', undefined, 500));
+
+			// Act
+			await cmdConnectProbe(SESSION, { deviceId: 'washer-1', raw: false, energy: { period: 'DAILY' } }, mockLogger);
+
+			// Assert
+			expect(printConnectEnergy).not.toHaveBeenCalled();
 		});
 	});
 

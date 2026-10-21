@@ -23,10 +23,13 @@ ${b}Options:${r}
   ${y}--language${r}     Language code (default: en-US)
   ${y}--help${r}         Show this help message
   ${y}--debug${r}        Enable debug logging
+  ${y}--out${r}          File path; also save the command output (colours removed, serial/MAC masked, hdnts links redacted) to it. Not for login. Needs a file path value.
 
 ${b}Devices options:${r}
   ${y}--dump-snapshot${r} Device id; prints its full raw ThinQ snapshot JSON instead of the device list
   ${y}--probe-filter${r}  Device id; sends a filterMngStateCtrl Get probe and prints the raw response JSON
+  ${y}--dump-device${r}   Device id; prints its raw device-list entry (serial/MAC masked)
+  ${y}--show-secrets${r}  Print serialNo/MAC unmasked in --dump-device / connect-probe --raw; tokens are never printed. Put it last or before another --flag
 
 ${b}Energy options:${r}
   ${y}--device${r}       Device id (default: first AC device)
@@ -36,7 +39,16 @@ ${b}Energy options:${r}
 
 ${b}Connect-probe options:${r}
   ${y}--device-id${r}    Device id to probe (default: every device visible to the token)
-  ${y}--raw${r}          Also print the raw profile/state JSON
+  ${y}--raw${r}          Also print the raw GET /devices entry and the raw profile/state JSON
+  ${y}--show-secrets${r} Print serialNo/MAC unmasked with --raw; tokens are never printed. Put it last or before another --flag
+  ${y}--energy${r}       Read-only: also call the Energy API profile and usage for each probed device. Put it last or before another --flag
+  ${y}--energy-period${r} DAILY|MONTHLY (default: DAILY)
+  ${y}--energy-start${r} Usage start: YYYYMMDD for DAILY, YYYYMM for MONTHLY (default: last 7 days / last 3 months)
+  ${y}--energy-end${r}   Usage end, same format as --energy-start
+
+${b}Connect-settings options:${r}
+  ${y}--device-id${r}    Device id to read (default: every device visible to the token)
+  ${y}--brief${r}        Print the settings summary only (omit the raw profile/state JSON)
 
 ${b}Connect-control options:${r}
   ${y}--device-id${r}    Washer device id (required)
@@ -49,6 +61,7 @@ ${row('login', '', 'Authenticate with LG ThinQ (pat = ThinQ Connect Personal Acc
 ${row('devices', '', 'List all discovered ThinQ devices (requires a prior login)')}
 ${row('energy', '[energy options]', 'Print raw AC power/energy snapshot fields (requires a prior login)')}
 ${row('connect-probe', '[connect-probe options]', 'Read-only ThinQ Connect API probe: device profile + state summary (requires a prior PAT login)')}
+${row('connect-settings', '[connect-settings options]', 'Read-only ThinQ Connect settings: every profile property with current value, access, allowed values (requires a prior PAT login)')}
 ${row('connect-control', '[connect-control options]', 'Send ONE guarded control command (POWER_ON|POWER_OFF|START) via ThinQ Connect; dry run unless --yes (requires a prior PAT login)')}
 ${row('help', '', 'Show this help message')}
 
@@ -61,12 +74,20 @@ ${b}Examples:${r}
   npm run cli -- --command ${g}devices${r}
   npm run cli -- --command ${g}devices${r} --dump-snapshot <deviceId>
   npm run cli -- --command ${g}devices${r} --probe-filter <deviceId>
+  npm run cli -- --command ${g}devices${r} --dump-device <deviceId>
+  npm run cli -- --command ${g}devices${r} --dump-device <deviceId> --show-secrets
   npm run cli -- --command ${g}energy${r}
   npm run cli -- --command ${g}energy${r} --samples 5 --interval 10 --keep-alive
   npm run cli -- --command ${g}connect-probe${r}
   npm run cli -- --command ${g}connect-probe${r} --device-id <deviceId>
-  npm run cli -- --command ${g}connect-probe${r} --raw
+  npm run cli -- --command ${g}connect-probe${r} --device-id <deviceId> --raw
+  npm run cli -- --command ${g}connect-probe${r} --device-id <deviceId> --energy
+  npm run cli -- --command ${g}connect-settings${r}
+  npm run cli -- --command ${g}connect-settings${r} --device-id <deviceId>
+  npm run cli -- --command ${g}connect-settings${r} --device-id <deviceId> --brief
+  npm run cli -- --command ${g}connect-settings${r} --out workspace/out/settings.txt
   npm run cli -- --command ${g}connect-control${r} --device-id <deviceId> --send POWER_ON
   npm run cli -- --command ${g}connect-control${r} --device-id <deviceId> --send START --yes
   npm run cli -- --command ${g}connect-control${r} --device-id <deviceId> --send POWER_OFF
+  npm run cli -- --command ${g}connect-probe${r} --device-id <deviceId> --raw --out workspace/out/probe.txt
 `;

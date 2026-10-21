@@ -52,6 +52,88 @@ interface ThinqConnectResourceResponse {
 	response?: unknown;
 }
 
+export const THINQ_CONNECT_ENERGY_PERIODS = ['DAILY', 'MONTHLY'] as const;
+
+export type ThinqConnectEnergyPeriod = (typeof THINQ_CONNECT_ENERGY_PERIODS)[number];
+
+export interface ThinqConnectEnergyUsageQuery {
+	period: ThinqConnectEnergyPeriod;
+	startDate: string;
+	endDate: string;
+	property?: string;
+}
+
+const ENERGY_PROPERTY_PATTERN = /^[A-Za-z0-9_]{1,64}$/;
+const MAX_DAILY_SPAN_DAYS = 31;
+const MAX_MONTHLY_SPAN_MONTHS = 12;
+const MS_PER_DAY = 86_400_000;
+
+function isPlainResource(value: unknown): value is ThinqConnectResource {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function assertValidDeviceId(deviceId: string): void {
+	if (!DEVICE_ID_PATTERN.test(deviceId)) {
+		throw new ThinqConnectApiError('ThinQ Connect device id has an invalid format');
+	}
+}
+
+/** Parses `YYYYMMDD` as a real calendar day (UTC day number), or `undefined`. */
+function parseDailyDate(value: string): number | undefined {
+	if (!/^\d{8}$/.test(value)) {
+		return undefined;
+	}
+	const year = Number(value.slice(0, 4));
+	const month = Number(value.slice(4, 6));
+	const day = Number(value.slice(6, 8));
+	const date = new Date(Date.UTC(year, month - 1, day));
+	if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+		return undefined;
+	}
+	return date.getTime() / MS_PER_DAY;
+}
+
+/** Parses `YYYYMM` into a month index (year * 12 + month), or `undefined`. */
+function parseMonthlyDate(value: string): number | undefined {
+	if (!/^\d{6}$/.test(value)) {
+		return undefined;
+	}
+	const month = Number(value.slice(4, 6));
+	if (month < 1 || month > 12) {
+		return undefined;
+	}
+	return Number(value.slice(0, 4)) * 12 + (month - 1);
+}
+
+function assertValidEnergyQuery(query: ThinqConnectEnergyUsageQuery): void {
+	if (!THINQ_CONNECT_ENERGY_PERIODS.includes(query.period)) {
+		throw new ThinqConnectApiError('ThinQ Connect energy period must be DAILY or MONTHLY');
+	}
+	if (query.property !== undefined && !ENERGY_PROPERTY_PATTERN.test(query.property)) {
+		throw new ThinqConnectApiError('ThinQ Connect energy property has an invalid format');
+	}
+	const daily = query.period === 'DAILY';
+	const parse = daily ? parseDailyDate : parseMonthlyDate;
+	const format = daily ? 'YYYYMMDD' : 'YYYYMM';
+	const start = parse(query.startDate);
+	const end = parse(query.endDate);
+	if (start === undefined || end === undefined) {
+		throw new ThinqConnectApiError(`ThinQ Connect energy dates must be valid ${format} values for ${query.period}`);
+	}
+	if (start > end) {
+		throw new ThinqConnectApiError('ThinQ Connect energy startDate must not be after endDate');
+	}
+	const span = end - start + 1;
+	if (daily && span > MAX_DAILY_SPAN_DAYS) {
+		throw new ThinqConnectApiError(`ThinQ Connect energy DAILY range is limited to ${MAX_DAILY_SPAN_DAYS} days`);
+	}
+	if (!daily && span > MAX_MONTHLY_SPAN_MONTHS) {
+		throw new ThinqConnectApiError(
+			`ThinQ Connect energy MONTHLY range is limited to ${MAX_MONTHLY_SPAN_MONTHS} months`,
+		);
+	}
+}
+
 /** Client for the official LG ThinQ Connect API, authenticated with a Personal Access Token; the only write is `controlDevice`. */
 export class ThinqConnectApiClient {
 	private readonly personalAccessToken: string;
@@ -100,6 +182,24 @@ export class ThinqConnectApiClient {
 		return typeof response === 'object' && response !== null ? (response as ThinqConnectResource) : {};
 	}
 
+	public async getEnergyProfile(deviceId: string): Promise<ThinqConnectResource> {
+		assertValidDeviceId(deviceId);
+		return this.getEnergyResource(`/devices/energy/${encodeURIComponent(deviceId)}/profile`);
+	}
+
+	public async getEnergyUsage(deviceId: string, query: ThinqConnectEnergyUsageQuery): Promise<ThinqConnectResource> {
+		assertValidDeviceId(deviceId);
+		assertValidEnergyQuery(query);
+		const params = new URLSearchParams();
+		if (query.property !== undefined) {
+			params.set('property', query.property);
+		}
+		params.set('period', query.period);
+		params.set('startDate', query.startDate);
+		params.set('endDate', query.endDate);
+		return this.getEnergyResource(`/devices/energy/${encodeURIComponent(deviceId)}/usage?${params.toString()}`);
+	}
+
 	public async validateToken(): Promise<ThinqConnectValidationResult> {
 		const devices = await this.getDevices();
 		return { deviceCount: devices.length, devices };
@@ -114,10 +214,14 @@ export class ThinqConnectApiClient {
 		return typeof response === 'object' && response !== null ? (response as ThinqConnectResource) : {};
 	}
 
+	private async getEnergyResource(path: string): Promise<ThinqConnectResource> {
+		const data = await this.get<ThinqConnectResourceResponse>(path);
+		const { response } = data;
+		return isPlainResource(response) ? response : {};
+	}
+
 	private devicePath(deviceId: string, suffix: '/control' | '/profile' | '/state'): string {
-		if (!DEVICE_ID_PATTERN.test(deviceId)) {
-			throw new ThinqConnectApiError('ThinQ Connect device id has an invalid format');
-		}
+		assertValidDeviceId(deviceId);
 		return `/devices/${encodeURIComponent(deviceId)}${suffix}`;
 	}
 

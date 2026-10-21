@@ -35,6 +35,8 @@ export interface ThinqDevice {
 	readonly online: boolean;
 	readonly snapshot: ThinqSnapshot;
 	readonly modelJsonUri?: string;
+	/** Real LG serial from `manufacture.serialNo`; undefined when absent or blank. */
+	readonly serialNumber?: string;
 }
 
 /** ThinQ device narrowed to the AirConditioner type (`deviceType === 401`, `type === 'AC'`). */
@@ -59,6 +61,14 @@ export function isWasherDevice(device: ThinqDevice): device is ThinqWasherDevice
 	return device.type === 'WASHER';
 }
 
+function normalizeSerial(raw: unknown): string | undefined {
+	if (typeof raw !== 'string') {
+		return undefined;
+	}
+	const trimmed = raw.trim();
+	return trimmed === '' ? undefined : trimmed;
+}
+
 /** Maps a raw `ThinqDeviceData` REST response into the generic `ThinqDevice` domain entity. */
 export function toThinqDevice(data: ThinqDeviceData): ThinqDevice {
 	return {
@@ -70,5 +80,6 @@ export function toThinqDevice(data: ThinqDeviceData): ThinqDevice {
 		online: data.online ?? data.snapshot.online ?? false,
 		snapshot: new ThinqSnapshot(data.snapshot),
 		modelJsonUri: data.modelJsonUri,
+		serialNumber: normalizeSerial(data.manufacture?.serialNo),
 	};
 }

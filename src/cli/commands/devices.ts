@@ -3,13 +3,20 @@ import { AnsiLogger } from 'matterbridge/logger';
 import { toThinqDevice } from '../../core/domain/entities/ThinqDevice.js';
 import { ThinqSession } from '../../services/thinq/session.js';
 import { ThinqApiClient } from '../../services/thinq/thinqApiClient.js';
+import { maskDeviceEntry } from '../maskDeviceEntry.js';
 import type { CliSession } from '../types.js';
+
+export interface DevicesDumpOptions {
+	dumpDeviceId?: string;
+	showSecrets?: boolean;
+}
 
 export async function cmdDevices(
 	session: CliSession,
 	logger: AnsiLogger,
 	dumpSnapshotDeviceId?: string,
 	probeFilterDeviceId?: string,
+	dumpOptions: DevicesDumpOptions = {},
 ): Promise<void> {
 	const { userData, country, language } = session;
 
@@ -36,6 +43,18 @@ export async function cmdDevices(
 	}
 
 	const rawDevices = await apiClient.getListDevices();
+
+	if (dumpOptions.dumpDeviceId) {
+		const entry = rawDevices.find((d) => d.deviceId === dumpOptions.dumpDeviceId);
+		if (!entry) {
+			console.error(`Device not found: ${dumpOptions.dumpDeviceId}`);
+			process.exitCode = 1;
+			return;
+		}
+		console.log(JSON.stringify(maskDeviceEntry(entry, dumpOptions.showSecrets === true), null, 2));
+		return;
+	}
+
 	const devices = rawDevices.map(toThinqDevice);
 
 	if (devices.length === 0) {

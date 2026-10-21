@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { resolveThinqGeneration } from '../../platform/thinqGeneration.js';
 
 describe('resolveThinqGeneration', () => {
-	it('should return v2 when the login type is pat', () => {
+	it('should return connect when the login type is pat', () => {
 		// Arrange
 		const loginType = 'pat';
 
@@ -11,7 +11,7 @@ describe('resolveThinqGeneration', () => {
 		const generation = resolveThinqGeneration(loginType);
 
 		// Assert
-		expect(generation).toBe('v2');
+		expect(generation).toBe('connect');
 	});
 
 	it('should return v1 when the login type is account', () => {

@@ -42,6 +42,75 @@ describe('thinqWasherEndpointFactory', () => {
 		vi.clearAllMocks();
 	});
 
+	describe('real serial number on BasicInformation', () => {
+		it('should pass serialNumber as the BasicInformation serial and keep device.id for the LaundryWasher id', () => {
+			// Arrange
+			const device = { ...createMockWasherDevice(), serialNumber: 'FAKESERIAL01' };
+			const laundryWasherSpy = vi.mocked(LaundryWasher);
+
+			// Act
+			buildWasherEndpoint(device);
+
+			// Assert
+			expect(laundryWasherSpy).toHaveBeenCalledWith('Living Room Washer', 'washer-123');
+			const mockInstance = laundryWasherSpy.mock.results[0]?.value;
+			expect(mockInstance?.createDefaultBasicInformationClusterServer).toHaveBeenCalledWith(
+				'Living Room Washer',
+				'FAKESERIAL01',
+				0xfff1,
+				'Matterbridge',
+				0x8000,
+				'Matterbridge Laundry Washer',
+			);
+		});
+
+		it('should fall back to device.id as the BasicInformation serial when serialNumber is absent', () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const laundryWasherSpy = vi.mocked(LaundryWasher);
+
+			// Act
+			buildWasherEndpoint(device);
+
+			// Assert
+			const mockInstance = laundryWasherSpy.mock.results[0]?.value;
+			expect(mockInstance?.createDefaultBasicInformationClusterServer).toHaveBeenCalledWith(
+				'Living Room Washer',
+				'washer-123',
+				0xfff1,
+				'Matterbridge',
+				0x8000,
+				'Matterbridge Laundry Washer',
+			);
+		});
+
+		it('should pass serialNumber together with all four identity overrides', () => {
+			// Arrange
+			const device = { ...createMockWasherDevice(), serialNumber: 'FAKESERIAL01' };
+			const laundryWasherSpy = vi.mocked(LaundryWasher);
+
+			// Act
+			buildWasherEndpoint(device, {
+				vendorId: 4996,
+				vendorName: 'LG',
+				productId: 1,
+				productName: 'My Washer',
+			});
+
+			// Assert
+			expect(laundryWasherSpy).toHaveBeenCalledWith('Living Room Washer', 'washer-123');
+			const mockInstance = laundryWasherSpy.mock.results[0]?.value;
+			expect(mockInstance?.createDefaultBasicInformationClusterServer).toHaveBeenCalledWith(
+				'Living Room Washer',
+				'FAKESERIAL01',
+				4996,
+				'LG',
+				1,
+				'My Washer',
+			);
+		});
+	});
+
 	describe('buildWasherEndpoint', () => {
 		it('should create a LaundryWasher endpoint with device name and id', () => {
 			// Arrange

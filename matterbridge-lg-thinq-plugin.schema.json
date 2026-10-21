@@ -514,6 +514,42 @@
 										"description": "Create at https://connect-pat.lgthinq.com. Used with the Country above.",
 										"type": "string",
 										"ui:widget": "password"
+									},
+									"devices": {
+										"title": "ThinQ Devices",
+										"description": "Auto-populated on discovery. Set Ignore or product overrides per washer or air conditioner.",
+										"type": "array",
+										"items": {
+											"type": "object",
+											"properties": {
+												"deviceId": {
+													"title": "Device ID",
+													"type": "string"
+												},
+												"deviceType": {
+													"title": "Device Type",
+													"type": "string",
+													"enum": ["AC", "WASHER"],
+													"readOnly": true
+												},
+												"ignore": {
+													"title": "Ignore This Device",
+													"description": "Skip this device entirely — it will not be registered as a Matter accessory. If it was previously registered, its existing Matter accessory will be removed.",
+													"type": "boolean"
+												},
+												"productName": {
+													"title": "Product Name Override",
+													"description": "Override the Matter product name shown for this device. Only applied when Override Matter Configuration is enabled in Advanced Features.",
+													"type": "string"
+												},
+												"productId": {
+													"title": "Product ID Override",
+													"description": "Override the Matter product id shown for this device. Only applied when Override Matter Configuration is enabled in Advanced Features.",
+													"type": "number"
+												}
+											},
+											"required": ["deviceId"]
+										}
 									}
 								},
 								"required": ["personalAccessToken"]

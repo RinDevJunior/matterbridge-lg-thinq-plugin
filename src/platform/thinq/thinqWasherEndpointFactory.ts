@@ -27,7 +27,7 @@ export function buildWasherEndpoint(
 	const washer = new LaundryWasher(device.name, device.id);
 	washer.createDefaultBasicInformationClusterServer(
 		device.name,
-		device.id,
+		device.serialNumber ?? device.id,
 		options?.vendorId ?? 0xfff1,
 		options?.vendorName ?? 'Matterbridge',
 		options?.productId ?? 0x8000,

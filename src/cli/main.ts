@@ -1,11 +1,14 @@
 import { AnsiLogger, LogLevel } from 'matterbridge/logger';
 
 import { cmdConnectControl } from './commands/connectControl.js';
-import { cmdConnectProbe } from './commands/connectProbe.js';
+import { parseConnectEnergyOptions } from './commands/connectEnergy.js';
+import { cmdConnectProbe, type ConnectProbeOptions } from './commands/connectProbe.js';
+import { cmdConnectSettings } from './commands/connectSettings.js';
 import { cmdDevices } from './commands/devices.js';
 import { cmdEnergy, parseEnergyOptions } from './commands/energy.js';
 import { type CliLoginType, cmdLogin } from './commands/login.js';
 import { HELP_TEXT } from './help.js';
+import { type OutputCapture, startOutputCapture } from './outputCapture.js';
 import { loadPatSession, loadSession } from './session.js';
 import { parseArgs } from './utils.js';
 
@@ -21,6 +24,26 @@ export async function main(): Promise<void> {
 
 	const debug = args['debug'] === 'true';
 	const logger = AnsiLogger.create({ logName: 'CLI', logLevel: debug ? LogLevel.DEBUG : LogLevel.WARN });
+
+	let capture: OutputCapture | undefined;
+	if (args['out'] !== undefined) {
+		if (command === 'login') {
+			console.error('--out is not supported for login (it prompts for secrets).');
+			process.exitCode = 1;
+			return;
+		}
+		try {
+			capture = startOutputCapture(args['out'], {
+				command,
+				country: args['country'],
+				showSecrets: args['show-secrets'] === 'true',
+			});
+		} catch (err) {
+			console.error(`--out: ${err instanceof Error ? err.message : String(err)}`);
+			process.exitCode = 1;
+			return;
+		}
+	}
 
 	try {
 		if (command === 'login') {
@@ -42,7 +65,10 @@ export async function main(): Promise<void> {
 
 			const dumpSnapshotDeviceId = args['dump-snapshot'];
 			const probeFilterDeviceId = args['probe-filter'];
-			await cmdDevices(session, logger, dumpSnapshotDeviceId, probeFilterDeviceId);
+			await cmdDevices(session, logger, dumpSnapshotDeviceId, probeFilterDeviceId, {
+				dumpDeviceId: args['dump-device'],
+				showSecrets: args['show-secrets'] === 'true',
+			});
 			return;
 		}
 
@@ -67,7 +93,34 @@ export async function main(): Promise<void> {
 				return;
 			}
 
-			await cmdConnectProbe(patSession, { deviceId: args['device-id'], raw: args['raw'] === 'true' }, logger);
+			const probeOptions: ConnectProbeOptions = {
+				deviceId: args['device-id'],
+				raw: args['raw'] === 'true',
+				showSecrets: args['show-secrets'] === 'true',
+			};
+			if (args['energy'] === 'true') {
+				const parsed = parseConnectEnergyOptions(args);
+				if ('error' in parsed) {
+					console.error(parsed.error);
+					process.exitCode = 1;
+					return;
+				}
+				probeOptions.energy = parsed.options;
+			}
+
+			await cmdConnectProbe(patSession, probeOptions, logger);
+			return;
+		}
+
+		if (command === 'connect-settings') {
+			const patSession = loadPatSession();
+			if (!patSession) {
+				console.error('No PAT session found. Run `--command login --type pat` first.');
+				process.exitCode = 1;
+				return;
+			}
+
+			await cmdConnectSettings(patSession, { deviceId: args['device-id'], brief: args['brief'] === 'true' }, logger);
 			return;
 		}
 
@@ -90,9 +143,13 @@ export async function main(): Promise<void> {
 		}
 
 		console.error(`Unknown command: ${command}\n\n${HELP_TEXT}`);
+		capture?.finish();
 		process.exit(1);
 	} catch (err) {
 		console.error('Error:', err instanceof Error ? err.message : String(err));
+		capture?.finish();
 		process.exit(1);
+	} finally {
+		capture?.finish();
 	}
 }

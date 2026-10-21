@@ -78,6 +78,21 @@ describe('HELP_TEXT', () => {
 		expect(section).toContain('START');
 	});
 
+	it('should document the --out option, its file-path requirement and an example path', () => {
+		// Assert
+		expect(HELP_TEXT).toContain('--out');
+		expect(HELP_TEXT).toContain('Needs a file path value');
+		expect(HELP_TEXT).toContain('workspace/out/probe.txt');
+	});
+
+	it('should document the connect-settings command, its --brief option and an example', () => {
+		// Assert
+		expect(HELP_TEXT).toContain('connect-settings');
+		expect(HELP_TEXT).toContain('Connect-settings options:');
+		expect(HELP_TEXT).toContain('--brief');
+		expect(HELP_TEXT).toMatch(/--command .*connect-settings/);
+	});
+
 	it('should document a POWER_OFF connect-control example', () => {
 		// Assert
 		expect(HELP_TEXT).toMatch(/--command .*connect-control.*--send POWER_OFF/);

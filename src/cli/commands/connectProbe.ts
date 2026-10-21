@@ -6,11 +6,15 @@ import {
 	type ThinqConnectPayload,
 	type ThinqConnectResource,
 } from '../../services/thinqConnect/thinqConnectApiClient.js';
+import { maskDeviceEntry } from '../maskDeviceEntry.js';
 import type { CliPatSession } from '../types.js';
+import { type ConnectEnergyOptions, printConnectEnergy } from './connectEnergy.js';
 
 export interface ConnectProbeOptions {
 	deviceId?: string;
 	raw: boolean;
+	showSecrets?: boolean;
+	energy?: ConnectEnergyOptions;
 }
 
 export interface ConnectProbeSummary {
@@ -181,7 +185,21 @@ export async function cmdConnectProbe(
 	}
 
 	let targets: ThinqConnectDevice[];
-	if (options.deviceId) {
+	let notListed = false;
+	if (options.deviceId && options.raw) {
+		const deviceId = options.deviceId;
+		try {
+			const listed = await client.getDevices();
+			const entry = Array.isArray(listed) ? listed.find((d) => d.deviceId === deviceId) : undefined;
+			notListed = entry === undefined;
+			targets = [entry ?? { deviceId }];
+		} catch (error) {
+			console.error('Device list failed:', errorMessage(error));
+			process.exitCode = 1;
+			notListed = true;
+			targets = [{ deviceId }];
+		}
+	} else if (options.deviceId) {
 		targets = [{ deviceId: options.deviceId }];
 	} else {
 		try {
@@ -204,6 +222,12 @@ export async function cmdConnectProbe(
 		console.log(
 			`Device: ${info?.alias ?? '(no alias)'} [${info?.deviceType ?? 'unknown'}] ${info?.modelName ?? ''} (${device.deviceId})`,
 		);
+		if (options.raw) {
+			console.log(`  raw device: ${JSON.stringify(maskDeviceEntry(device, options.showSecrets === true), null, 2)}`);
+			if (notListed) {
+				console.log('  (device not present in GET /devices)');
+			}
+		}
 
 		let profile: ThinqConnectPayload | undefined;
 		let state: ThinqConnectPayload | undefined;
@@ -234,6 +258,9 @@ export async function cmdConnectProbe(
 			if (state !== undefined) {
 				console.log(`  raw state: ${JSON.stringify(state, null, 2)}`);
 			}
+		}
+		if (options.energy) {
+			await printConnectEnergy(client, device.deviceId, options.energy);
 		}
 	}
 }

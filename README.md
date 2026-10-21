@@ -80,15 +80,20 @@ Besides username/password and refresh token, you can sign in with a Personal Acc
 
 What it does today:
 
-- Only washers are registered. Each one appears as a Matter washer that Google Home can turn on and off.
-- On is any state except `POWER_OFF`. Off and on commands are refused while the washer is running or paused, or when its state is unknown.
+- Washers and air conditioners are registered as separate Matter devices (`server` mode). Each one is paired on its own with its own pairing code, exactly like the account login.
+- Washer: appears as a Matter washer that Google Home can turn on and off. On is any state except `POWER_OFF`. Off and on commands are refused while the washer is running or paused, or when its state is unknown.
+- Washer Start and Stop: Start is sent only from `INITIAL` with Remote Start not off, Stop only while running or paused. Anything else is refused and the tile falls back to the real state. The plugin never powers the washer on for a Start.
+- Air conditioner: power, target temperature (Celsius), fan speed, swing, room temperature, humidity (on units that report it) and read-only filter life. Home shows Cool and Off.
 - After a command, the state is re-read about 3 s later.
-- Washer state is polled every `refreshIntervalSeconds` (the Refresh Interval setting). Values below 15 s are raised to 15 s.
+- State is polled every `refreshIntervalSeconds` (the Refresh Interval setting). Values below 15 s are raised to 15 s.
+- Each washer and air conditioner is added automatically to the ThinQ Devices list in the plugin settings. `Ignore`, product name and product ID work for PAT devices too; restart the plugin after changing them.
+- The air conditioner's room temperature is also reported as a Matter temperature sensor.
+- Because PAT devices now run in server mode, they get new device IDs. Remove any previously paired PAT washer or air conditioner from your controller and pair it again with its new pairing code.
 
 Limits:
 
-- Washers only. Air conditioners are not supported with PAT login.
-- No start, stop or pause (the CLI `connect-control` can send START, but the plugin does not).
+- Air conditioner: no heat mode, energy monitoring, filter reset, swing angle, dust values, display light, timers or wind steps.
+- Washer Start and Stop work through ThinQ Connect only when the washer is idle (`INITIAL`) with Remote Start on; START has not been tested on hardware yet. Pause and resume are not available.
 - No push updates, only polling.
 
 ---

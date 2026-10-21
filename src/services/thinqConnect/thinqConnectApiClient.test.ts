@@ -4,8 +4,8 @@ import type { Mock } from 'vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ThinqConnectApiError } from '../../errors/index.js';
-import { createMockLogger } from '../../tests/helpers/testUtils.js';
-import { ThinqConnectApiClient } from './thinqConnectApiClient.js';
+import { asPartial, createMockLogger } from '../../tests/helpers/testUtils.js';
+import { ThinqConnectApiClient, type ThinqConnectEnergyUsageQuery } from './thinqConnectApiClient.js';
 
 const FAKE_PAT = 'pat-secret-1234567890';
 const AIC_DEVICES_URL = 'https://api-aic.lgthinq.com/devices';
@@ -480,6 +480,222 @@ describe('ThinqConnectApiClient', () => {
 					metadata: (error as ThinqConnectApiError).metadata,
 				}),
 			).not.toContain(FAKE_PAT);
+		});
+	});
+
+	describe('getEnergyProfile and getEnergyUsage', () => {
+		const ENERGY_BASE = 'https://api-aic.lgthinq.com/devices/energy/dev-1';
+		const DAILY_QUERY: ThinqConnectEnergyUsageQuery = {
+			period: 'DAILY',
+			startDate: '20250901',
+			endDate: '20250907',
+		};
+
+		it('should send GET to the energy profile path on the aic host when country is US', async () => {
+			// Arrange
+			mockAxios.onGet().reply(200, { response: { resultCode: '0000', result: { property: ['energyUsage'] } } });
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act
+			await client.getEnergyProfile('dev-1');
+
+			// Assert
+			expect(mockAxios.history.get).toHaveLength(1);
+			expect(mockAxios.history.get[0]?.url).toBe(`${ENERGY_BASE}/profile`);
+		});
+
+		it('should return the response object of the energy profile', async () => {
+			// Arrange
+			mockAxios.onGet().reply(200, { response: { resultCode: '0000', result: { property: ['energyUsage'] } } });
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act
+			const result = await client.getEnergyProfile('dev-1');
+
+			// Assert
+			expect(result).toEqual({ resultCode: '0000', result: { property: ['energyUsage'] } });
+		});
+
+		it.each([
+			['missing', {}],
+			['an array', { response: [1, 2] }],
+			['a string', { response: 'nope' }],
+		])('should return an empty object when the response is %s', async (_label, body) => {
+			// Arrange
+			mockAxios.onGet().reply(200, body);
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act
+			const result = await client.getEnergyProfile('dev-1');
+
+			// Assert
+			expect(result).toEqual({});
+		});
+
+		it('should build the usage query in the order property, period, startDate, endDate', async () => {
+			// Arrange
+			mockAxios.onGet().reply(200, { response: {} });
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act
+			await client.getEnergyUsage('dev-1', { ...DAILY_QUERY, property: 'energyUsage' });
+
+			// Assert
+			expect(mockAxios.history.get[0]?.url).toBe(
+				`${ENERGY_BASE}/usage?property=energyUsage&period=DAILY&startDate=20250901&endDate=20250907`,
+			);
+		});
+
+		it('should omit the property parameter when no property is given', async () => {
+			// Arrange
+			mockAxios.onGet().reply(200, { response: {} });
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act
+			await client.getEnergyUsage('dev-1', DAILY_QUERY);
+
+			// Assert
+			expect(mockAxios.history.get[0]?.url).toBe(
+				`${ENERGY_BASE}/usage?period=DAILY&startDate=20250901&endDate=20250907`,
+			);
+		});
+
+		it('should accept a MONTHLY query with YYYYMM dates', async () => {
+			// Arrange
+			mockAxios.onGet().reply(200, { response: {} });
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act
+			await client.getEnergyUsage('dev-1', { period: 'MONTHLY', startDate: '202501', endDate: '202503' });
+
+			// Assert
+			expect(mockAxios.history.get[0]?.url).toBe(`${ENERGY_BASE}/usage?period=MONTHLY&startDate=202501&endDate=202503`);
+		});
+
+		it.each([
+			['a 31-day DAILY span', { startDate: '20250901', endDate: '20251001' }],
+			['a 12-month MONTHLY span', { period: 'MONTHLY' as const, startDate: '202501', endDate: '202512' }],
+		])('should accept %s', async (_label, overrides) => {
+			// Arrange
+			mockAxios.onGet().reply(200, { response: {} });
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act & Assert
+			await expect(client.getEnergyUsage('dev-1', { ...DAILY_QUERY, ...overrides })).resolves.toEqual({});
+			expect(mockAxios.history.get).toHaveLength(1);
+		});
+
+		it.each([
+			['a device id with spaces', 'dev 1', DAILY_QUERY, 'ThinQ Connect device id has an invalid format'],
+			['a 129-character device id', 'a'.repeat(129), DAILY_QUERY, 'ThinQ Connect device id has an invalid format'],
+			[
+				'an unknown period',
+				'dev-1',
+				{ ...DAILY_QUERY, period: 'WEEKLY' as ThinqConnectEnergyUsageQuery['period'] },
+				'energy period must be DAILY or MONTHLY',
+			],
+			['a DAILY date with dashes', 'dev-1', { ...DAILY_QUERY, startDate: '2025-09-01' }, 'dates must be valid'],
+			[
+				'a DAILY date that is not a real day',
+				'dev-1',
+				{ ...DAILY_QUERY, startDate: '20250230' },
+				'dates must be valid',
+			],
+			['a DAILY date in YYYYMM form', 'dev-1', { ...DAILY_QUERY, startDate: '202509' }, 'dates must be valid'],
+			[
+				'a MONTHLY date in YYYYMMDD form',
+				'dev-1',
+				{ period: 'MONTHLY' as const, startDate: '20250901', endDate: '20250901' },
+				'dates must be valid',
+			],
+			[
+				'a MONTHLY month of 13',
+				'dev-1',
+				{ period: 'MONTHLY' as const, startDate: '202513', endDate: '202513' },
+				'dates must be valid',
+			],
+			[
+				'a start date after the end date',
+				'dev-1',
+				{ ...DAILY_QUERY, startDate: '20250907', endDate: '20250901' },
+				'must not be after endDate',
+			],
+			['a 32-day DAILY span', 'dev-1', { ...DAILY_QUERY, startDate: '20250901', endDate: '20251002' }, '31 days'],
+			[
+				'a 13-month MONTHLY span',
+				'dev-1',
+				{ period: 'MONTHLY' as const, startDate: '202501', endDate: '202601' },
+				'limited to 12 months',
+			],
+			[
+				'a property containing an ampersand',
+				'dev-1',
+				{ ...DAILY_QUERY, property: 'energyUsage&x=1' },
+				'energy property has an invalid format',
+			],
+			[
+				'a property containing a space',
+				'dev-1',
+				{ ...DAILY_QUERY, property: 'energy usage' },
+				'energy property has an invalid format',
+			],
+		])('should reject before any HTTP call when the request has %s', async (_label, deviceId, query, message) => {
+			// Arrange
+			mockAxios.onGet().reply(200, { response: {} });
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act & Assert
+			await expect(client.getEnergyUsage(deviceId, asPartial<ThinqConnectEnergyUsageQuery>(query))).rejects.toThrow(
+				message,
+			);
+			expect(mockAxios.history.get).toHaveLength(0);
+		});
+
+		it('should throw a ThinqConnectApiError with resultCode 1221 and a not-supported message on an HTTP error', async () => {
+			// Arrange
+			mockAxios.onGet().reply(400, { error: { code: '1221' } });
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act & Assert
+			await expect(client.getEnergyProfile('dev-1')).rejects.toMatchObject({
+				metadata: { resultCode: '1221' },
+			});
+			await expect(client.getEnergyProfile('dev-1')).rejects.toThrow(/not supported/);
+		});
+
+		it('should return a 200 body with resultCode 1221 unchanged without throwing', async () => {
+			// Arrange
+			mockAxios.onGet().reply(200, { response: { resultCode: '1221' } });
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act
+			const result = await client.getEnergyUsage('dev-1', DAILY_QUERY);
+
+			// Assert
+			expect(result).toEqual({ resultCode: '1221' });
+		});
+
+		it('should never log the PAT while calling the energy endpoints', async () => {
+			// Arrange
+			mockAxios.onGet(new RegExp('/usage')).reply(400, { error: { code: '1221' } });
+			mockAxios.onGet().reply(200, { response: { resultCode: '0000' } });
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act
+			await client.getEnergyProfile('dev-1');
+			await client.getEnergyUsage('dev-1', DAILY_QUERY).catch(() => undefined);
+
+			// Assert
+			expect(JSON.stringify(collectLogCallArgs(mockLogger))).not.toContain(FAKE_PAT);
+		});
+
+		it('should keep the same invalid-format message for getDeviceProfile with a bad id', async () => {
+			// Arrange
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act & Assert
+			await expect(client.getDeviceProfile('bad id')).rejects.toThrow('ThinQ Connect device id has an invalid format');
+			expect(mockAxios.history.get).toHaveLength(0);
 		});
 	});
 

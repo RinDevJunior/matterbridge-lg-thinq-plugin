@@ -4,11 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ThinqConnectApiError } from '../../errors/index.js';
 import type { ThinqConnectPayload } from '../../services/thinqConnect/thinqConnectApiClient.js';
 import {
-	THINQ_V2_POST_COMMAND_REFRESH_DELAY_MS,
-	type ThinqV2ConnectClient,
-	type ThinqV2Washer,
-	ThinqV2WasherService,
-} from '../../thinqV2/thinqV2WasherService.js';
+	THINQ_CONNECT_WASHER_POST_COMMAND_REFRESH_DELAY_MS,
+	type ThinqConnectWasher,
+	type ThinqConnectWasherClient,
+	ThinqConnectWasherService,
+} from '../../thinqConnect/thinqConnectWasherService.js';
 import { createMockLogger } from '../helpers/testUtils.js';
 
 interface MockClient {
@@ -34,28 +34,44 @@ const WASHER_PROFILE: ThinqConnectPayload = [
 	},
 ];
 
-function washerState(currentState: string, locationName = 'MAIN'): ThinqConnectPayload {
-	return [{ location: { locationName }, runState: { currentState }, operation: { washerOperationMode: 'POWER_ON' } }];
+function washerState(
+	currentState: string,
+	locationName = 'MAIN',
+	timer?: { remainHour?: number; remainMinute?: number },
+	remoteControlEnabled?: boolean,
+): ThinqConnectPayload {
+	return [
+		{
+			location: { locationName },
+			runState: { currentState },
+			...(timer === undefined ? {} : { timer }),
+			...(remoteControlEnabled === undefined ? {} : { remoteControlEnable: { remoteControlEnabled } }),
+			operation: { washerOperationMode: 'POWER_ON' },
+		},
+	];
 }
 
-const WASHER: ThinqV2Washer = {
+const START_PAYLOAD = { location: { locationName: 'MAIN' }, operation: { washerOperationMode: 'START' } };
+const STOP_PAYLOAD = { location: { locationName: 'MAIN' }, operation: { washerOperationMode: 'STOP' } };
+
+const WASHER: ThinqConnectWasher = {
 	deviceId: 'w1',
 	name: 'Laundry',
 	locationName: 'MAIN',
 	operationMode: { writable: true, allowedValues: ['START', 'STOP', 'POWER_OFF', 'POWER_ON'] },
 };
 
-describe('ThinqV2WasherService', () => {
+describe('ThinqConnectWasherService', () => {
 	let logger: ReturnType<typeof createMockLogger>;
 	let client: MockClient;
-	let service: ThinqV2WasherService;
+	let service: ThinqConnectWasherService;
 
 	beforeEach(() => {
 		vi.clearAllMocks();
 		vi.useFakeTimers();
 		logger = createMockLogger();
 		client = createMockClient();
-		service = new ThinqV2WasherService(client satisfies ThinqV2ConnectClient, logger);
+		service = new ThinqConnectWasherService(client satisfies ThinqConnectWasherClient, logger);
 	});
 
 	afterEach(() => {
@@ -178,6 +194,28 @@ describe('ThinqV2WasherService', () => {
 
 			// Assert
 			expect(state).toEqual({ currentState: 'RUNNING', powerOn: true });
+		});
+
+		it('should include remainingSeconds computed from the timer', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(washerState('RUNNING', 'MAIN', { remainHour: 0, remainMinute: 45 }));
+
+			// Act
+			const state = await service.readState(WASHER);
+
+			// Assert
+			expect(state).toEqual({ currentState: 'RUNNING', powerOn: true, remainingSeconds: 2700 });
+		});
+
+		it('should leave remainingSeconds undefined when the state has no timer', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(washerState('RUNNING'));
+
+			// Act
+			const state = await service.readState(WASHER);
+
+			// Assert
+			expect(state.remainingSeconds).toBeUndefined();
 		});
 
 		it('should return powerOn false when the washer is POWER_OFF', async () => {
@@ -317,7 +355,7 @@ describe('ThinqV2WasherService', () => {
 		it('should refuse when the profile is not writable', async () => {
 			// Arrange
 			client.getDeviceState.mockResolvedValue(washerState('INITIAL'));
-			const readOnlyWasher: ThinqV2Washer = {
+			const readOnlyWasher: ThinqConnectWasher = {
 				...WASHER,
 				operationMode: { writable: false, allowedValues: ['POWER_OFF'] },
 			};
@@ -333,7 +371,7 @@ describe('ThinqV2WasherService', () => {
 		it('should refuse when the value is not listed in the profile', async () => {
 			// Arrange
 			client.getDeviceState.mockResolvedValue(washerState('POWER_OFF'));
-			const limitedWasher: ThinqV2Washer = {
+			const limitedWasher: ThinqConnectWasher = {
 				...WASHER,
 				operationMode: { writable: true, allowedValues: ['START'] },
 			};
@@ -481,7 +519,7 @@ describe('ThinqV2WasherService', () => {
 
 			// Act
 			await service.setPower(WASHER, true);
-			await vi.advanceTimersByTimeAsync(THINQ_V2_POST_COMMAND_REFRESH_DELAY_MS);
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_WASHER_POST_COMMAND_REFRESH_DELAY_MS);
 
 			// Assert
 			expect(client.getDeviceState.mock.calls.length - readsBefore).toBe(2);
@@ -511,10 +549,385 @@ describe('ThinqV2WasherService', () => {
 
 			// Act
 			service.stopPolling();
-			await vi.advanceTimersByTimeAsync(THINQ_V2_POST_COMMAND_REFRESH_DELAY_MS);
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_WASHER_POST_COMMAND_REFRESH_DELAY_MS);
 
 			// Assert
 			expect(client.getDeviceState.mock.calls.length).toBe(readsBefore);
+		});
+	});
+
+	describe('readState remoteControlEnabled', () => {
+		it('should return remoteControlEnabled true when the washer reports remote control on', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(washerState('INITIAL', 'MAIN', undefined, true));
+
+			// Act
+			const state = await service.readState(WASHER);
+
+			// Assert
+			expect(state.remoteControlEnabled).toBe(true);
+		});
+
+		it('should return remoteControlEnabled false (not undefined) when the washer reports remote control off', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(washerState('INITIAL', 'MAIN', undefined, false));
+
+			// Act
+			const state = await service.readState(WASHER);
+
+			// Assert
+			expect(state.remoteControlEnabled).toBe(false);
+		});
+
+		it('should leave remoteControlEnabled undefined when the key is absent', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(washerState('INITIAL'));
+
+			// Act
+			const state = await service.readState(WASHER);
+
+			// Assert
+			expect(state.remoteControlEnabled).toBeUndefined();
+		});
+	});
+
+	describe('startCycle', () => {
+		it('should send START once with the profile location and return sent when INITIAL and remote control is on', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(washerState('INITIAL', 'MAIN', undefined, true));
+			client.controlDevice.mockResolvedValue({});
+
+			// Act
+			const outcome = await service.startCycle(WASHER);
+
+			// Assert
+			expect(client.controlDevice).toHaveBeenCalledTimes(1);
+			expect(client.controlDevice).toHaveBeenCalledWith('w1', START_PAYLOAD);
+			expect(outcome).toEqual({ status: 'sent', state: {} });
+		});
+
+		it('should schedule one state re-read after the delay when START is sent', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(washerState('INITIAL', 'MAIN', undefined, true));
+			client.controlDevice.mockResolvedValue({});
+			const listener = vi.fn();
+			service.startPolling(60000, [WASHER], listener);
+			await vi.advanceTimersByTimeAsync(0);
+			const listenerCallsBefore = listener.mock.calls.length;
+			await service.startCycle(WASHER);
+			client.getDeviceState.mockResolvedValue(washerState('RUNNING', 'MAIN', undefined, true));
+
+			// Act
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_WASHER_POST_COMMAND_REFRESH_DELAY_MS);
+
+			// Assert
+			expect(listener.mock.calls.length - listenerCallsBefore).toBe(1);
+			expect(listener).toHaveBeenLastCalledWith('w1', expect.objectContaining({ currentState: 'RUNNING' }) as object);
+		});
+
+		it.each([
+			['POWER_OFF', 'powered off'],
+			['PAUSE', 'paused'],
+			['ERROR', 'reports an error'],
+			['END', 'not ready to start'],
+			['RESERVED', 'not ready to start'],
+			['WEIRD', 'not ready to start'],
+		])('should refuse START without any control call when the washer is %s', async (currentState, reasonPart) => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(washerState(currentState, 'MAIN', undefined, true));
+
+			// Act
+			const outcome = await service.startCycle(WASHER);
+
+			// Assert
+			expect(outcome).toMatchObject({ status: 'refused', reason: expect.stringContaining(reasonPart) as string });
+			expect(client.controlDevice).not.toHaveBeenCalled();
+		});
+
+		it('should refuse START when remote control is off even though the washer is INITIAL', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(washerState('INITIAL', 'MAIN', undefined, false));
+
+			// Act
+			const outcome = await service.startCycle(WASHER);
+
+			// Assert
+			expect(outcome).toMatchObject({
+				status: 'refused',
+				reason: expect.stringContaining('Remote start is off') as string,
+			});
+			expect(client.controlDevice).not.toHaveBeenCalled();
+		});
+
+		it('should refuse START when the state has no currentState (fail closed)', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue([{ location: { locationName: 'MAIN' } }]);
+
+			// Act
+			const outcome = await service.startCycle(WASHER);
+
+			// Assert
+			expect(outcome).toMatchObject({ status: 'refused', reason: expect.stringContaining('unknown') as string });
+			expect(client.controlDevice).not.toHaveBeenCalled();
+		});
+
+		it('should refuse START when the profile is not writable', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(washerState('INITIAL', 'MAIN', undefined, true));
+			const readOnlyWasher: ThinqConnectWasher = {
+				...WASHER,
+				operationMode: { writable: false, allowedValues: ['START', 'STOP'] },
+			};
+
+			// Act
+			const outcome = await service.startCycle(readOnlyWasher);
+
+			// Assert
+			expect(outcome).toMatchObject({ status: 'refused', reason: expect.stringContaining('not writable') as string });
+			expect(client.controlDevice).not.toHaveBeenCalled();
+		});
+
+		it('should refuse START when START is not listed in the profile', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(washerState('INITIAL', 'MAIN', undefined, true));
+			const limitedWasher: ThinqConnectWasher = {
+				...WASHER,
+				operationMode: { writable: true, allowedValues: ['STOP', 'POWER_OFF'] },
+			};
+
+			// Act
+			const outcome = await service.startCycle(limitedWasher);
+
+			// Assert
+			expect(outcome).toMatchObject({
+				status: 'refused',
+				reason: expect.stringContaining('does not list "START"') as string,
+			});
+			expect(client.controlDevice).not.toHaveBeenCalled();
+		});
+
+		it('should refuse START and mention locationName when the profile has no locationName', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(washerState('INITIAL', 'MAIN', undefined, true));
+			const noLocationWasher: ThinqConnectWasher = { ...WASHER, locationName: undefined };
+
+			// Act
+			const outcome = await service.startCycle(noLocationWasher);
+
+			// Assert
+			expect(outcome).toMatchObject({ status: 'refused', reason: expect.stringContaining('locationName') as string });
+			expect(client.controlDevice).not.toHaveBeenCalled();
+		});
+
+		it('should return noop without a control call when the washer is already RUNNING', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(washerState('RUNNING', 'MAIN', undefined, true));
+
+			// Act
+			const outcome = await service.startCycle(WASHER);
+
+			// Assert
+			expect(outcome.status).toBe('noop');
+			expect(client.controlDevice).not.toHaveBeenCalled();
+		});
+
+		it.each([
+			['2301', 'Remote start is off'],
+			['2304', 'powered off'],
+			['2209', 'may or may not'],
+			['2207', 'Nothing ran'],
+		])(
+			'should return failed with resultCode %s and a plain hint when controlDevice rejects',
+			async (resultCode, hintPart) => {
+				// Arrange
+				client.getDeviceState.mockResolvedValue(washerState('INITIAL', 'MAIN', undefined, true));
+				client.controlDevice.mockRejectedValue(new ThinqConnectApiError('boom', resultCode));
+
+				// Act
+				const outcome = await service.startCycle(WASHER);
+
+				// Assert
+				expect(outcome).toMatchObject({
+					status: 'failed',
+					error: 'boom',
+					resultCode,
+					hint: expect.stringContaining(hintPart) as string,
+				});
+				expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('boom'));
+			},
+		);
+
+		it('should return failed with the error message as hint and no resultCode when the network fails', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(washerState('INITIAL', 'MAIN', undefined, true));
+			client.controlDevice.mockRejectedValue(new Error('network down'));
+
+			// Act
+			const outcome = await service.startCycle(WASHER);
+
+			// Assert
+			expect(outcome).toEqual({
+				status: 'failed',
+				error: 'network down',
+				hint: 'network down',
+				state: expect.objectContaining({ currentState: 'INITIAL' }) as object,
+			});
+		});
+
+		it('should schedule a state re-read after the delay when controlDevice fails', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(washerState('INITIAL', 'MAIN', undefined, true));
+			client.controlDevice.mockRejectedValue(new ThinqConnectApiError('boom', '2209'));
+			const listener = vi.fn();
+			service.startPolling(60000, [WASHER], listener);
+			await vi.advanceTimersByTimeAsync(0);
+			const readsBefore = client.getDeviceState.mock.calls.length;
+			const listenerCallsBefore = listener.mock.calls.length;
+			await service.startCycle(WASHER);
+
+			// Act
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_WASHER_POST_COMMAND_REFRESH_DELAY_MS);
+
+			// Assert
+			expect(client.getDeviceState.mock.calls.length - readsBefore).toBe(2);
+			expect(listener.mock.calls.length - listenerCallsBefore).toBe(1);
+		});
+
+		it('should return failed without a control call and never throw when getDeviceState rejects', async () => {
+			// Arrange
+			client.getDeviceState.mockRejectedValue(new Error('state unavailable'));
+
+			// Act & Assert
+			await expect(service.startCycle(WASHER)).resolves.toMatchObject({
+				status: 'failed',
+				error: 'state unavailable',
+				hint: 'state unavailable',
+				state: {},
+			});
+			expect(client.controlDevice).not.toHaveBeenCalled();
+		});
+
+		it('should read the state exactly once and send at most one control call', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(washerState('INITIAL', 'MAIN', undefined, true));
+			client.controlDevice.mockResolvedValue({});
+
+			// Act
+			await service.startCycle(WASHER);
+
+			// Assert
+			expect(client.getDeviceState).toHaveBeenCalledTimes(1);
+			expect(client.controlDevice).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	describe('stopCycle', () => {
+		it.each<[string, boolean | undefined]>([
+			['RUNNING', true],
+			['SOAKING', undefined],
+			['PAUSE', true],
+		])('should send STOP once when the washer is %s', async (currentState, remoteControlEnabled) => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(washerState(currentState, 'MAIN', undefined, remoteControlEnabled));
+			client.controlDevice.mockResolvedValue({});
+
+			// Act
+			const outcome = await service.stopCycle(WASHER);
+
+			// Assert
+			expect(client.controlDevice).toHaveBeenCalledTimes(1);
+			expect(client.controlDevice).toHaveBeenCalledWith('w1', STOP_PAYLOAD);
+			expect(outcome).toEqual({ status: 'sent', state: {} });
+		});
+
+		it.each(['POWER_OFF', 'INITIAL', 'END', 'ERROR'])(
+			'should return noop without a control call when the washer is %s',
+			async (currentState) => {
+				// Arrange
+				client.getDeviceState.mockResolvedValue(washerState(currentState, 'MAIN', undefined, true));
+
+				// Act
+				const outcome = await service.stopCycle(WASHER);
+
+				// Assert
+				expect(outcome).toMatchObject({ status: 'noop', state: expect.objectContaining({ currentState }) as object });
+				expect(client.controlDevice).not.toHaveBeenCalled();
+			},
+		);
+
+		it('should refuse STOP when remote control is off while RUNNING', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(washerState('RUNNING', 'MAIN', undefined, false));
+
+			// Act
+			const outcome = await service.stopCycle(WASHER);
+
+			// Assert
+			expect(outcome).toMatchObject({
+				status: 'refused',
+				reason: expect.stringContaining('Remote start is off') as string,
+			});
+			expect(client.controlDevice).not.toHaveBeenCalled();
+		});
+
+		it('should refuse STOP when the state has no currentState (fail closed)', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue([{ location: { locationName: 'MAIN' } }]);
+
+			// Act
+			const outcome = await service.stopCycle(WASHER);
+
+			// Assert
+			expect(outcome).toMatchObject({ status: 'refused', reason: expect.stringContaining('unknown') as string });
+			expect(client.controlDevice).not.toHaveBeenCalled();
+		});
+
+		it('should return failed with resultCode and hint when STOP is rejected by ThinQ', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(washerState('RUNNING', 'MAIN', undefined, true));
+			client.controlDevice.mockRejectedValue(new ThinqConnectApiError('boom', '2208'));
+
+			// Act
+			const outcome = await service.stopCycle(WASHER);
+
+			// Assert
+			expect(outcome).toMatchObject({
+				status: 'failed',
+				error: 'boom',
+				resultCode: '2208',
+				hint: 'The washer failed to carry out the command.',
+			});
+		});
+	});
+
+	describe('cycle command in-flight guard', () => {
+		it('should refuse a stop while a start is pending and let a later start proceed once it finished', async () => {
+			// Arrange
+			let release: (value: ThinqConnectPayload) => void = () => undefined;
+			client.getDeviceState
+				.mockReturnValueOnce(
+					new Promise<ThinqConnectPayload>((resolve) => {
+						release = resolve;
+					}),
+				)
+				.mockResolvedValue(washerState('RUNNING', 'MAIN', undefined, true));
+			client.controlDevice.mockResolvedValue({});
+
+			// Act
+			const first = service.startCycle(WASHER);
+			const second = await service.stopCycle(WASHER);
+			release(washerState('INITIAL', 'MAIN', undefined, true));
+			const firstOutcome = await first;
+			const third = await service.startCycle(WASHER);
+
+			// Assert
+			expect(second).toMatchObject({
+				status: 'refused',
+				reason: expect.stringContaining('already in progress') as string,
+			});
+			expect(firstOutcome.status).toBe('sent');
+			expect(third.status).toBe('noop');
+			expect(client.controlDevice).toHaveBeenCalledTimes(1);
 		});
 	});
 
@@ -533,6 +946,23 @@ describe('ThinqV2WasherService', () => {
 			expect(listener).toHaveBeenCalledWith('w1', { currentState: 'RUNNING', powerOn: true });
 		});
 
+		it('should pass remainingSeconds to the listener during polling', async () => {
+			// Arrange
+			client.getDeviceState.mockResolvedValue(washerState('RUNNING', 'MAIN', { remainHour: 1, remainMinute: 30 }));
+			const listener = vi.fn();
+
+			// Act
+			service.startPolling(60000, [WASHER], listener);
+			await vi.advanceTimersByTimeAsync(0);
+
+			// Assert
+			expect(listener).toHaveBeenCalledWith('w1', {
+				currentState: 'RUNNING',
+				powerOn: true,
+				remainingSeconds: 5400,
+			});
+		});
+
 		it('should run a subsequent tick after each intervalMs', async () => {
 			// Arrange
 			client.getDeviceState.mockResolvedValue(washerState('RUNNING'));
@@ -549,7 +979,7 @@ describe('ThinqV2WasherService', () => {
 
 		it('should warn for a failing washer without stopping the others or later ticks', async () => {
 			// Arrange
-			const other: ThinqV2Washer = { ...WASHER, deviceId: 'w2', name: 'Other' };
+			const other: ThinqConnectWasher = { ...WASHER, deviceId: 'w2', name: 'Other' };
 			client.getDeviceState.mockImplementation(async (deviceId: string) => {
 				if (deviceId === 'w1') {
 					throw new Error('w1 offline');
