@@ -38,11 +38,18 @@ ${b}Connect-probe options:${r}
   ${y}--device-id${r}    Device id to probe (default: every device visible to the token)
   ${y}--raw${r}          Also print the raw profile/state JSON
 
+${b}Connect-control options:${r}
+  ${y}--device-id${r}    Washer device id (required)
+  ${y}--send${r}         POWER_ON|START (STOP/POWER_OFF are refused)
+  ${y}--yes${r}          Really send the command (default is a dry run)
+  ${y}--wait${r}         Seconds before the after-state read (default: 3)
+
 ${b}Commands:${r}
 ${row('login', '', 'Authenticate with LG ThinQ (pat = ThinQ Connect Personal Access Token, validated read-only, saved to .cli-pat-session.json)')}
 ${row('devices', '', 'List all discovered ThinQ devices (requires a prior login)')}
 ${row('energy', '[energy options]', 'Print raw AC power/energy snapshot fields (requires a prior login)')}
 ${row('connect-probe', '[connect-probe options]', 'Read-only ThinQ Connect API probe: device profile + state summary (requires a prior PAT login)')}
+${row('connect-control', '[connect-control options]', 'Send ONE guarded control command (POWER_ON|START) via ThinQ Connect; dry run unless --yes (requires a prior PAT login)')}
 ${row('help', '', 'Show this help message')}
 
 ${b}Examples:${r}
@@ -59,4 +66,6 @@ ${b}Examples:${r}
   npm run cli -- --command ${g}connect-probe${r}
   npm run cli -- --command ${g}connect-probe${r} --device-id <deviceId>
   npm run cli -- --command ${g}connect-probe${r} --raw
+  npm run cli -- --command ${g}connect-control${r} --device-id <deviceId> --send POWER_ON
+  npm run cli -- --command ${g}connect-control${r} --device-id <deviceId> --send START --yes
 `;

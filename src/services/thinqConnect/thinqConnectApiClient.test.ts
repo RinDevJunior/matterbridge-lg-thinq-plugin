@@ -306,6 +306,136 @@ describe('ThinqConnectApiClient', () => {
 		});
 	});
 
+	describe('controlDevice', () => {
+		const AIC_CONTROL_URL = 'https://api-aic.lgthinq.com/devices/dev-1/control';
+		const START_PAYLOAD = { operation: { washerOperationMode: 'START' } };
+
+		it('should POST the JSON body to the control url on the aic host when country is US', async () => {
+			// Arrange
+			mockAxios.onPost(AIC_CONTROL_URL).reply(200, { response: {} });
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act
+			await client.controlDevice('dev-1', { operation: { washerOperationMode: 'POWER_ON' } });
+
+			// Assert
+			expect(mockAxios.history.post).toHaveLength(1);
+			expect(mockAxios.history.post[0].url).toBe(AIC_CONTROL_URL);
+			expect(JSON.parse(mockAxios.history.post[0].data as string)).toEqual({
+				operation: { washerOperationMode: 'POWER_ON' },
+			});
+		});
+
+		it('should send x-conditional-control true and the same auth headers as GET requests', async () => {
+			// Arrange
+			mockAxios.onPost(AIC_CONTROL_URL).reply(200, { response: {} });
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act
+			await client.controlDevice('dev-1', START_PAYLOAD);
+
+			// Assert
+			const headers = mockAxios.history.post[0].headers ?? {};
+			expect(headers['x-conditional-control']).toBe('true');
+			expect(headers['Authorization']).toBe(`Bearer ${FAKE_PAT}`);
+			expect(headers['x-country']).toBe('US');
+			expect(headers['x-client-id']).toMatch(/^thinq-open-/);
+			expect(headers['x-api-key']).toBe('v6GFvkweNo7DK7yD3ylIZ9w52aKBU0eJ7wLXkSR3');
+			expect(headers['x-service-phase']).toBe('OP');
+			expect(headers['x-message-id']).toMatch(/^[A-Za-z0-9_-]{22}$/);
+		});
+
+		it('should url-encode the device id when it contains a slash', async () => {
+			// Arrange
+			const encodedUrl = 'https://api-aic.lgthinq.com/devices/TQS%2F1/control';
+			mockAxios.onPost(encodedUrl).reply(200, { response: {} });
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act
+			await client.controlDevice('TQS/1', START_PAYLOAD);
+
+			// Assert
+			expect(mockAxios.history.post[0].url).toBe(encodedUrl);
+		});
+
+		it('should return the response object when LG replies with a response object', async () => {
+			// Arrange
+			mockAxios.onPost(AIC_CONTROL_URL).reply(200, { response: { foo: 1 } });
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act
+			const result = await client.controlDevice('dev-1', START_PAYLOAD);
+
+			// Assert
+			expect(result).toEqual({ foo: 1 });
+		});
+
+		it.each([
+			['missing', {}],
+			['an array', { response: [{ a: 1 }] }],
+			['a non-object', { response: 'ok' }],
+		])('should return an empty object when the response is %s', async (_label, body) => {
+			// Arrange
+			mockAxios.onPost(AIC_CONTROL_URL).reply(200, body);
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act
+			const result = await client.controlDevice('dev-1', START_PAYLOAD);
+
+			// Assert
+			expect(result).toEqual({});
+		});
+
+		it.each([
+			['2302', 'Command is not supported in the current state. (code 2302)'],
+			['2209', 'Device did not answer in time. (code 2209)'],
+			['2301', 'Remote control is OFF on the device. (code 2301)'],
+		])(
+			'should throw ThinqConnectApiError with description, code %s and status 400 when LG replies with that code',
+			async (code, expectedMessage) => {
+				// Arrange
+				mockAxios.onPost(AIC_CONTROL_URL).reply(400, { error: { code, message: 'server text' } });
+				const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+				// Act
+				const error = await captureAsyncError(() => client.controlDevice('dev-1', START_PAYLOAD));
+
+				// Assert
+				expect(error).toBeInstanceOf(ThinqConnectApiError);
+				const apiError = error as ThinqConnectApiError;
+				expect(apiError.message).toBe(expectedMessage);
+				expect(apiError.metadata).toEqual({ resultCode: code });
+				expect(apiError.statusCode).toBe(400);
+			},
+		);
+
+		it('should throw ThinqConnectApiError starting with "ThinQ Connect request failed" on network error', async () => {
+			// Arrange
+			mockAxios.onPost(AIC_CONTROL_URL).networkError();
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act
+			const error = await captureAsyncError(() => client.controlDevice('dev-1', START_PAYLOAD));
+
+			// Assert
+			expect(error).toBeInstanceOf(ThinqConnectApiError);
+			expect((error as ThinqConnectApiError).message).toMatch(/^ThinQ Connect request failed/);
+		});
+
+		it('should not leak the PAT into logger calls or the thrown error when the control request fails', async () => {
+			// Arrange
+			mockAxios.onPost(AIC_CONTROL_URL).reply(400, { error: { code: '2302', message: 'x' } });
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act
+			const error = await captureAsyncError(() => client.controlDevice('dev-1', START_PAYLOAD));
+
+			// Assert
+			expect(JSON.stringify(collectLogCallArgs(mockLogger))).not.toContain(FAKE_PAT);
+			expect(JSON.stringify({ message: (error as ThinqConnectApiError).message })).not.toContain(FAKE_PAT);
+		});
+	});
+
 	describe('getDeviceProfile and getDeviceState', () => {
 		const AIC_PROFILE_URL = 'https://api-aic.lgthinq.com/devices/dev-1/profile';
 		const AIC_STATE_URL = 'https://api-aic.lgthinq.com/devices/dev-1/state';
