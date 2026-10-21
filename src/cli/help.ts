@@ -27,6 +27,8 @@ ${b}Options:${r}
 ${b}Devices options:${r}
   ${y}--dump-snapshot${r} Device id; prints its full raw ThinQ snapshot JSON instead of the device list
   ${y}--probe-filter${r}  Device id; sends a filterMngStateCtrl Get probe and prints the raw response JSON
+  ${y}--dump-device${r}   Device id; prints its raw device-list entry (serial/MAC masked)
+  ${y}--show-secrets${r}  Print serialNo/MAC unmasked in --dump-device / connect-probe --raw; tokens are never printed. Put it last or before another --flag
 
 ${b}Energy options:${r}
   ${y}--device${r}       Device id (default: first AC device)
@@ -36,7 +38,8 @@ ${b}Energy options:${r}
 
 ${b}Connect-probe options:${r}
   ${y}--device-id${r}    Device id to probe (default: every device visible to the token)
-  ${y}--raw${r}          Also print the raw profile/state JSON
+  ${y}--raw${r}          Also print the raw GET /devices entry and the raw profile/state JSON
+  ${y}--show-secrets${r} Print serialNo/MAC unmasked with --raw; tokens are never printed. Put it last or before another --flag
 
 ${b}Connect-control options:${r}
   ${y}--device-id${r}    Washer device id (required)
@@ -61,11 +64,13 @@ ${b}Examples:${r}
   npm run cli -- --command ${g}devices${r}
   npm run cli -- --command ${g}devices${r} --dump-snapshot <deviceId>
   npm run cli -- --command ${g}devices${r} --probe-filter <deviceId>
+  npm run cli -- --command ${g}devices${r} --dump-device <deviceId>
+  npm run cli -- --command ${g}devices${r} --dump-device <deviceId> --show-secrets
   npm run cli -- --command ${g}energy${r}
   npm run cli -- --command ${g}energy${r} --samples 5 --interval 10 --keep-alive
   npm run cli -- --command ${g}connect-probe${r}
   npm run cli -- --command ${g}connect-probe${r} --device-id <deviceId>
-  npm run cli -- --command ${g}connect-probe${r} --raw
+  npm run cli -- --command ${g}connect-probe${r} --device-id <deviceId> --raw
   npm run cli -- --command ${g}connect-control${r} --device-id <deviceId> --send POWER_ON
   npm run cli -- --command ${g}connect-control${r} --device-id <deviceId> --send START --yes
   npm run cli -- --command ${g}connect-control${r} --device-id <deviceId> --send POWER_OFF

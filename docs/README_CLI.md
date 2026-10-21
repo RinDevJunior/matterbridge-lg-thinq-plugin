@@ -94,6 +94,8 @@ The `devices` command lists all ThinQ devices discovered in your account, using 
 
 ### Options
 
+- `--dump-device <deviceId>`: print that device's raw device-list entry as JSON (serial/MAC masked)
+- `--show-secrets`: with `--dump-device`, print serial/MAC unmasked. Tokens and the PAT are never printed. Put it last or before another `--` flag, because the parser takes the next non-flag token as its value.
 - `--debug`: Enable debug logging
 
 ### Prerequisites
@@ -141,7 +143,8 @@ You will be prompted for the Personal Access Token. It is checked with a read-on
 Read-only. Prints the device profile and a state summary from the ThinQ Connect API. Requires a prior PAT login.
 
 - `--device-id`: probe one device (default: every device visible to the token)
-- `--raw`: also print the raw profile/state JSON
+- `--raw`: also print the raw `GET /devices` entry and the raw profile/state JSON. The entry is masked: serial/MAC show only the last 4 characters.
+- `--show-secrets`: with `--raw`, print serial/MAC unmasked. Tokens and the PAT are never printed. Put it last or before another `--` flag.
 
 ```bash
 npm run cli -- --command connect-probe --device-id <deviceId>

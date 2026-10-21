@@ -42,7 +42,10 @@ export async function main(): Promise<void> {
 
 			const dumpSnapshotDeviceId = args['dump-snapshot'];
 			const probeFilterDeviceId = args['probe-filter'];
-			await cmdDevices(session, logger, dumpSnapshotDeviceId, probeFilterDeviceId);
+			await cmdDevices(session, logger, dumpSnapshotDeviceId, probeFilterDeviceId, {
+				dumpDeviceId: args['dump-device'],
+				showSecrets: args['show-secrets'] === 'true',
+			});
 			return;
 		}
 
@@ -67,7 +70,11 @@ export async function main(): Promise<void> {
 				return;
 			}
 
-			await cmdConnectProbe(patSession, { deviceId: args['device-id'], raw: args['raw'] === 'true' }, logger);
+			await cmdConnectProbe(
+				patSession,
+				{ deviceId: args['device-id'], raw: args['raw'] === 'true', showSecrets: args['show-secrets'] === 'true' },
+				logger,
+			);
 			return;
 		}
 

@@ -123,7 +123,10 @@ describe('main', () => {
 		await main();
 
 		// Assert
-		expect(cmdDevices).toHaveBeenCalledWith(mockSession, expect.any(Object), undefined, undefined);
+		expect(cmdDevices).toHaveBeenCalledWith(mockSession, expect.any(Object), undefined, undefined, {
+			dumpDeviceId: undefined,
+			showSecrets: false,
+		});
 	});
 
 	it('should call cmdDevices with dump-snapshot flag when --dump-snapshot is provided', async () => {
@@ -148,7 +151,38 @@ describe('main', () => {
 		await main();
 
 		// Assert
-		expect(cmdDevices).toHaveBeenCalledWith(mockSession, expect.any(Object), 'washer-123', undefined);
+		expect(cmdDevices).toHaveBeenCalledWith(mockSession, expect.any(Object), 'washer-123', undefined, {
+			dumpDeviceId: undefined,
+			showSecrets: false,
+		});
+	});
+
+	it('should call cmdDevices with dump-device id and showSecrets true when --dump-device and --show-secrets true are given', async () => {
+		// Arrange
+		const mockSession = {
+			loginType: 'account' as const,
+			country: 'US',
+			language: 'en-US',
+			userData: {
+				accessToken: 'token',
+				refreshToken: 'refresh',
+				expiresAtEpochSeconds: 123,
+				country: 'US',
+				language: 'en-US',
+			},
+		};
+		vi.mocked(parseArgs).mockReturnValue({ command: 'devices', 'dump-device': 'dev-9', 'show-secrets': 'true' });
+		vi.mocked(loadSession).mockReturnValue(mockSession);
+		vi.mocked(cmdDevices).mockResolvedValue(undefined);
+
+		// Act
+		await main();
+
+		// Assert
+		expect(cmdDevices).toHaveBeenCalledWith(mockSession, expect.any(Object), undefined, undefined, {
+			dumpDeviceId: 'dev-9',
+			showSecrets: true,
+		});
 	});
 
 	it('should error when command is "devices" but session does not exist', async () => {
@@ -259,7 +293,7 @@ describe('main', () => {
 			// Assert
 			expect(cmdConnectProbe).toHaveBeenCalledWith(
 				PAT_SESSION,
-				{ deviceId: undefined, raw: false },
+				{ deviceId: undefined, raw: false, showSecrets: false },
 				expect.any(Object),
 			);
 		});
@@ -276,7 +310,29 @@ describe('main', () => {
 			// Assert
 			expect(cmdConnectProbe).toHaveBeenCalledWith(
 				PAT_SESSION,
-				{ deviceId: 'washer-1', raw: true },
+				{ deviceId: 'washer-1', raw: true, showSecrets: false },
+				expect.any(Object),
+			);
+		});
+
+		it('should call cmdConnectProbe with showSecrets true when --show-secrets true is given', async () => {
+			// Arrange
+			vi.mocked(parseArgs).mockReturnValue({
+				command: 'connect-probe',
+				'device-id': 'washer-1',
+				raw: 'true',
+				'show-secrets': 'true',
+			});
+			vi.mocked(loadPatSession).mockReturnValue(PAT_SESSION);
+			vi.mocked(cmdConnectProbe).mockResolvedValue(undefined);
+
+			// Act
+			await main();
+
+			// Assert
+			expect(cmdConnectProbe).toHaveBeenCalledWith(
+				PAT_SESSION,
+				{ deviceId: 'washer-1', raw: true, showSecrets: true },
 				expect.any(Object),
 			);
 		});
