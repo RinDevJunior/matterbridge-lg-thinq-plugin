@@ -71,6 +71,28 @@ Requires matterbridge@3.10.10
 
 ---
 
+### 🔑 Personal Access Token Login
+
+Besides username/password and refresh token, you can sign in with a Personal Access Token (PAT) for LG's official ThinQ Connect API. Username/password and token logins are unchanged.
+
+1. Create a PAT at [https://connect-pat.lgthinq.com](https://connect-pat.lgthinq.com).
+2. In the plugin config, set **Login Type** to `pat`, paste the token into **Personal Access Token**, and set **Country** to your account country (e.g. `US`).
+
+What it does today:
+
+- Only washers are registered. Each one appears as a Matter washer that Google Home can turn on and off.
+- On is any state except `POWER_OFF`. Off and on commands are refused while the washer is running or paused, or when its state is unknown.
+- After a command, the state is re-read about 3 s later.
+- Washer state is polled every `refreshIntervalSeconds` (the Refresh Interval setting). Values below 15 s are raised to 15 s.
+
+Limits:
+
+- Washers only. Air conditioners are not supported with PAT login.
+- No start, stop or pause (the CLI `connect-control` can send START, but the plugin does not).
+- No push updates, only polling.
+
+---
+
 ### 🚧 Project Status
 
 - **Under active development**

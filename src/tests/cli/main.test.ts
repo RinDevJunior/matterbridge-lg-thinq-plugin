@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../cli/commands/connectProbe.js');
+vi.mock('../../cli/commands/connectControl.js');
 vi.mock('../../cli/commands/devices.js');
 vi.mock('../../cli/commands/login.js');
 vi.mock('../../cli/help.js');
 vi.mock('../../cli/session.js');
 vi.mock('../../cli/utils.js');
 
+import { cmdConnectControl } from '../../cli/commands/connectControl.js';
 import { cmdConnectProbe } from '../../cli/commands/connectProbe.js';
 import { cmdDevices } from '../../cli/commands/devices.js';
 import { cmdLogin } from '../../cli/commands/login.js';
@@ -305,6 +307,95 @@ describe('main', () => {
 
 			// Assert
 			expect(consoleErrorSpy).toHaveBeenCalledWith('Error:', 'probe exploded');
+			expect(processExitSpy).toHaveBeenCalledWith(1);
+		});
+	});
+
+	describe('connect-control command', () => {
+		const PAT_SESSION = { country: 'US', personalAccessToken: 'pat-secret-1234567890' };
+
+		it('should print a PAT login hint, set exitCode 1 and skip the control when no PAT session exists', async () => {
+			// Arrange
+			vi.mocked(parseArgs).mockReturnValue({ command: 'connect-control' });
+			vi.mocked(loadPatSession).mockReturnValue(null);
+
+			// Act
+			await main();
+
+			// Assert
+			expect(consoleErrorSpy).toHaveBeenCalledWith('No PAT session found. Run `--command login --type pat` first.');
+			expect(process.exitCode).toBe(1);
+			expect(cmdConnectControl).not.toHaveBeenCalled();
+		});
+
+		it('should call cmdConnectControl with dry-run defaults and wait 3 when only device id and send are given', async () => {
+			// Arrange
+			vi.mocked(parseArgs).mockReturnValue({ command: 'connect-control', 'device-id': 'w1', send: 'POWER_ON' });
+			vi.mocked(loadPatSession).mockReturnValue(PAT_SESSION);
+			vi.mocked(cmdConnectControl).mockResolvedValue(undefined);
+
+			// Act
+			await main();
+
+			// Assert
+			expect(cmdConnectControl).toHaveBeenCalledWith(
+				PAT_SESSION,
+				expect.objectContaining({ deviceId: 'w1', send: 'POWER_ON', yes: false, waitSeconds: 3 }),
+				expect.anything(),
+			);
+		});
+
+		it('should call cmdConnectControl with yes true and waitSeconds 0 when yes and wait are given', async () => {
+			// Arrange
+			vi.mocked(parseArgs).mockReturnValue({
+				command: 'connect-control',
+				'device-id': 'w1',
+				send: 'START',
+				yes: 'true',
+				wait: '0',
+			});
+			vi.mocked(loadPatSession).mockReturnValue(PAT_SESSION);
+			vi.mocked(cmdConnectControl).mockResolvedValue(undefined);
+
+			// Act
+			await main();
+
+			// Assert
+			expect(cmdConnectControl).toHaveBeenCalledWith(
+				PAT_SESSION,
+				expect.objectContaining({ yes: true, waitSeconds: 0 }),
+				expect.anything(),
+			);
+		});
+
+		it.each(['abc', '-1'])('should fall back to waitSeconds 3 when wait is %s', async (wait) => {
+			// Arrange
+			vi.mocked(parseArgs).mockReturnValue({ command: 'connect-control', 'device-id': 'w1', send: 'START', wait });
+			vi.mocked(loadPatSession).mockReturnValue(PAT_SESSION);
+			vi.mocked(cmdConnectControl).mockResolvedValue(undefined);
+
+			// Act
+			await main();
+
+			// Assert
+			expect(cmdConnectControl).toHaveBeenCalledWith(
+				PAT_SESSION,
+				expect.objectContaining({ waitSeconds: 3 }),
+				expect.anything(),
+			);
+		});
+
+		it('should report the error and exit 1 when cmdConnectControl rejects', async () => {
+			// Arrange
+			vi.mocked(parseArgs).mockReturnValue({ command: 'connect-control', 'device-id': 'w1', send: 'START' });
+			vi.mocked(loadPatSession).mockReturnValue(PAT_SESSION);
+			vi.mocked(cmdConnectControl).mockRejectedValue(new Error('control exploded'));
+
+			// Act
+			await main();
+
+			// Assert
+			expect(consoleErrorSpy).toHaveBeenCalledWith('Error:', 'control exploded');
 			expect(processExitSpy).toHaveBeenCalledWith(1);
 		});
 	});

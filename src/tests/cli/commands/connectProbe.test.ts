@@ -15,6 +15,7 @@ import type { CliPatSession } from '../../../cli/types.js';
 import { ThinqConnectApiError } from '../../../errors/index.js';
 import {
 	ThinqConnectApiClient,
+	type ThinqConnectPayload,
 	type ThinqConnectResource,
 } from '../../../services/thinqConnect/thinqConnectApiClient.js';
 import { asPartial, createMockLogger } from '../../helpers/testUtils.js';
@@ -41,6 +42,19 @@ const WASHER_STATE: ThinqConnectResource = {
 	operation: { washerOperationMode: 'STOP' },
 	remoteControlEnable: { remoteControlEnabled: false },
 };
+
+/** Washer state as returned by GET /devices/{id}/state: a per-location array. */
+const WASHER_ARRAY_STATE: ThinqConnectPayload = [
+	{ location: { locationName: 'MAIN' }, runState: { currentState: 'INITIAL' } },
+];
+
+const WASHER_TWO_LOCATION_STATE: ThinqConnectPayload = [
+	{ location: { locationName: 'MAIN' }, runState: { currentState: 'INITIAL' } },
+	{ location: { locationName: 'SUB' }, runState: { currentState: 'RUNNING' } },
+];
+
+/** Profile with a location array, so the state entry can be matched by locationName. */
+const TWO_LOCATION_PROFILE: ThinqConnectPayload = [{ location: { locationName: 'SUB' }, runState: {} }];
 
 const DEVICES = [
 	{ deviceId: 'dev-1', deviceInfo: { alias: 'Washer', deviceType: 'DEVICE_WASHER', modelName: 'WM-1' } },
@@ -182,6 +196,78 @@ describe('summarizeConnectProbe', () => {
 
 		// Assert
 		expect(summary.washerOperationMode).toBeUndefined();
+	});
+});
+
+describe('summarizeConnectProbe with array state', () => {
+	it('should read currentState INITIAL from a MAIN washer array state when no profile is given', () => {
+		// Arrange
+		const state = WASHER_ARRAY_STATE;
+
+		// Act
+		const summary = summarizeConnectProbe(undefined, state);
+
+		// Assert
+		expect(summary.currentState).toBe('INITIAL');
+	});
+
+	it('should show the currentState line in formatted output when the state is a washer array', () => {
+		// Arrange
+		const summary = summarizeConnectProbe(undefined, WASHER_ARRAY_STATE);
+
+		// Act
+		const lines = formatConnectProbeSummary(summary);
+
+		// Assert
+		expect(lines).toContain('  currentState: INITIAL');
+	});
+
+	it('should pick the array entry whose locationName matches the profile when two locations exist', () => {
+		// Arrange
+		const profile = TWO_LOCATION_PROFILE;
+
+		// Act
+		const summary = summarizeConnectProbe(profile, WASHER_TWO_LOCATION_STATE);
+
+		// Assert
+		expect(summary.currentState).toBe('RUNNING');
+	});
+
+	it('should fall back to the first array entry when no location matches the profile', () => {
+		// Arrange
+		const profile: ThinqConnectPayload = [{ location: { locationName: 'OTHER' }, runState: {} }];
+
+		// Act
+		const summary = summarizeConnectProbe(profile, WASHER_TWO_LOCATION_STATE);
+
+		// Assert
+		expect(summary.currentState).toBe('INITIAL');
+	});
+
+	it('should omit the currentState line without throwing when the state array is empty', () => {
+		// Arrange
+		const state: ThinqConnectPayload = [];
+
+		// Act
+		const summary = summarizeConnectProbe(undefined, state);
+		const lines = formatConnectProbeSummary(summary);
+
+		// Assert
+		expect(summary.currentState).toBeUndefined();
+		expect(lines.some((line) => line.includes('currentState'))).toBe(false);
+	});
+
+	it('should omit the currentState line without throwing when the state is an empty object', () => {
+		// Arrange
+		const state: ThinqConnectResource = {};
+
+		// Act
+		const summary = summarizeConnectProbe(undefined, state);
+		const lines = formatConnectProbeSummary(summary);
+
+		// Assert
+		expect(summary.currentState).toBeUndefined();
+		expect(lines.some((line) => line.includes('currentState'))).toBe(false);
 	});
 });
 
@@ -402,6 +488,19 @@ describe('cmdConnectProbe', () => {
 			// Assert
 			expect(printedOutput()).toContain('  raw profile: ');
 			expect(printedOutput()).toContain('  raw state: ');
+		});
+
+		it('should print the raw washer array state and the currentState line when raw is true', async () => {
+			// Arrange
+			mockClient.getDeviceProfile.mockResolvedValue(WASHER_PROFILE);
+			mockClient.getDeviceState.mockResolvedValue(WASHER_ARRAY_STATE);
+
+			// Act
+			await cmdConnectProbe(SESSION, { deviceId: 'washer-1', raw: true }, mockLogger);
+
+			// Assert
+			expect(printedOutput()).toContain(`  raw state: ${JSON.stringify(WASHER_ARRAY_STATE, null, 2)}`);
+			expect(printedOutput()).toContain('  currentState: INITIAL');
 		});
 
 		it('should not print raw profile or state JSON when raw is false', async () => {

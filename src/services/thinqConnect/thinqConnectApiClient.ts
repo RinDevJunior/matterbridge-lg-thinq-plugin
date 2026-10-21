@@ -41,11 +41,14 @@ interface ThinqConnectDevicesResponse {
 
 export type ThinqConnectResource = Record<string, unknown>;
 
+/** Washers return a per-location array (`[{ location, runState, ... }]`); ACs return an object. */
+export type ThinqConnectPayload = ThinqConnectResource | unknown[];
+
 interface ThinqConnectResourceResponse {
 	response?: unknown;
 }
 
-/** Read-only client for the official LG ThinQ Connect API, authenticated with a Personal Access Token. */
+/** Client for the official LG ThinQ Connect API, authenticated with a Personal Access Token; the only write is `controlDevice`. */
 export class ThinqConnectApiClient {
 	private readonly baseUrl: string;
 	private readonly countryCode: string;
@@ -68,12 +71,25 @@ export class ThinqConnectApiClient {
 		return Array.isArray(data.response) ? data.response : [];
 	}
 
-	public async getDeviceProfile(deviceId: string): Promise<ThinqConnectResource> {
+	public async getDeviceProfile(deviceId: string): Promise<ThinqConnectPayload> {
 		return this.getResource(deviceId, 'profile');
 	}
 
-	public async getDeviceState(deviceId: string): Promise<ThinqConnectResource> {
+	public async getDeviceState(deviceId: string): Promise<ThinqConnectPayload> {
 		return this.getResource(deviceId, 'state');
+	}
+
+	public async controlDevice(deviceId: string, payload: ThinqConnectResource): Promise<ThinqConnectPayload> {
+		const data = await this.post<ThinqConnectResourceResponse>(
+			`/devices/${encodeURIComponent(deviceId)}/control`,
+			payload,
+			{ 'x-conditional-control': 'true' },
+		);
+		const response = data?.response;
+		if (Array.isArray(response)) {
+			return response;
+		}
+		return typeof response === 'object' && response !== null ? (response as ThinqConnectResource) : {};
 	}
 
 	public async validateToken(): Promise<ThinqConnectValidationResult> {
@@ -81,12 +97,13 @@ export class ThinqConnectApiClient {
 		return { deviceCount: devices.length, devices };
 	}
 
-	private async getResource(deviceId: string, kind: 'profile' | 'state'): Promise<ThinqConnectResource> {
+	private async getResource(deviceId: string, kind: 'profile' | 'state'): Promise<ThinqConnectPayload> {
 		const data = await this.get<ThinqConnectResourceResponse>(`/devices/${encodeURIComponent(deviceId)}/${kind}`);
 		const response = data.response;
-		return typeof response === 'object' && response !== null && !Array.isArray(response)
-			? (response as ThinqConnectResource)
-			: {};
+		if (Array.isArray(response)) {
+			return response;
+		}
+		return typeof response === 'object' && response !== null ? (response as ThinqConnectResource) : {};
 	}
 
 	private async get<T>(path: string): Promise<T> {
@@ -95,6 +112,20 @@ export class ThinqConnectApiClient {
 		try {
 			const { data } = await axios.get<T>(url, {
 				headers: this.buildHeaders(),
+				timeout: REQUEST_TIMEOUT_MS,
+			});
+			return data;
+		} catch (error) {
+			throw this.toApiError(error);
+		}
+	}
+
+	private async post<T>(path: string, body: unknown, extraHeaders: Record<string, string> = {}): Promise<T> {
+		const url = `${this.baseUrl}${path}`;
+		this.logger.debug(`ThinQ Connect request -> POST ${url}`);
+		try {
+			const { data } = await axios.post<T>(url, body, {
+				headers: { ...this.buildHeaders(), 'Content-Type': 'application/json', ...extraHeaders },
 				timeout: REQUEST_TIMEOUT_MS,
 			});
 			return data;

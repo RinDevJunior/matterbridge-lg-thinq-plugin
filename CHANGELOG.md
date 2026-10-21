@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Personal Access Token (PAT) login type** — a new `pat` login type for the official ThinQ Connect API, in the plugin config and the CLI (`login --type pat`).
+- **`connect-probe` and `connect-control` CLI commands** — `connect-probe` is a read-only check of the device profile and state; `connect-control` sends one guarded washer command (POWER_ON, POWER_OFF or START) and is a dry run unless `--yes` is given.
+- **ThinQ Connect (V2) container with Google Home washer on/off** — with PAT login, the washer can be turned on and off from Google Home; state is polled every `refreshIntervalSeconds` (minimum 15 s). Only washers are registered; air conditioners are not supported with PAT.
+
+### Fixed
+
+- **Washer state read as empty** — the ThinQ Connect state response is an array; it is now read correctly instead of being treated as empty.
+
 ## [0.1.1-rc03] - 2026-10-20
 
 ### Changed
