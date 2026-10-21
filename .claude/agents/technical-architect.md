@@ -94,7 +94,7 @@ When `type: implement` (or omitted), continue with Steps 2–7 below.
 
 ### CodeGraph (when `.codegraph/` exists)
 
-Before Grep/Read sweeps across `src/`, run `codegraph explore "<symbols or question>"` (shell) or `codegraph_explore` (MCP). One call usually returns the relevant source, call paths, and blast radius. Instruct investigator to do the same. Skip when no `.codegraph/` directory.
+Before Grep/Read sweeps across `src/`, run `codegraph explore "<symbols or question>"` (shell) or `codegraph_explore` (MCP). One call usually returns the relevant source, call paths, and blast radius. Instruct investigator to do the same. Skip when no `.codegraph/` directory. If `.codegraph/` exists you must run it before sweeping with Grep/Read, and say in the report if you did not.
 
 ### Explore (built-in agent — locate only)
 
@@ -367,6 +367,7 @@ Report a **≤10-line summary** — the EM reviews this summary and must NOT rea
 - Regression Guard: covered (N symbols) | risks flagged (list untested ones sent to business-brief)
 - Whether wiki-manager / investigator were spawned
 - Any blocking issues
+- CodeGraph: used (`codegraph explore` / `codegraph impact`) or skipped, with the reason (no `.codegraph/`, stale index, or locate-only task)
 
 Do not paste plan contents, file lists, or investigation details into the report — they live in the task folder.
 
