@@ -11,6 +11,10 @@ import { getThinqConnectBaseUrl } from './thinqConnectRegions.js';
 const API_KEY = 'v6GFvkweNo7DK7yD3ylIZ9w52aKBU0eJ7wLXkSR3';
 const SERVICE_PHASE = 'OP';
 const REQUEST_TIMEOUT_MS = 15000;
+const PAT_PATTERN = /^[A-Za-z0-9._~+/=-]+$/;
+const PAT_MIN_LENGTH = 20;
+const PAT_MAX_LENGTH = 512;
+const DEVICE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 export interface ThinqConnectDevice {
 	deviceId: string;
@@ -50,18 +54,24 @@ interface ThinqConnectResourceResponse {
 
 /** Client for the official LG ThinQ Connect API, authenticated with a Personal Access Token; the only write is `controlDevice`. */
 export class ThinqConnectApiClient {
+	private readonly personalAccessToken: string;
 	private readonly baseUrl: string;
 	private readonly countryCode: string;
 
 	constructor(
-		private readonly personalAccessToken: string,
+		personalAccessToken: string,
 		country: string,
 		private readonly logger: AnsiLogger,
 		private readonly clientId = `thinq-open-${crypto.randomUUID()}`,
 	) {
-		if (!personalAccessToken.trim()) {
+		const token = personalAccessToken.trim();
+		if (!token) {
 			throw new ThinqConnectApiError('A ThinQ Personal Access Token is required', '1103');
 		}
+		if (token.length < PAT_MIN_LENGTH || token.length > PAT_MAX_LENGTH || !PAT_PATTERN.test(token)) {
+			throw new ThinqConnectApiError('ThinQ Personal Access Token has an invalid format', '1103');
+		}
+		this.personalAccessToken = token;
 		this.baseUrl = getThinqConnectBaseUrl(country);
 		this.countryCode = country.trim().toUpperCase();
 	}
@@ -80,11 +90,9 @@ export class ThinqConnectApiClient {
 	}
 
 	public async controlDevice(deviceId: string, payload: ThinqConnectResource): Promise<ThinqConnectPayload> {
-		const data = await this.post<ThinqConnectResourceResponse>(
-			`/devices/${encodeURIComponent(deviceId)}/control`,
-			payload,
-			{ 'x-conditional-control': 'true' },
-		);
+		const data = await this.post<ThinqConnectResourceResponse>(this.devicePath(deviceId, '/control'), payload, {
+			'x-conditional-control': 'true',
+		});
 		const response = data?.response;
 		if (Array.isArray(response)) {
 			return response;
@@ -98,12 +106,19 @@ export class ThinqConnectApiClient {
 	}
 
 	private async getResource(deviceId: string, kind: 'profile' | 'state'): Promise<ThinqConnectPayload> {
-		const data = await this.get<ThinqConnectResourceResponse>(`/devices/${encodeURIComponent(deviceId)}/${kind}`);
+		const data = await this.get<ThinqConnectResourceResponse>(this.devicePath(deviceId, `/${kind}`));
 		const response = data.response;
 		if (Array.isArray(response)) {
 			return response;
 		}
 		return typeof response === 'object' && response !== null ? (response as ThinqConnectResource) : {};
+	}
+
+	private devicePath(deviceId: string, suffix: '/control' | '/profile' | '/state'): string {
+		if (!DEVICE_ID_PATTERN.test(deviceId)) {
+			throw new ThinqConnectApiError('ThinQ Connect device id has an invalid format');
+		}
+		return `/devices/${encodeURIComponent(deviceId)}${suffix}`;
 	}
 
 	private async get<T>(path: string): Promise<T> {

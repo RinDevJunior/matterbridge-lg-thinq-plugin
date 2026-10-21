@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.1-rc04] - 2026-10-21
+
 ### Added
 
 - **Personal Access Token (PAT) login type** — a new `pat` login type for the official ThinQ Connect API, in the plugin config and the CLI (`login --type pat`).
@@ -11,6 +13,10 @@
 ### Fixed
 
 - **Washer state read as empty** — the ThinQ Connect state response is an array; it is now read correctly instead of being treated as empty.
+
+<a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
+
+---
 
 ## [0.1.1-rc03] - 2026-10-20
 
