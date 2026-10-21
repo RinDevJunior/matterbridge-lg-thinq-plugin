@@ -2,22 +2,30 @@
 
 ## [Unreleased]
 
-### Added
-
-- **Air conditioners with PAT login** — ThinQ Connect air conditioners are registered with power, target temperature (Celsius), fan speed, swing, room temperature, humidity (where reported) and read-only filter life. Home shows Cool and Off.
-
-### Changed
-
-- **PAT devices run in server mode** — with PAT login, washers and air conditioners are now standalone Matter nodes, each paired on its own, like the account login. They get new device IDs: remove the old PAT devices from your controller and pair them again.
-- **ThinQ Connect log messages renamed** — the internal "V2" naming is now "ThinQ Connect" in log output (`ThinQ V2` is now `ThinQ Connect`); no behavior change.
-
 ## [0.1.1-rc04] - 2026-10-21
 
 ### Added
 
 - **Personal Access Token (PAT) login type** — a new `pat` login type for the official ThinQ Connect API, in the plugin config and the CLI (`login --type pat`).
+- **Air conditioners with PAT login** — ThinQ Connect air conditioners are registered with power, target temperature (Celsius), fan speed, swing, room temperature, humidity (where reported) and read-only filter life. Home shows Cool and Off.
+- **ThinQ Connect container with Google Home washer on/off** — with PAT login, the washer on/off can be controlled from Google Home; state is polled every `refreshIntervalSeconds` (minimum 15 s).
+- **Washer state in Matter (ThinQ Connect)** — the washer shows Running, Paused, Stopped or Error, plus time left and errors. It is read-only, and unknown states show Stopped.
+- **Washer Start/Stop from Matter (ThinQ Connect)** — Start works only when the washer is idle with Remote Start on, and Stop sends STOP. Pause and Resume are refused, and if LG refuses a command the real state is shown again. START is not yet tested on hardware.
+- **`ignore` setting for ThinQ Connect washers** — the `ignore` setting now works for ThinQ Connect washers.
+- **ThinQ Connect devices in the settings device list** — devices get entries in the plugin settings device list automatically (new ids only, existing values are never changed), and the settings page shows the device list for the PAT login.
+- **Air conditioner room temperature sensor (ThinQ Connect)** — a room temperature sensor is added when the air conditioner reports it.
 - **`connect-probe` and `connect-control` CLI commands** — `connect-probe` is a read-only check of the device profile and state; `connect-control` sends one guarded washer command (POWER_ON, POWER_OFF or START) and is a dry run unless `--yes` is given.
-- **ThinQ Connect container with Google Home washer on/off** — with PAT login, the washer can be turned on and off from Google Home; state is polled every `refreshIntervalSeconds` (minimum 15 s). Only washers are registered; air conditioners are not supported with PAT.
+- **CLI device-list dump** — `devices --dump-device` and `connect-probe --raw` print the read-only device list; serial and MAC are masked unless `--show-secrets` is used, and tokens are never printed.
+- **`connect-probe --energy`** — a read-only call to the Energy API.
+- **`connect-settings` CLI command** — a read-only list of every ThinQ Connect profile property with its current value and allowed values.
+- **Global `--out <file>` option** — saves the output of any command except `login` to a private file.
+
+### Changed
+
+- **PAT devices run in server mode** — with PAT login, washers and air conditioners are now standalone Matter nodes, each paired on its own, like the account login. They get new device IDs: remove the old PAT devices from your controller and pair them again.
+- **Real LG serial number for V1 devices** — V1 (account and token login) washers and air conditioners now use the real LG serial number (`manufacture.serialNo`) as the Matter serial, falling back to the device id. Devices already paired keep their stored serial.
+- **ThinQ Connect log messages renamed** — the internal "V2" naming is now "ThinQ Connect" in log output (`ThinQ V2` is now `ThinQ Connect`); no behavior change.
+- **Washer registration failure no longer stops start-up** — a ThinQ Connect washer that fails to register is logged and skipped instead of stopping the start-up.
 
 ### Fixed
 
