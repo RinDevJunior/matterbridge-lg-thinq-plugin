@@ -8,11 +8,13 @@ import {
 } from '../../services/thinqConnect/thinqConnectApiClient.js';
 import { maskDeviceEntry } from '../maskDeviceEntry.js';
 import type { CliPatSession } from '../types.js';
+import { type ConnectEnergyOptions, printConnectEnergy } from './connectEnergy.js';
 
 export interface ConnectProbeOptions {
 	deviceId?: string;
 	raw: boolean;
 	showSecrets?: boolean;
+	energy?: ConnectEnergyOptions;
 }
 
 export interface ConnectProbeSummary {
@@ -256,6 +258,9 @@ export async function cmdConnectProbe(
 			if (state !== undefined) {
 				console.log(`  raw state: ${JSON.stringify(state, null, 2)}`);
 			}
+		}
+		if (options.energy) {
+			await printConnectEnergy(client, device.deviceId, options.energy);
 		}
 	}
 }

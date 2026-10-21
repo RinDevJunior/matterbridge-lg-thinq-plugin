@@ -1,14 +1,20 @@
 import type { AnsiLogger } from 'matterbridge/logger';
 
+import { ThinqConnectApiError } from '../errors/index.js';
 import type { ThinqConnectApiClient } from '../services/thinqConnect/thinqConnectApiClient.js';
 import {
+	buildWasherOperationPayload,
 	buildWasherPowerPayload,
+	describeWasherCommandFailure,
+	evaluateWasherCycleCommand,
 	evaluateWasherPowerGuards,
 	findProfileLocationName,
 	isWasherPoweredOn,
 	readWasherCurrentState,
 	readWasherOperationModeProfile,
 	readWasherRemainingSeconds,
+	readWasherRemoteControlEnabled,
+	type WasherCycleCommand,
 	type WasherOperationModeProfile,
 	type WasherPowerCommand,
 } from '../services/thinqConnect/thinqConnectWasher.js';
@@ -27,6 +33,7 @@ export interface ThinqConnectWasherState {
 	currentState?: string;
 	powerOn?: boolean;
 	remainingSeconds?: number;
+	remoteControlEnabled?: boolean;
 }
 
 export type ThinqConnectWasherPowerOutcome =
@@ -34,6 +41,12 @@ export type ThinqConnectWasherPowerOutcome =
 	| { status: 'noop'; state: ThinqConnectWasherState }
 	| { status: 'refused'; reason: string; state: ThinqConnectWasherState }
 	| { status: 'failed'; error: string; state: ThinqConnectWasherState };
+
+export type ThinqConnectWasherCommandOutcome =
+	| { status: 'sent'; state: ThinqConnectWasherState }
+	| { status: 'noop'; state: ThinqConnectWasherState }
+	| { status: 'refused'; reason: string; state: ThinqConnectWasherState }
+	| { status: 'failed'; error: string; hint: string; resultCode?: string; state: ThinqConnectWasherState };
 
 export type ThinqConnectWasherStateListener = (deviceId: string, state: ThinqConnectWasherState) => void;
 
@@ -43,6 +56,14 @@ export type ThinqConnectWasherClient = Pick<
 >;
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+const errorResultCode = (error: unknown): string | undefined => {
+	if (!(error instanceof ThinqConnectApiError)) {
+		return undefined;
+	}
+	const code = error.metadata?.['resultCode'];
+	return typeof code === 'string' ? code : undefined;
+};
 
 /** Discovers ThinQ Connect washers, reads their state, sends guarded power commands, and polls state. */
 export class ThinqConnectWasherService {
@@ -92,6 +113,7 @@ export class ThinqConnectWasherService {
 			currentState,
 			powerOn: isWasherPoweredOn(currentState),
 			remainingSeconds: readWasherRemainingSeconds(payload, washer.locationName),
+			remoteControlEnabled: readWasherRemoteControlEnabled(payload, washer.locationName),
 		};
 		this.lastState.set(washer.deviceId, state);
 		return state;
@@ -146,6 +168,16 @@ export class ThinqConnectWasherService {
 		}
 	}
 
+	/** Never throws; every path resolves to an outcome. */
+	public async startCycle(washer: ThinqConnectWasher): Promise<ThinqConnectWasherCommandOutcome> {
+		return this.runCycleCommand(washer, 'START');
+	}
+
+	/** Never throws; every path resolves to an outcome. */
+	public async stopCycle(washer: ThinqConnectWasher): Promise<ThinqConnectWasherCommandOutcome> {
+		return this.runCycleCommand(washer, 'STOP');
+	}
+
 	public startPolling(
 		intervalMs: number,
 		washers: readonly ThinqConnectWasher[],
@@ -186,6 +218,81 @@ export class ThinqConnectWasherService {
 		}
 		this.refreshTimers.clear();
 		this.listener = undefined;
+	}
+
+	private async runCycleCommand(
+		washer: ThinqConnectWasher,
+		command: WasherCycleCommand,
+	): Promise<ThinqConnectWasherCommandOutcome> {
+		const { deviceId, locationName } = washer;
+
+		if (this.inFlight.has(deviceId)) {
+			const reason = 'Another command is already in progress for this washer.';
+			this.logger.warn(`ThinQ Connect: ${command} refused for ${deviceId}: ${reason}`);
+			return { status: 'refused', reason, state: this.lastState.get(deviceId) ?? {} };
+		}
+
+		this.inFlight.add(deviceId);
+		try {
+			if (locationName === undefined) {
+				const reason = 'Washer profile has no locationName; refusing to send (ThinQ would answer 2207).';
+				this.logger.warn(`ThinQ Connect: ${command} refused for ${deviceId}: ${reason}`);
+				return { status: 'refused', reason, state: this.lastState.get(deviceId) ?? {} };
+			}
+
+			let state: ThinqConnectWasherState;
+			try {
+				state = await this.readState(washer);
+			} catch (error) {
+				const message = errorMessage(error);
+				const resultCode = errorResultCode(error);
+				this.logger.error(`ThinQ Connect: ${command} failed for ${deviceId} reading state: ${message}`);
+				return {
+					status: 'failed',
+					error: message,
+					hint: describeWasherCommandFailure(resultCode, message),
+					resultCode,
+					state: this.lastState.get(deviceId) ?? {},
+				};
+			}
+
+			const decision = evaluateWasherCycleCommand(
+				command,
+				washer.operationMode,
+				state.currentState,
+				state.remoteControlEnabled,
+			);
+			if (decision.kind === 'noop') {
+				this.logger.info(`ThinQ Connect: ${command} for ${deviceId} skipped: ${decision.reason}`);
+				return { status: 'noop', state };
+			}
+			if (decision.kind === 'refuse') {
+				this.logger.warn(`ThinQ Connect: ${command} refused for ${deviceId}: ${decision.reason}`);
+				return { status: 'refused', reason: decision.reason, state };
+			}
+
+			try {
+				await this.client.controlDevice(deviceId, buildWasherOperationPayload(command, locationName));
+			} catch (error) {
+				const message = errorMessage(error);
+				const resultCode = errorResultCode(error);
+				this.logger.error(`ThinQ Connect: ${command} failed for ${deviceId}: ${message}`);
+				this.scheduleRefresh(washer);
+				return {
+					status: 'failed',
+					error: message,
+					hint: describeWasherCommandFailure(resultCode, message),
+					resultCode,
+					state,
+				};
+			}
+
+			this.logger.info(`ThinQ Connect: ${command} sent for ${deviceId}.`);
+			this.scheduleRefresh(washer);
+			return { status: 'sent', state: {} };
+		} finally {
+			this.inFlight.delete(deviceId);
+		}
 	}
 
 	private scheduleRefresh(washer: ThinqConnectWasher): void {

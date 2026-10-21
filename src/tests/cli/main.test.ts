@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 vi.mock('../../cli/commands/connectProbe.js');
 vi.mock('../../cli/commands/connectControl.js');
@@ -7,6 +7,7 @@ vi.mock('../../cli/commands/login.js');
 vi.mock('../../cli/help.js');
 vi.mock('../../cli/session.js');
 vi.mock('../../cli/utils.js');
+vi.mock('../../cli/outputCapture.js');
 
 import { cmdConnectControl } from '../../cli/commands/connectControl.js';
 import { cmdConnectProbe } from '../../cli/commands/connectProbe.js';
@@ -14,6 +15,7 @@ import { cmdDevices } from '../../cli/commands/devices.js';
 import { cmdLogin } from '../../cli/commands/login.js';
 import { HELP_TEXT } from '../../cli/help.js';
 import { main } from '../../cli/main.js';
+import { startOutputCapture } from '../../cli/outputCapture.js';
 import { loadPatSession, loadSession } from '../../cli/session.js';
 import { parseArgs } from '../../cli/utils.js';
 
@@ -337,6 +339,78 @@ describe('main', () => {
 			);
 		});
 
+		it('should not add an energy key to the probe options when --energy is absent', async () => {
+			// Arrange
+			vi.mocked(parseArgs).mockReturnValue({ command: 'connect-probe', 'device-id': 'washer-1' });
+			vi.mocked(loadPatSession).mockReturnValue(PAT_SESSION);
+			vi.mocked(cmdConnectProbe).mockResolvedValue(undefined);
+
+			// Act
+			await main();
+
+			// Assert
+			const options = vi.mocked(cmdConnectProbe).mock.calls[0]?.[1];
+			expect(options).toStrictEqual({ deviceId: 'washer-1', raw: false, showSecrets: false });
+		});
+
+		it('should pass energy DAILY to cmdConnectProbe when only --energy is given', async () => {
+			// Arrange
+			vi.mocked(parseArgs).mockReturnValue({ command: 'connect-probe', energy: 'true' });
+			vi.mocked(loadPatSession).mockReturnValue(PAT_SESSION);
+			vi.mocked(cmdConnectProbe).mockResolvedValue(undefined);
+
+			// Act
+			await main();
+
+			// Assert
+			expect(cmdConnectProbe).toHaveBeenCalledWith(
+				PAT_SESSION,
+				expect.objectContaining({ energy: { period: 'DAILY' } }),
+				expect.any(Object),
+			);
+		});
+
+		it('should pass the period and explicit dates to cmdConnectProbe when energy options are given', async () => {
+			// Arrange
+			vi.mocked(parseArgs).mockReturnValue({
+				command: 'connect-probe',
+				energy: 'true',
+				'energy-period': 'MONTHLY',
+				'energy-start': '202501',
+				'energy-end': '202503',
+			});
+			vi.mocked(loadPatSession).mockReturnValue(PAT_SESSION);
+			vi.mocked(cmdConnectProbe).mockResolvedValue(undefined);
+
+			// Act
+			await main();
+
+			// Assert
+			expect(cmdConnectProbe).toHaveBeenCalledWith(
+				PAT_SESSION,
+				expect.objectContaining({
+					energy: { period: 'MONTHLY', startDate: '202501', endDate: '202503' },
+				}),
+				expect.any(Object),
+			);
+		});
+
+		it('should print the allowed periods, set exitCode 1 and skip the probe when --energy-period is invalid', async () => {
+			// Arrange
+			const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+			vi.mocked(parseArgs).mockReturnValue({ command: 'connect-probe', energy: 'true', 'energy-period': 'weekly' });
+			vi.mocked(loadPatSession).mockReturnValue(PAT_SESSION);
+
+			// Act
+			await main();
+
+			// Assert
+			expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Allowed: DAILY, MONTHLY'));
+			expect(process.exitCode).toBe(1);
+			expect(cmdConnectProbe).not.toHaveBeenCalled();
+			errorSpy.mockRestore();
+		});
+
 		it('should print a PAT login hint, set exitCode 1 and skip the probe when no PAT session exists', async () => {
 			// Arrange
 			vi.mocked(parseArgs).mockReturnValue({ command: 'connect-probe' });
@@ -453,6 +527,141 @@ describe('main', () => {
 			// Assert
 			expect(consoleErrorSpy).toHaveBeenCalledWith('Error:', 'control exploded');
 			expect(processExitSpy).toHaveBeenCalledWith(1);
+		});
+	});
+
+	describe('--out option', () => {
+		const PAT_SESSION = { country: 'US', personalAccessToken: 'pat-secret-1234567890' };
+		let finish: Mock<() => void>;
+
+		beforeEach(() => {
+			// Arrange
+			finish = vi.fn<() => void>();
+			vi.mocked(startOutputCapture).mockReturnValue({ filePath: '/abs/p.txt', finish });
+		});
+
+		afterEach(() => {
+			process.exitCode = undefined;
+		});
+
+		it('should not start output capture when --out is absent', async () => {
+			// Arrange
+			vi.mocked(parseArgs).mockReturnValue({ command: 'connect-probe' });
+			vi.mocked(loadPatSession).mockReturnValue(PAT_SESSION);
+			vi.mocked(cmdConnectProbe).mockResolvedValue(undefined);
+
+			// Act
+			await main();
+
+			// Assert
+			expect(startOutputCapture).not.toHaveBeenCalled();
+			expect(finish).not.toHaveBeenCalled();
+		});
+
+		it('should start capture with the path and meta, then finish once when the probe completes', async () => {
+			// Arrange
+			vi.mocked(parseArgs).mockReturnValue({
+				command: 'connect-probe',
+				out: 'workspace/out/p.txt',
+				country: 'KR',
+				'show-secrets': 'true',
+			});
+			vi.mocked(loadPatSession).mockReturnValue(PAT_SESSION);
+			vi.mocked(cmdConnectProbe).mockResolvedValue(undefined);
+
+			// Act
+			await main();
+
+			// Assert
+			expect(startOutputCapture).toHaveBeenCalledWith('workspace/out/p.txt', {
+				command: 'connect-probe',
+				country: 'KR',
+				showSecrets: true,
+			});
+			expect(finish).toHaveBeenCalledTimes(1);
+		});
+
+		it('should pass unchanged probe options when --out is given', async () => {
+			// Arrange
+			vi.mocked(parseArgs).mockReturnValue({ command: 'connect-probe', out: 'x.txt' });
+			vi.mocked(loadPatSession).mockReturnValue(PAT_SESSION);
+			vi.mocked(cmdConnectProbe).mockResolvedValue(undefined);
+
+			// Act
+			await main();
+
+			// Assert
+			expect(cmdConnectProbe).toHaveBeenCalledWith(
+				PAT_SESSION,
+				{ deviceId: undefined, raw: false, showSecrets: false },
+				expect.any(Object),
+			);
+		});
+
+		it('should print the error, set exitCode 1 and skip the command when startOutputCapture throws', async () => {
+			// Arrange
+			vi.mocked(parseArgs).mockReturnValue({ command: 'connect-probe', out: '' });
+			vi.mocked(startOutputCapture).mockImplementation(() => {
+				throw new Error('requires a file path');
+			});
+
+			// Act
+			await main();
+
+			// Assert
+			expect(consoleErrorSpy).toHaveBeenCalledWith('--out: requires a file path');
+			expect(process.exitCode).toBe(1);
+			expect(cmdConnectProbe).not.toHaveBeenCalled();
+		});
+
+		it('should refuse login with exitCode 1 before any prompt when --out is given', async () => {
+			// Arrange
+			vi.mocked(parseArgs).mockReturnValue({ command: 'login', out: 'x.txt' });
+
+			// Act
+			await main();
+
+			// Assert
+			expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('not supported for login'));
+			expect(process.exitCode).toBe(1);
+			expect(cmdLogin).not.toHaveBeenCalled();
+			expect(startOutputCapture).not.toHaveBeenCalled();
+		});
+
+		it('should finish capture before process.exit(1) when the command rejects', async () => {
+			// Arrange
+			vi.mocked(parseArgs).mockReturnValue({ command: 'connect-probe', out: 'x.txt' });
+			vi.mocked(loadPatSession).mockReturnValue(PAT_SESSION);
+			vi.mocked(cmdConnectProbe).mockRejectedValue(new Error('boom'));
+
+			// Act
+			await main();
+
+			// Assert
+			expect(finish.mock.invocationCallOrder[0]).toBeLessThan(processExitSpy.mock.invocationCallOrder[0]);
+		});
+
+		it('should finish capture before process.exit(1) when the command is unknown', async () => {
+			// Arrange
+			vi.mocked(parseArgs).mockReturnValue({ command: 'unknown', out: 'x.txt' });
+
+			// Act
+			await main();
+
+			// Assert
+			expect(finish.mock.invocationCallOrder[0]).toBeLessThan(processExitSpy.mock.invocationCallOrder[0]);
+		});
+
+		it('should finish capture on an early return when the PAT session is missing', async () => {
+			// Arrange
+			vi.mocked(parseArgs).mockReturnValue({ command: 'connect-probe', out: 'x.txt' });
+			vi.mocked(loadPatSession).mockReturnValue(null);
+
+			// Act
+			await main();
+
+			// Assert
+			expect(finish).toHaveBeenCalledTimes(1);
 		});
 	});
 });

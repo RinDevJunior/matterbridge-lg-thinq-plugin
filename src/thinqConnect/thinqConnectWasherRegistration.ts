@@ -6,7 +6,7 @@ import { buildThinqConnectWasherEndpoint } from './thinqConnectWasherEndpoint.js
 import type { ThinqConnectWasher, ThinqConnectWasherService } from './thinqConnectWasherService.js';
 
 export interface ThinqConnectWasherRegistrationDeps {
-	service: Pick<ThinqConnectWasherService, 'discoverWashers' | 'setPower'>;
+	service: Pick<ThinqConnectWasherService, 'discoverWashers' | 'setPower' | 'startCycle' | 'stopCycle'>;
 	logger: AnsiLogger;
 	isIgnored: (deviceId: string) => boolean;
 	resolveIdentity?: (deviceId: string) => ThinqConnectMatterIdentityOverride;

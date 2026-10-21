@@ -5,6 +5,11 @@ vi.mock('../../../services/thinqConnect/thinqConnectApiClient.js', () => ({
 	ThinqConnectApiClient: vi.fn(),
 }));
 
+vi.mock('../../../cli/commands/connectEnergy.js', () => ({
+	printConnectEnergy: vi.fn(),
+}));
+
+import { printConnectEnergy } from '../../../cli/commands/connectEnergy.js';
 import type { ConnectProbeSummary } from '../../../cli/commands/connectProbe.js';
 import {
 	cmdConnectProbe,
@@ -814,6 +819,61 @@ describe('cmdConnectProbe', () => {
 			// Assert
 			const output = JSON.stringify([...consoleLogSpy.mock.calls, ...consoleErrorSpy.mock.calls]);
 			expect(output).not.toContain(FAKE_PAT);
+		});
+	});
+
+	describe('energy option', () => {
+		it('should never call the energy printer when the energy option is undefined', async () => {
+			// Arrange
+			mockClient.getDevices.mockResolvedValue(DEVICES);
+			mockClient.getDeviceProfile.mockResolvedValue(WASHER_PROFILE);
+			mockClient.getDeviceState.mockResolvedValue(WASHER_STATE);
+
+			// Act
+			await cmdConnectProbe(SESSION, { raw: false }, mockLogger);
+
+			// Assert
+			expect(printConnectEnergy).not.toHaveBeenCalled();
+			expect(printedOutput()).not.toContain('energy');
+		});
+
+		it('should run the energy printer for the given device when energy is set', async () => {
+			// Arrange
+			mockClient.getDeviceProfile.mockResolvedValue(WASHER_PROFILE);
+			mockClient.getDeviceState.mockResolvedValue(WASHER_STATE);
+
+			// Act
+			await cmdConnectProbe(SESSION, { deviceId: 'washer-1', raw: false, energy: { period: 'DAILY' } }, mockLogger);
+
+			// Assert
+			expect(printConnectEnergy).toHaveBeenCalledTimes(1);
+			expect(printConnectEnergy).toHaveBeenCalledWith(expect.anything(), 'washer-1', { period: 'DAILY' });
+		});
+
+		it('should run the energy printer once per listed device, in order, when energy is set', async () => {
+			// Arrange
+			mockClient.getDevices.mockResolvedValue(DEVICES);
+			mockClient.getDeviceProfile.mockResolvedValue(WASHER_PROFILE);
+			mockClient.getDeviceState.mockResolvedValue(WASHER_STATE);
+
+			// Act
+			await cmdConnectProbe(SESSION, { raw: false, energy: { period: 'MONTHLY' } }, mockLogger);
+
+			// Assert
+			expect(vi.mocked(printConnectEnergy).mock.calls.map((call) => call[1])).toEqual(['dev-1', 'dev-2']);
+			expect(printConnectEnergy).toHaveBeenCalledWith(expect.anything(), 'dev-1', { period: 'MONTHLY' });
+		});
+
+		it('should skip the energy printer for a device whose profile and state both failed', async () => {
+			// Arrange
+			mockClient.getDeviceProfile.mockRejectedValue(new ThinqConnectApiError('profile down', undefined, 500));
+			mockClient.getDeviceState.mockRejectedValue(new ThinqConnectApiError('state down', undefined, 500));
+
+			// Act
+			await cmdConnectProbe(SESSION, { deviceId: 'washer-1', raw: false, energy: { period: 'DAILY' } }, mockLogger);
+
+			// Assert
+			expect(printConnectEnergy).not.toHaveBeenCalled();
 		});
 	});
 

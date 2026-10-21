@@ -8,8 +8,15 @@ import {
 	applyThinqConnectWasherState,
 	buildThinqConnectWasherEndpoint,
 	mapThinqConnectWasherState,
+	PAUSED_STATES,
+	RUNNING_STATES,
+	STOPPED_STATES,
 } from '../../thinqConnect/thinqConnectWasherEndpoint.js';
-import type { ThinqConnectWasher, ThinqConnectWasherState } from '../../thinqConnect/thinqConnectWasherService.js';
+import type {
+	ThinqConnectWasher,
+	ThinqConnectWasherService,
+	ThinqConnectWasherState,
+} from '../../thinqConnect/thinqConnectWasherService.js';
 import { createMockLogger } from '../helpers/testUtils.js';
 
 const mocks = vi.hoisted(() => ({
@@ -18,6 +25,7 @@ const mocks = vi.hoisted(() => ({
 		createDefaultBasicInformationClusterServer: vi.fn(),
 		addCommandHandler: vi.fn(),
 		updateAttribute: vi.fn(),
+		getAttribute: vi.fn(),
 	},
 }));
 
@@ -29,8 +37,12 @@ vi.mock('matterbridge/devices', () => ({
 
 type PowerHandler = () => Promise<void>;
 
+type CommandName = 'on' | 'off' | 'start' | 'stop' | 'pause' | 'resume';
+
 interface MockService {
-	setPower: Mock;
+	setPower: Mock<ThinqConnectWasherService['setPower']>;
+	startCycle: Mock<ThinqConnectWasherService['startCycle']>;
+	stopCycle: Mock<ThinqConnectWasherService['stopCycle']>;
 }
 
 const WASHER: ThinqConnectWasher = {
@@ -41,10 +53,14 @@ const WASHER: ThinqConnectWasher = {
 };
 
 function createMockService(): MockService {
-	return { setPower: vi.fn() };
+	return {
+		setPower: vi.fn<ThinqConnectWasherService['setPower']>(),
+		startCycle: vi.fn<ThinqConnectWasherService['startCycle']>(),
+		stopCycle: vi.fn<ThinqConnectWasherService['stopCycle']>(),
+	};
 }
 
-function getHandler(name: 'on' | 'off'): PowerHandler {
+function getHandler(name: CommandName): PowerHandler {
 	const call = mocks.endpoint.addCommandHandler.mock.calls.find((entry: unknown[]) => entry[0] === name);
 	if (!call) {
 		throw new Error(`no ${name} handler registered`);
@@ -61,6 +77,7 @@ describe('thinqConnectWasherEndpoint', () => {
 		logger = createMockLogger();
 		service = createMockService();
 		mocks.endpoint.mode = undefined;
+		mocks.endpoint.getAttribute.mockReset();
 	});
 
 	describe('buildThinqConnectWasherEndpoint', () => {
@@ -72,13 +89,13 @@ describe('thinqConnectWasherEndpoint', () => {
 			expect(mocks.endpoint.mode).toBe('server');
 		});
 
-		it('should register exactly the on and off command handlers', () => {
+		it('should register exactly the on, off, start, stop, pause and resume command handlers', () => {
 			// Arrange & Act
 			buildThinqConnectWasherEndpoint(WASHER, service, logger);
 
 			// Assert
 			const names = mocks.endpoint.addCommandHandler.mock.calls.map((entry: unknown[]) => entry[0]);
-			expect(names).toEqual(['on', 'off']);
+			expect(names).toEqual(['on', 'off', 'start', 'stop', 'pause', 'resume']);
 		});
 
 		it('should set basic information with the washer name and deviceId', () => {
@@ -261,6 +278,295 @@ describe('thinqConnectWasherEndpoint', () => {
 
 			// Assert
 			expect(logger.error).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('start handler', () => {
+		const { Running, Stopped } = OperationalState.OperationalStateEnum;
+
+		beforeEach(() => {
+			buildThinqConnectWasherEndpoint(WASHER, service, logger);
+		});
+
+		it('should resolve without writing any attribute when startCycle returns sent', async () => {
+			// Arrange
+			service.startCycle.mockResolvedValue({ status: 'sent', state: {} });
+
+			// Act & Assert
+			await expect(getHandler('start')()).resolves.toBeUndefined();
+			expect(service.startCycle).toHaveBeenCalledWith(WASHER);
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
+		});
+
+		it('should write the real operational state and resolve when startCycle returns noop', async () => {
+			// Arrange
+			service.startCycle.mockResolvedValue({
+				status: 'noop',
+				state: { currentState: 'RUNNING', powerOn: true, remainingSeconds: 60 },
+			});
+
+			// Act
+			await getHandler('start')();
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalState',
+				Running,
+				logger,
+			);
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OperationalState.id, 'countdownTime', 60, logger);
+		});
+
+		it('should write Stopped before rejecting with the refusal reason when refused in POWER_OFF', async () => {
+			// Arrange
+			service.startCycle.mockResolvedValue({
+				status: 'refused',
+				reason: 'Washer is powered off. Turn it on first.',
+				state: { currentState: 'POWER_OFF', powerOn: false },
+			});
+
+			// Act & Assert
+			await expect(getHandler('start')()).rejects.toThrow('Washer is powered off. Turn it on first.');
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalState',
+				Stopped,
+				logger,
+			);
+		});
+
+		it('should reject with the hint and revert to the previous Stopped state when failed with empty state', async () => {
+			// Arrange
+			mocks.endpoint.getAttribute.mockReturnValue(Stopped);
+			service.startCycle.mockResolvedValue({
+				status: 'failed',
+				error: 'boom',
+				hint: 'Remote start is off on the washer.',
+				state: {},
+			});
+
+			// Act & Assert
+			await expect(getHandler('start')()).rejects.toThrow('Remote start is off on the washer.');
+			expect(mocks.endpoint.getAttribute).toHaveBeenCalledWith(OperationalState.id, 'operationalState');
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalState',
+				Stopped,
+				logger,
+			);
+		});
+
+		it('should revert to the previous Running state when failed with empty state', async () => {
+			// Arrange
+			mocks.endpoint.getAttribute.mockReturnValue(Running);
+			service.startCycle.mockResolvedValue({ status: 'failed', error: 'boom', hint: 'hint', state: {} });
+
+			// Act
+			await expect(getHandler('start')()).rejects.toThrow('hint');
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalState',
+				Running,
+				logger,
+			);
+		});
+
+		it('should reject and revert to the previous state when startCycle throws unexpectedly', async () => {
+			// Arrange
+			mocks.endpoint.getAttribute.mockReturnValue(Stopped);
+			service.startCycle.mockRejectedValue(new Error('unexpected'));
+
+			// Act & Assert
+			await expect(getHandler('start')()).rejects.toThrow('unexpected');
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalState',
+				Stopped,
+				logger,
+			);
+		});
+
+		it('should keep the refusal error and log a warning when the revert write rejects', async () => {
+			// Arrange
+			service.startCycle.mockResolvedValue({
+				status: 'refused',
+				reason: 'Refused reason',
+				state: { currentState: 'POWER_OFF', powerOn: false },
+			});
+			mocks.endpoint.updateAttribute.mockRejectedValueOnce(new Error('write failed'));
+
+			// Act & Assert
+			await expect(getHandler('start')()).rejects.toThrow('Refused reason');
+			expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('write failed'));
+		});
+	});
+
+	describe('stop handler', () => {
+		const { Running, Stopped } = OperationalState.OperationalStateEnum;
+
+		beforeEach(() => {
+			buildThinqConnectWasherEndpoint(WASHER, service, logger);
+		});
+
+		it('should resolve without writing any attribute when stopCycle returns sent', async () => {
+			// Arrange
+			service.stopCycle.mockResolvedValue({ status: 'sent', state: {} });
+
+			// Act & Assert
+			await expect(getHandler('stop')()).resolves.toBeUndefined();
+			expect(service.stopCycle).toHaveBeenCalledWith(WASHER);
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
+		});
+
+		it('should write the real state and resolve when stopCycle returns noop', async () => {
+			// Arrange
+			service.stopCycle.mockResolvedValue({ status: 'noop', state: { currentState: 'POWER_OFF', powerOn: false } });
+
+			// Act
+			await getHandler('stop')();
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', false, logger);
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalState',
+				Stopped,
+				logger,
+			);
+		});
+
+		it('should write Running back and reject when refused with Remote Start off while RUNNING', async () => {
+			// Arrange
+			service.stopCycle.mockResolvedValue({
+				status: 'refused',
+				reason: 'Remote start is off on the washer.',
+				state: { currentState: 'RUNNING', powerOn: true, remoteControlEnabled: false },
+			});
+
+			// Act & Assert
+			await expect(getHandler('stop')()).rejects.toThrow('Remote start is off on the washer.');
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalState',
+				Running,
+				logger,
+			);
+		});
+
+		it('should revert to the previous Running state and reject when failed with empty state', async () => {
+			// Arrange
+			mocks.endpoint.getAttribute.mockReturnValue(Running);
+			service.stopCycle.mockResolvedValue({ status: 'failed', error: 'boom', hint: 'The washer failed.', state: {} });
+
+			// Act & Assert
+			await expect(getHandler('stop')()).rejects.toThrow('The washer failed.');
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalState',
+				Running,
+				logger,
+			);
+		});
+	});
+
+	describe('pause and resume handlers', () => {
+		const { Running, Paused, Stopped } = OperationalState.OperationalStateEnum;
+
+		beforeEach(() => {
+			buildThinqConnectWasherEndpoint(WASHER, service, logger);
+		});
+
+		it('should reject with a not-supported error and restore the previous Running state on pause', async () => {
+			// Arrange
+			mocks.endpoint.getAttribute.mockReturnValue(Running);
+
+			// Act & Assert
+			await expect(getHandler('pause')()).rejects.toThrow('Pause and resume are not supported');
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalState',
+				Running,
+				logger,
+			);
+		});
+
+		it('should reject with a not-supported error and restore the previous Paused state on resume', async () => {
+			// Arrange
+			mocks.endpoint.getAttribute.mockReturnValue(Paused);
+
+			// Act & Assert
+			await expect(getHandler('resume')()).rejects.toThrow('Pause and resume are not supported');
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalState',
+				Paused,
+				logger,
+			);
+		});
+
+		it('should fall back to Stopped when no previous state can be read on pause', async () => {
+			// Arrange
+			mocks.endpoint.getAttribute.mockReturnValue(undefined);
+
+			// Act & Assert
+			await expect(getHandler('pause')()).rejects.toThrow('Pause and resume are not supported');
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalState',
+				Stopped,
+				logger,
+			);
+		});
+
+		it('should never call startCycle, stopCycle or setPower on pause or resume', async () => {
+			// Arrange
+			mocks.endpoint.getAttribute.mockReturnValue(Running);
+
+			// Act
+			await expect(getHandler('pause')()).rejects.toThrow();
+			await expect(getHandler('resume')()).rejects.toThrow();
+
+			// Assert
+			expect(service.startCycle).not.toHaveBeenCalled();
+			expect(service.stopCycle).not.toHaveBeenCalled();
+			expect(service.setPower).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('exported state sets', () => {
+		it('should keep RUNNING_STATES, PAUSED_STATES and STOPPED_STATES equal to their original contents', () => {
+			// Act & Assert
+			expect([...RUNNING_STATES].sort()).toEqual(
+				[
+					'RUNNING',
+					'SOAKING',
+					'DETECTING',
+					'RINSING',
+					'DETERGENT_AMOUNT',
+					'DRYING',
+					'PREWASH',
+					'STEAM_SOFTENING',
+					'SPINNING',
+					'DISPENSING',
+					'ADD_DRAIN',
+				].sort(),
+			);
+			expect([...PAUSED_STATES].sort()).toEqual(['PAUSE', 'RINSE_HOLD'].sort());
+			expect([...STOPPED_STATES].sort()).toEqual(
+				[
+					'POWER_OFF',
+					'INITIAL',
+					'END',
+					'RESERVED',
+					'REFRESHING',
+					'FROZEN_PREVENT_INITIAL',
+					'FROZEN_PREVENT_RUNNING',
+					'FROZEN_PREVENT_PAUSE',
+				].sort(),
+			);
 		});
 	});
 

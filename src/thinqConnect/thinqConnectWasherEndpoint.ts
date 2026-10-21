@@ -3,40 +3,18 @@ import { LaundryWasher } from 'matterbridge/devices';
 import type { AnsiLogger } from 'matterbridge/logger';
 import { OnOff, OperationalState } from 'matterbridge/matter/clusters';
 
+import { PAUSED_STATES, RUNNING_STATES, STOPPED_STATES } from '../services/thinqConnect/thinqConnectWasher.js';
 import type { ThinqConnectMatterIdentityOverride } from './thinqConnectMatterIdentity.js';
 import type {
 	ThinqConnectWasher,
+	ThinqConnectWasherCommandOutcome,
 	ThinqConnectWasherService,
 	ThinqConnectWasherState,
 } from './thinqConnectWasherService.js';
 
-/** Explicit allowlists: an unknown or new Connect state must never default to Running. */
-export const RUNNING_STATES: ReadonlySet<string> = new Set([
-	'RUNNING',
-	'SOAKING',
-	'DETECTING',
-	'RINSING',
-	'DETERGENT_AMOUNT',
-	'DRYING',
-	'PREWASH',
-	'STEAM_SOFTENING',
-	'SPINNING',
-	'DISPENSING',
-	'ADD_DRAIN',
-]);
+export type ThinqConnectWasherCommandService = Pick<ThinqConnectWasherService, 'setPower' | 'startCycle' | 'stopCycle'>;
 
-export const PAUSED_STATES: ReadonlySet<string> = new Set(['PAUSE', 'RINSE_HOLD']);
-
-export const STOPPED_STATES: ReadonlySet<string> = new Set([
-	'POWER_OFF',
-	'INITIAL',
-	'END',
-	'RESERVED',
-	'REFRESHING',
-	'FROZEN_PREVENT_INITIAL',
-	'FROZEN_PREVENT_RUNNING',
-	'FROZEN_PREVENT_PAUSE',
-]);
+export { PAUSED_STATES, RUNNING_STATES, STOPPED_STATES };
 
 const ERROR_STATE = 'ERROR';
 
@@ -60,7 +38,7 @@ export function mapThinqConnectWasherState(currentState: string | undefined): Op
  */
 export function buildThinqConnectWasherEndpoint(
 	washer: ThinqConnectWasher,
-	service: Pick<ThinqConnectWasherService, 'setPower'>,
+	service: ThinqConnectWasherCommandService,
 	logger: AnsiLogger,
 	identity: ThinqConnectMatterIdentityOverride = {},
 ): MatterbridgeEndpoint {
@@ -91,6 +69,62 @@ export function buildThinqConnectWasherEndpoint(
 
 	endpoint.addCommandHandler('on', async () => handlePower(true));
 	endpoint.addCommandHandler('off', async () => handlePower(false));
+
+	const revertOperationalState = async (
+		state: ThinqConnectWasherState,
+		previous: number | undefined,
+	): Promise<void> => {
+		try {
+			if (state.currentState !== undefined) {
+				await applyThinqConnectWasherState(endpoint, state, logger);
+				return;
+			}
+			await endpoint.updateAttribute(
+				OperationalState.id,
+				'operationalState',
+				previous ?? OperationalState.OperationalStateEnum.Stopped,
+				logger,
+			);
+		} catch (error) {
+			logger.warn(
+				`ThinQ Connect ${washer.deviceId} could not revert the operational state: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+	};
+
+	// matterbridge awaits these handlers and only then sets Running/Stopped: return = success, throw = refusal.
+	const handleCycle = async (command: 'start' | 'stop'): Promise<void> => {
+		const previous = endpoint.getAttribute(OperationalState.id, 'operationalState') as number | undefined;
+		let outcome: ThinqConnectWasherCommandOutcome;
+		try {
+			outcome = await (command === 'start' ? service.startCycle(washer) : service.stopCycle(washer));
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			outcome = { status: 'failed', error: message, hint: message, state: {} };
+		}
+
+		if (outcome.status === 'sent') {
+			return;
+		}
+		if (outcome.status === 'noop') {
+			await applyThinqConnectWasherState(endpoint, outcome.state, logger);
+			return;
+		}
+		await revertOperationalState(outcome.state, previous);
+		throw new Error(outcome.status === 'refused' ? outcome.reason : outcome.hint);
+	};
+
+	const rejectPauseResume = async (): Promise<void> => {
+		const previous = endpoint.getAttribute(OperationalState.id, 'operationalState') as number | undefined;
+		logger.warn(`ThinQ Connect washer ${washer.deviceId} pause/resume is not supported by the ThinQ Connect API`);
+		await revertOperationalState({}, previous);
+		throw new Error('Pause and resume are not supported by the ThinQ Connect API.');
+	};
+
+	endpoint.addCommandHandler('start', async () => handleCycle('start'));
+	endpoint.addCommandHandler('stop', async () => handleCycle('stop'));
+	endpoint.addCommandHandler('pause', async () => rejectPauseResume());
+	endpoint.addCommandHandler('resume', async () => rejectPauseResume());
 
 	return endpoint;
 }

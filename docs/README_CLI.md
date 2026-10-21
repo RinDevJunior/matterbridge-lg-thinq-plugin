@@ -26,7 +26,7 @@ npm run cli -- --command <command> [options]
 | ----------------- | ------------------------------------------ | ------------------------------------------------------ |
 | `login`           | `--type`, `--country`, `--language`        | Authenticate and save session                          |
 | `devices`         |                                            | List all discovered ThinQ devices (requires `login`)   |
-| `connect-probe`   | `--device-id`, `--raw`                     | Read-only ThinQ Connect probe (requires PAT `login`)   |
+| `connect-probe`   | `--device-id`, `--raw`, `--energy`         | Read-only ThinQ Connect probe (requires PAT `login`)   |
 | `connect-control` | `--device-id`, `--send`, `--yes`, `--wait` | Send one guarded washer command (requires PAT `login`) |
 | `help`            |                                            | Show help message                                      |
 
@@ -145,9 +145,13 @@ Read-only. Prints the device profile and a state summary from the ThinQ Connect 
 - `--device-id`: probe one device (default: every device visible to the token)
 - `--raw`: also print the raw `GET /devices` entry and the raw profile/state JSON. The entry is masked: serial/MAC show only the last 4 characters.
 - `--show-secrets`: with `--raw`, print serial/MAC unmasked. Tokens and the PAT are never printed. Put it last or before another `--` flag.
+- `--energy`: also call the read-only Energy API (profile, then usage per listed property) for each probed device. Unsupported products (1220, 1221, 1307) are an expected outcome and do not set a failing exit code. Put it last or before another `--` flag.
+- `--energy-period`: `DAILY` (default) or `MONTHLY`
+- `--energy-start` / `--energy-end`: `YYYYMMDD` for DAILY (max 31 days), `YYYYMM` for MONTHLY (max 12 months). Default: last 7 days / last 3 months.
 
 ```bash
 npm run cli -- --command connect-probe --device-id <deviceId>
+npm run cli -- --command connect-probe --device-id <deviceId> --energy
 ```
 
 ## Connect-Control Command
@@ -167,7 +171,26 @@ npm run cli -- --command connect-control --device-id <deviceId> --send POWER_ON 
 
 ### cli-runner MCP tool
 
-The Claude `cli-runner` tool exposes the same commands as `connect-probe` and `connect-control`. Params: `deviceId`, `raw` (probe), and for control `sendValue`, `wait` (seconds, default 3, max 20) and `yes`. `yes` must be the boolean `true` to send; anything else is a dry run.
+The Claude `cli-runner` tool exposes the same commands as `connect-probe` and `connect-control`. Params: `deviceId`, `raw` and `energy` (probe, boolean), and for control `sendValue`, `wait` (seconds, default 3, max 20) and `yes`. `yes` must be the boolean `true` to send; anything else is a dry run. The tool does not expose `--out`, because its output is already returned to Claude.
+
+## Saving Output to a File
+
+Add `--out <file>` to any command (except `login`) to save its output to a file as well as printing it. Share the path instead of pasting the output.
+
+```bash
+npm run cli -- --command connect-probe --device-id <deviceId> --raw --out workspace/out/probe.txt
+npm run cli -- --command devices --dump-device <deviceId> --out ~/Desktop/device.txt
+```
+
+- The file holds the same text as the screen, with ANSI colours removed, a short header (`# command`, `# saved`, `# country` when given, `# show-secrets`) and no tokens or PAT. Serial/MAC masking follows the screen rules (`--show-secrets` applies).
+- The only file-only change: `hdnts=` values in signed links are replaced with `[REDACTED]`.
+- The file is a copy of the screen output. Treat it like the screen: do not share it publicly.
+- Mode `0600` (owner only). An existing file is overwritten. Missing parent folders are created. A leading `~` is expanded.
+- `workspace/` is git-ignored, so `workspace/out/...` is a safe default location.
+- The file is created before the command runs. A bad path stops the command with `--out: <reason>` and exit code 1.
+- If the file cannot be written at the end, the screen output is kept, an error is printed and the exit code is 2 (unless the command already failed).
+- `--out` is refused for `login` (it prompts for secrets). The session files `.cli-session.json` and `.cli-pat-session.json` cannot be used as the target.
+- `--out` must not be the last token or followed by another `--` flag, because the parser takes the next non-flag token as its value.
 
 ## Session File
 

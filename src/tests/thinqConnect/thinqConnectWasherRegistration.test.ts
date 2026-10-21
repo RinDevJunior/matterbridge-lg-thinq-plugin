@@ -37,7 +37,7 @@ function buildWasher(deviceId: string, name: string): ThinqConnectWasher {
 const IGNORED_ID = 'ignored-washer';
 
 describe('registerThinqConnectWashers', () => {
-	type Service = Pick<ThinqConnectWasherService, 'discoverWashers' | 'setPower'>;
+	type Service = Pick<ThinqConnectWasherService, 'discoverWashers' | 'setPower' | 'startCycle' | 'stopCycle'>;
 
 	let logger: ReturnType<typeof createMockLogger>;
 	let deps: {
@@ -57,6 +57,8 @@ describe('registerThinqConnectWashers', () => {
 			service: {
 				discoverWashers: vi.fn<Service['discoverWashers']>(),
 				setPower: vi.fn<Service['setPower']>(),
+				startCycle: vi.fn<Service['startCycle']>(),
+				stopCycle: vi.fn<Service['stopCycle']>(),
 			},
 			logger,
 			isIgnored: vi.fn((deviceId: string): boolean => deviceId === IGNORED_ID),

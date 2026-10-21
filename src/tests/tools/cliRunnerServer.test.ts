@@ -23,6 +23,55 @@ function asCliRunner(value: unknown): CliRunnerModule {
 const cliRunner = asCliRunner(loadCjs('../../../.claude/tools/cli-runner-server.cjs'));
 
 describe('cli-runner-server buildCliArgs', () => {
+	describe('connect-probe energy flag', () => {
+		it('should add --energy true when command is connect-probe and energy is strictly true', () => {
+			// Arrange
+			const input = { command: 'connect-probe', deviceId: 'dev-1', energy: true };
+
+			// Act
+			const result = cliRunner.buildCliArgs(input);
+
+			// Assert
+			expect(result.args).toEqual(expect.arrayContaining(['--energy', 'true']));
+		});
+
+		it.each(['true', 1, false, undefined])(
+			'should not add --energy when energy is %j because only a strict boolean true is accepted',
+			(energy) => {
+				// Arrange
+				const input = { command: 'connect-probe', deviceId: 'dev-1', energy };
+
+				// Act
+				const result = cliRunner.buildCliArgs(input);
+
+				// Assert
+				expect(result.args).not.toContain('--energy');
+			},
+		);
+
+		it('should not add --energy for connect-control even when energy is strictly true', () => {
+			// Arrange
+			const input = { command: 'connect-control', deviceId: 'dev-1', sendValue: 'POWER_OFF', energy: true };
+
+			// Act
+			const result = cliRunner.buildCliArgs(input);
+
+			// Assert
+			expect(result.args).not.toContain('--energy');
+		});
+
+		it('should still never add --yes for connect-probe when energy is strictly true', () => {
+			// Arrange
+			const input = { command: 'connect-probe', deviceId: 'dev-1', energy: true, yes: true };
+
+			// Act
+			const result = cliRunner.buildCliArgs(input);
+
+			// Assert
+			expect(result.args).not.toContain('--yes');
+		});
+	});
+
 	describe('connect-control --yes gate', () => {
 		it('should add --yes true when command is connect-control and yes is strictly true', () => {
 			// Arrange

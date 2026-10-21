@@ -69,7 +69,7 @@ function sendError(id, code, message) {
 // ---------------------------------------------------------------------------
 
 // Pure: validates input and builds the CLI argv. No fs, no spawn.
-function buildCliArgs({ command, duid, local, debug, detail, method, params, send: sendFlag, deviceId, sendValue, yes, raw, wait }) {
+function buildCliArgs({ command, duid, local, debug, detail, method, params, send: sendFlag, deviceId, sendValue, yes, raw, wait, energy }) {
   if (!command) {
     return { error: 'Error: "command" is required.' };
   }
@@ -105,6 +105,7 @@ function buildCliArgs({ command, duid, local, debug, detail, method, params, sen
   if (sendFlag && !isConnectControl) args.push('--send', 'true');
   if (deviceId && isConnect) args.push('--device-id', String(deviceId));
   if (raw === true && command === 'connect-probe') args.push('--raw', 'true');
+  if (energy === true && command === 'connect-probe') args.push('--energy', 'true');
   if (isConnectControl) {
     args.push('--send', normalizedSendValue);
     if (typeof wait === 'number' && Number.isFinite(wait) && wait >= 0) {
@@ -166,7 +167,7 @@ const TOOL_DEFINITIONS = [
   {
     name: 'RunCli',
     description:
-      "Run this project's compiled CLI (dist/cli.js) and capture stdout/stderr for investigation. Does not support the 'login' command — handle authentication manually first. ThinQ Connect: 'connect-probe' is read-only. 'connect-control' (washer POWER_ON|POWER_OFF|START) is a DRY RUN by default; it only sends a REAL command to the appliance when 'yes' is true, which requires the user's explicit approval for that specific send. Never set 'yes' on your own initiative.",
+      "Run this project's compiled CLI (dist/cli.js) and capture stdout/stderr for investigation. Does not support the 'login' command — handle authentication manually first. ThinQ Connect: 'connect-probe' is read-only (set 'energy' to also call the read-only Energy API). 'connect-control' (washer POWER_ON|POWER_OFF|START) is a DRY RUN by default; it only sends a REAL command to the appliance when 'yes' is true, which requires the user's explicit approval for that specific send. Never set 'yes' on your own initiative.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -186,6 +187,7 @@ const TOOL_DEFINITIONS = [
         sendValue: { type: 'string', enum: CONNECT_SEND_VALUES, description: 'connect-control value to send; dry run unless yes=true' },
         yes: { type: 'boolean', description: 'connect-control only: REALLY send to the appliance. Default false = dry run. Requires the user\'s explicit approval.' },
         raw: { type: 'boolean', description: 'connect-probe only: also print raw JSON' },
+        energy: { type: 'boolean', description: 'connect-probe only: also call the read-only Energy API (profile + usage)' },
         wait: { type: 'number', description: 'connect-control only: seconds before the after-state read, default 3, max 20' },
       },
       required: ['command'],

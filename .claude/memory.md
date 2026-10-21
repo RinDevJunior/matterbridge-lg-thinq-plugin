@@ -175,6 +175,8 @@ It is version-controlled — commit and push changes so teammates can pull the l
 - ThinQ Connect (PAT) planned (Oct 21, 2026): `src/thinqConnect/` (platform side; `src/services/thinqConnect/` = API client/pure helpers) self-contained (no imports of V1/`PlatformConfigManager`/`cli/`), neutral pure helpers in `services/thinqConnect/thinqConnectWasher.ts`; only `module.ts` imports both. On/off handlers must NOT throw and write OnOff only after awaited I/O (framework mutates unawaited). See `workspace/thinq-v2-washer-onoff/plan.md`.
 - ThinQ Connect AC planned (Oct 21, 2026): Connect AC = `DEVICE_AIR_CONDITIONER`, plain-object state, profile read by path (not findKey). Thermostat/fan writes are raw attribute writes -> `subscribeAttribute` + `context.fabric` guard + explicit revert; `resetCondition` with no handler resets locally, so ThinQ Connect registers a throwing one. See `workspace/thinq-v2-air-conditioner/plan.md`.
 
+- ThinQ Connect washer Start/Stop planned (Oct 21, 2026, matterbridge 3.10.14 AWAITS OperationalState start/stop/pause/resume handlers then sets Running/Stopped itself): refusal MUST throw (no mutation), success returns; STOP not POWER_OFF; no auto POWER_ON; NO opt-in setting (user removed it; handlers always registered, safety = guards). See `workspace/connect-energy-probe-and-washer-start-stop/plan.md`.
+
 ## Test Patterns
 
 - **connect-control CLI tests (Oct 21, 2026):** `src/tests/cli/**` is NOT excluded (only `src/cli/**` is); cmd tests mock `ThinqConnectApiClient` via `vi.mock` + `mockImplementation(function(){...})`. Array vs plain-object washer state both must be covered for guards.
@@ -259,3 +261,5 @@ It is version-controlled — commit and push changes so teammates can pull the l
 ## Archive
 
 Older entries and one-off research (B01/Q7/Q10 current-room detection, featureSet decoding reference) live in `wiki/memory-archive.md` — consult it when working on those areas.
+
+- **CLI output-capture tests (Oct 21, 2026):** `process.stdout/stderr.write` spied before `startOutputCapture` (tee passes through to spy); `fs.writeFileSync` spy installed AFTER start (preflight uses it). `vi.fn()` for `mockReturnValue` typed as `Mock<() => void>` (import `type Mock`); `ReturnType<typeof vi.fn>` fails TS2322.
