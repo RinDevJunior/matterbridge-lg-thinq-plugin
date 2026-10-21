@@ -1,7 +1,11 @@
 import { AnsiLogger } from 'matterbridge/logger';
 
 import { ThinqConnectApiError } from '../../errors/index.js';
-import { ThinqConnectApiClient, type ThinqConnectResource } from '../../services/thinqConnect/thinqConnectApiClient.js';
+import {
+	ThinqConnectApiClient,
+	type ThinqConnectPayload,
+	type ThinqConnectResource,
+} from '../../services/thinqConnect/thinqConnectApiClient.js';
 import type { CliPatSession } from '../types.js';
 import { type ConnectProbeSummary, formatConnectProbeSummary, summarizeConnectProbe } from './connectProbe.js';
 
@@ -121,8 +125,8 @@ export async function cmdConnectControl(
 	}
 
 	// Sequential on purpose: ThinQ Connect rate-limits bursts (code 1306).
-	let profile: ThinqConnectResource;
-	let state: ThinqConnectResource;
+	let profile: ThinqConnectPayload;
+	let state: ThinqConnectPayload;
 	try {
 		profile = await client.getDeviceProfile(deviceId);
 		state = await client.getDeviceState(deviceId);

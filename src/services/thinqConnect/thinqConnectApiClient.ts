@@ -79,16 +79,17 @@ export class ThinqConnectApiClient {
 		return this.getResource(deviceId, 'state');
 	}
 
-	public async controlDevice(deviceId: string, payload: ThinqConnectResource): Promise<ThinqConnectResource> {
+	public async controlDevice(deviceId: string, payload: ThinqConnectResource): Promise<ThinqConnectPayload> {
 		const data = await this.post<ThinqConnectResourceResponse>(
 			`/devices/${encodeURIComponent(deviceId)}/control`,
 			payload,
 			{ 'x-conditional-control': 'true' },
 		);
 		const response = data?.response;
-		return typeof response === 'object' && response !== null && !Array.isArray(response)
-			? (response as ThinqConnectResource)
-			: {};
+		if (Array.isArray(response)) {
+			return response;
+		}
+		return typeof response === 'object' && response !== null ? (response as ThinqConnectResource) : {};
 	}
 
 	public async validateToken(): Promise<ThinqConnectValidationResult> {
