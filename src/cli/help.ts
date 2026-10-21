@@ -5,7 +5,7 @@ const g = '\x1b[32m'; // green
 const d = '\x1b[2m'; // dim
 const r = '\x1b[0m'; // reset
 
-const NAME_WIDTH = 12;
+const NAME_WIDTH = 14;
 
 function row(name: string, args: string, desc: string): string {
 	const paddedName = name.padEnd(NAME_WIDTH);
@@ -34,10 +34,15 @@ ${b}Energy options:${r}
   ${y}--interval${r}     Seconds between samples (default: 5)
   ${y}--keep-alive${r}   Send the plugin's keep-alive first, wait 2s, then sample
 
+${b}Connect-probe options:${r}
+  ${y}--device-id${r}    Device id to probe (default: every device visible to the token)
+  ${y}--raw${r}          Also print the raw profile/state JSON
+
 ${b}Commands:${r}
 ${row('login', '', 'Authenticate with LG ThinQ (pat = ThinQ Connect Personal Access Token, validated read-only, saved to .cli-pat-session.json)')}
 ${row('devices', '', 'List all discovered ThinQ devices (requires a prior login)')}
 ${row('energy', '[energy options]', 'Print raw AC power/energy snapshot fields (requires a prior login)')}
+${row('connect-probe', '[connect-probe options]', 'Read-only ThinQ Connect API probe: device profile + state summary (requires a prior PAT login)')}
 ${row('help', '', 'Show this help message')}
 
 ${b}Examples:${r}
@@ -51,4 +56,7 @@ ${b}Examples:${r}
   npm run cli -- --command ${g}devices${r} --probe-filter <deviceId>
   npm run cli -- --command ${g}energy${r}
   npm run cli -- --command ${g}energy${r} --samples 5 --interval 10 --keep-alive
+  npm run cli -- --command ${g}connect-probe${r}
+  npm run cli -- --command ${g}connect-probe${r} --device-id <deviceId>
+  npm run cli -- --command ${g}connect-probe${r} --raw
 `;

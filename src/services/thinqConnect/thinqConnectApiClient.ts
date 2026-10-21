@@ -39,6 +39,12 @@ interface ThinqConnectDevicesResponse {
 	response?: ThinqConnectDevice[];
 }
 
+export type ThinqConnectResource = Record<string, unknown>;
+
+interface ThinqConnectResourceResponse {
+	response?: unknown;
+}
+
 /** Read-only client for the official LG ThinQ Connect API, authenticated with a Personal Access Token. */
 export class ThinqConnectApiClient {
 	private readonly baseUrl: string;
@@ -58,22 +64,43 @@ export class ThinqConnectApiClient {
 	}
 
 	public async getDevices(): Promise<ThinqConnectDevice[]> {
-		const url = `${this.baseUrl}/devices`;
-		this.logger.debug(`ThinQ Connect request -> GET ${url}`);
-		try {
-			const { data } = await axios.get<ThinqConnectDevicesResponse>(url, {
-				headers: this.buildHeaders(),
-				timeout: REQUEST_TIMEOUT_MS,
-			});
-			return Array.isArray(data.response) ? data.response : [];
-		} catch (error) {
-			throw this.toApiError(error);
-		}
+		const data = await this.get<ThinqConnectDevicesResponse>('/devices');
+		return Array.isArray(data.response) ? data.response : [];
+	}
+
+	public async getDeviceProfile(deviceId: string): Promise<ThinqConnectResource> {
+		return this.getResource(deviceId, 'profile');
+	}
+
+	public async getDeviceState(deviceId: string): Promise<ThinqConnectResource> {
+		return this.getResource(deviceId, 'state');
 	}
 
 	public async validateToken(): Promise<ThinqConnectValidationResult> {
 		const devices = await this.getDevices();
 		return { deviceCount: devices.length, devices };
+	}
+
+	private async getResource(deviceId: string, kind: 'profile' | 'state'): Promise<ThinqConnectResource> {
+		const data = await this.get<ThinqConnectResourceResponse>(`/devices/${encodeURIComponent(deviceId)}/${kind}`);
+		const response = data.response;
+		return typeof response === 'object' && response !== null && !Array.isArray(response)
+			? (response as ThinqConnectResource)
+			: {};
+	}
+
+	private async get<T>(path: string): Promise<T> {
+		const url = `${this.baseUrl}${path}`;
+		this.logger.debug(`ThinQ Connect request -> GET ${url}`);
+		try {
+			const { data } = await axios.get<T>(url, {
+				headers: this.buildHeaders(),
+				timeout: REQUEST_TIMEOUT_MS,
+			});
+			return data;
+		} catch (error) {
+			throw this.toApiError(error);
+		}
 	}
 
 	private buildHeaders(): Record<string, string> {
