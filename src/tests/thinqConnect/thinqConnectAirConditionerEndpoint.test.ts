@@ -5,11 +5,15 @@ import {
 	OnOff,
 	RelativeHumidityMeasurement,
 	ResourceMonitoring,
+	TemperatureMeasurement,
 	Thermostat,
 } from 'matterbridge/matter/clusters';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
-import { readAirConditionerProfile } from '../../services/thinqConnect/thinqConnectAirConditioner.js';
+import {
+	fahrenheitToCelsius,
+	readAirConditionerProfile,
+} from '../../services/thinqConnect/thinqConnectAirConditioner.js';
 import {
 	applyThinqConnectAirConditionerState,
 	buildThinqConnectAirConditionerEndpoint,
@@ -44,6 +48,7 @@ const mocks = vi.hoisted(() => {
 		addChildDeviceType: vi.fn().mockReturnThis(),
 		createDefaultRelativeHumidityMeasurementClusterServer: vi.fn().mockReturnThis(),
 		createDefaultHepaFilterMonitoringClusterServer: vi.fn().mockReturnThis(),
+		createDefaultTemperatureMeasurementClusterServer: vi.fn().mockReturnThis(),
 		addCommandHandler: vi.fn(),
 		subscribeAttribute: vi.fn(),
 		updateAttribute: vi.fn().mockResolvedValue(undefined),
@@ -187,6 +192,64 @@ describe('thinqConnectAirConditionerEndpoint', () => {
 			expect(mocks.endpoint.addChildDeviceType).toHaveBeenCalledWith('HumiditySensor', expect.anything());
 			expect(mocks.endpoint.createDefaultRelativeHumidityMeasurementClusterServer).toHaveBeenCalledWith(0);
 			expect(mocks.endpoint.createDefaultHepaFilterMonitoringClusterServer).not.toHaveBeenCalled();
+		});
+
+		it('should create the TemperatureMeasurement cluster with the initial room temperature in centi-Celsius', () => {
+			// Arrange
+			const ac = buildStudyAc({ initialState: { currentTemperatureC: 30 } });
+
+			// Act
+			buildThinqConnectAirConditionerEndpoint(ac, service, logger);
+
+			// Assert
+			expect(mocks.endpoint.createDefaultTemperatureMeasurementClusterServer).toHaveBeenCalledTimes(1);
+			expect(mocks.endpoint.createDefaultTemperatureMeasurementClusterServer).toHaveBeenCalledWith(3000);
+		});
+
+		it('should keep the unclamped 32 C initial room temperature on the Bedroom AC as 3200', () => {
+			// Arrange
+			const ac = buildBedroomAc({ initialState: { currentTemperatureC: 32 } });
+
+			// Act
+			buildThinqConnectAirConditionerEndpoint(ac, service, logger);
+
+			// Assert
+			expect(mocks.endpoint.createDefaultTemperatureMeasurementClusterServer).toHaveBeenCalledWith(3200);
+		});
+
+		it('should create the TemperatureMeasurement cluster with a null initial value when initialState is absent', () => {
+			// Arrange
+			const ac = buildStudyAc({ initialState: undefined });
+
+			// Act
+			buildThinqConnectAirConditionerEndpoint(ac, service, logger);
+
+			// Assert
+			expect(mocks.endpoint.createDefaultTemperatureMeasurementClusterServer).toHaveBeenCalledWith(null);
+		});
+
+		it('should create the TemperatureMeasurement cluster with a null initial value when initialState has no currentTemperatureC', () => {
+			// Arrange
+			const ac = buildStudyAc({ initialState: { powerOn: true } });
+
+			// Act
+			buildThinqConnectAirConditionerEndpoint(ac, service, logger);
+
+			// Assert
+			expect(mocks.endpoint.createDefaultTemperatureMeasurementClusterServer).toHaveBeenCalledWith(null);
+		});
+
+		it('should create no TemperatureMeasurement cluster when the profile has no current temperature', () => {
+			// Arrange
+			const ac = buildStudyAc({
+				profile: { ...readAirConditionerProfile(STUDY_PROFILE), hasCurrentTemperature: false },
+			});
+
+			// Act
+			buildThinqConnectAirConditionerEndpoint(ac, service, logger);
+
+			// Assert
+			expect(mocks.endpoint.createDefaultTemperatureMeasurementClusterServer).not.toHaveBeenCalled();
 		});
 
 		it('should enable both swing axes in the Complete fan tier for the Bedroom AC', () => {
@@ -921,6 +984,95 @@ describe('thinqConnectAirConditionerEndpoint', () => {
 				indication,
 				logger,
 			);
+		});
+
+		it('should write measuredValue 3000 alongside localTemperature 3000 for 30 C', async () => {
+			// Arrange
+			const endpoint = buildThinqConnectAirConditionerEndpoint(buildStudyAc(), service, logger);
+
+			// Act
+			await applyThinqConnectAirConditionerState(endpoint, buildStudyAc(), { currentTemperatureC: 30 }, logger);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(Thermostat.id, 'localTemperature', 3000, logger);
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				TemperatureMeasurement.id,
+				'measuredValue',
+				3000,
+				logger,
+			);
+		});
+
+		it.each([
+			['22.4 C', 22.4, 2240],
+			['22.456 C (rounded to an integer)', 22.456, 2246],
+			['80 F converted to 26.67 C', fahrenheitToCelsius(80), 2667],
+		])('should write measuredValue %s as %i', async (_label, celsius, expected) => {
+			// Arrange
+			const endpoint = buildThinqConnectAirConditionerEndpoint(buildStudyAc(), service, logger);
+
+			// Act
+			await applyThinqConnectAirConditionerState(endpoint, buildStudyAc(), { currentTemperatureC: celsius }, logger);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				TemperatureMeasurement.id,
+				'measuredValue',
+				expected,
+				logger,
+			);
+		});
+
+		it('should write the unclamped 32 C measuredValue as 3200 on the Bedroom AC', async () => {
+			// Arrange
+			const endpoint = buildThinqConnectAirConditionerEndpoint(buildBedroomAc(), service, logger);
+
+			// Act
+			await applyThinqConnectAirConditionerState(endpoint, buildBedroomAc(), { currentTemperatureC: 32 }, logger);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				TemperatureMeasurement.id,
+				'measuredValue',
+				3200,
+				logger,
+			);
+		});
+
+		it('should write no measuredValue when currentTemperatureC is undefined', async () => {
+			// Arrange
+			const endpoint = buildThinqConnectAirConditionerEndpoint(buildStudyAc(), service, logger);
+
+			// Act
+			await applyThinqConnectAirConditionerState(endpoint, buildStudyAc(), { targetTemperatureC: 25 }, logger);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalledWith(
+				TemperatureMeasurement.id,
+				'measuredValue',
+				expect.anything(),
+				logger,
+			);
+		});
+
+		it('should write no measuredValue but still write localTemperature when the profile has no current temperature', async () => {
+			// Arrange
+			const ac = buildStudyAc({
+				profile: { ...readAirConditionerProfile(STUDY_PROFILE), hasCurrentTemperature: false },
+			});
+			const endpoint = buildThinqConnectAirConditionerEndpoint(ac, service, logger);
+
+			// Act
+			await applyThinqConnectAirConditionerState(endpoint, ac, { currentTemperatureC: 30 }, logger);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalledWith(
+				TemperatureMeasurement.id,
+				'measuredValue',
+				expect.anything(),
+				logger,
+			);
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(Thermostat.id, 'localTemperature', 3000, logger);
 		});
 
 		it('should write nothing for an empty state', async () => {

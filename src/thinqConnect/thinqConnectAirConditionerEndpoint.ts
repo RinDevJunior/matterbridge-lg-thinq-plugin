@@ -6,6 +6,7 @@ import {
 	OnOff,
 	RelativeHumidityMeasurement,
 	ResourceMonitoring,
+	TemperatureMeasurement,
 	Thermostat,
 } from 'matterbridge/matter/clusters';
 
@@ -138,6 +139,12 @@ export function buildThinqConnectAirConditionerEndpoint(
 
 	// Standalone Matter node (own pairing code), matching the account-login air conditioner.
 	endpoint.mode = 'server';
+
+	if (profile.hasCurrentTemperature) {
+		const initialMeasured: number | null =
+			ac.initialState?.currentTemperatureC === undefined ? null : Math.round(ac.initialState.currentTemperatureC * 100);
+		endpoint.createDefaultTemperatureMeasurementClusterServer(initialMeasured);
+	}
 
 	if (fanTier === 'complete') {
 		endpoint.createCompleteFanControlClusterServer(
@@ -398,6 +405,15 @@ export async function applyThinqConnectAirConditionerState(
 		await endpoint.updateAttribute(
 			Thermostat.id,
 			'localTemperature',
+			Math.round(state.currentTemperatureC * 100),
+			logger,
+		);
+	}
+
+	if (profile.hasCurrentTemperature && state.currentTemperatureC !== undefined) {
+		await endpoint.updateAttribute(
+			TemperatureMeasurement.id,
+			'measuredValue',
 			Math.round(state.currentTemperatureC * 100),
 			logger,
 		);

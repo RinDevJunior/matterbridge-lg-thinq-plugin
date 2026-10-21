@@ -33,6 +33,19 @@ function asPayload(value: unknown): ThinqConnectPayload {
 	return value as ThinqConnectPayload;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Deep copy of the Study profile with only `property.temperature.currentTemperature` removed. */
+function studyProfileWithoutCurrentTemperature(): ThinqConnectPayload {
+	const clone = structuredClone(STUDY_PROFILE);
+	if (isRecord(clone) && isRecord(clone.property) && isRecord(clone.property.temperature)) {
+		delete clone.property.temperature.currentTemperature;
+	}
+	return clone;
+}
+
 describe('thinqConnectAirConditioner', () => {
 	describe('readAirConditionerProfile', () => {
 		it('should read the Study Room profile with AUTO, up/down swing, filter info and no humidity', () => {
@@ -81,6 +94,45 @@ describe('thinqConnectAirConditioner', () => {
 			expect(profile.rotateLeftRight).toBe(false);
 			expect(profile.hasHumidity).toBe(false);
 			expect(profile.hasFilterInfo).toBe(false);
+		});
+
+		it('should set hasCurrentTemperature true for the Study Room profile', () => {
+			// Arrange & Act
+			const profile = readAirConditionerProfile(STUDY_PROFILE);
+
+			// Assert
+			expect(profile.hasCurrentTemperature).toBe(true);
+		});
+
+		it('should set hasCurrentTemperature true for the Bedroom profile', () => {
+			// Arrange & Act
+			const profile = readAirConditionerProfile(BEDROOM_PROFILE);
+
+			// Assert
+			expect(profile.hasCurrentTemperature).toBe(true);
+		});
+
+		it('should set hasCurrentTemperature false when the profile has no temperature.currentTemperature', () => {
+			// Arrange
+			const profile = studyProfileWithoutCurrentTemperature();
+
+			// Act
+			const result = readAirConditionerProfile(profile);
+
+			// Assert
+			expect(result.hasCurrentTemperature).toBe(false);
+		});
+
+		it.each([
+			['undefined', undefined],
+			['an empty object', {}],
+			['an empty array', []],
+		])('should set hasCurrentTemperature false when the input is %s', (_label, input) => {
+			// Arrange & Act
+			const profile = readAirConditionerProfile(input);
+
+			// Assert
+			expect(profile.hasCurrentTemperature).toBe(false);
 		});
 
 		it('should mark the target temperature not writable and read its range from value.r when mode is r only', () => {

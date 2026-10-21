@@ -25,6 +25,7 @@ import { PLUGIN_NAME } from './settings.js';
 import { applyThinqConnectAirConditionerState } from './thinqConnect/thinqConnectAirConditionerEndpoint.js';
 import { registerThinqConnectAirConditioners } from './thinqConnect/thinqConnectAirConditionerRegistration.js';
 import type { ThinqConnectAirConditioner } from './thinqConnect/thinqConnectAirConditionerService.js';
+import { syncThinqConnectDeviceConfigEntries } from './thinqConnect/thinqConnectDeviceConfigReconciler.js';
 import type { ThinqConnectMatterIdentityOverride } from './thinqConnect/thinqConnectMatterIdentity.js';
 import { ThinqConnectServiceContainer } from './thinqConnect/thinqConnectServiceContainer.js';
 import { applyThinqConnectWasherState } from './thinqConnect/thinqConnectWasherEndpoint.js';
@@ -260,6 +261,12 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 		if (!container) {
 			throw new Error('ThinQ Connect services not initialized');
 		}
+		await syncThinqConnectDeviceConfigEntries({
+			listDevices: () => container.getConnectApiClient().getDevices(),
+			thinqConfig: this.config.thinq,
+			saveConfig: () => this.saveConfig(this.config),
+			logger: this.log,
+		});
 		const service = container.getWasherService();
 
 		this.thinqConnectWashers = await registerThinqConnectWashers({

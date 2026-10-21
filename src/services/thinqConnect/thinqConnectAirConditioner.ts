@@ -23,6 +23,7 @@ export interface AirConditionerProfile {
 	rotateUpDown: boolean;
 	rotateLeftRight: boolean;
 	hasHumidity: boolean;
+	hasCurrentTemperature: boolean;
 	hasFilterInfo: boolean;
 }
 
@@ -119,6 +120,7 @@ export function readAirConditionerProfile(profile: ThinqConnectPayload | undefin
 		rotateUpDown: stringItems(profileProperty(profile, 'windDirection', 'rotateUpDown')?.mode).includes('w'),
 		rotateLeftRight: stringItems(profileProperty(profile, 'windDirection', 'rotateLeftRight')?.mode).includes('w'),
 		hasHumidity: profileProperty(profile, 'airQualitySensor', 'humidity') !== undefined,
+		hasCurrentTemperature: profileProperty(profile, 'temperature', 'currentTemperature') !== undefined,
 		hasFilterInfo:
 			profileProperty(profile, 'filterInfo', 'filterLifetime') !== undefined &&
 			profileProperty(profile, 'filterInfo', 'usedTime') !== undefined,

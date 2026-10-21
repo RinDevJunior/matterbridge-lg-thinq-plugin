@@ -85,6 +85,8 @@ What it does today:
 - Air conditioner: power, target temperature (Celsius), fan speed, swing, room temperature, humidity (on units that report it) and read-only filter life. Home shows Cool and Off.
 - After a command, the state is re-read about 3 s later.
 - State is polled every `refreshIntervalSeconds` (the Refresh Interval setting). Values below 15 s are raised to 15 s.
+- Each washer and air conditioner is added automatically to the ThinQ Devices list in the plugin settings. `Ignore`, product name and product ID work for PAT devices too; restart the plugin after changing them.
+- The air conditioner's room temperature is also reported as a Matter temperature sensor.
 - Because PAT devices now run in server mode, they get new device IDs. Remove any previously paired PAT washer or air conditioner from your controller and pair it again with its new pairing code.
 
 Limits:
