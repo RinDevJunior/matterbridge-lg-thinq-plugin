@@ -41,6 +41,9 @@ interface ThinqConnectDevicesResponse {
 
 export type ThinqConnectResource = Record<string, unknown>;
 
+/** Washers return a per-location array (`[{ location, runState, ... }]`); ACs return an object. */
+export type ThinqConnectPayload = ThinqConnectResource | unknown[];
+
 interface ThinqConnectResourceResponse {
 	response?: unknown;
 }
@@ -68,11 +71,11 @@ export class ThinqConnectApiClient {
 		return Array.isArray(data.response) ? data.response : [];
 	}
 
-	public async getDeviceProfile(deviceId: string): Promise<ThinqConnectResource> {
+	public async getDeviceProfile(deviceId: string): Promise<ThinqConnectPayload> {
 		return this.getResource(deviceId, 'profile');
 	}
 
-	public async getDeviceState(deviceId: string): Promise<ThinqConnectResource> {
+	public async getDeviceState(deviceId: string): Promise<ThinqConnectPayload> {
 		return this.getResource(deviceId, 'state');
 	}
 
@@ -81,12 +84,13 @@ export class ThinqConnectApiClient {
 		return { deviceCount: devices.length, devices };
 	}
 
-	private async getResource(deviceId: string, kind: 'profile' | 'state'): Promise<ThinqConnectResource> {
+	private async getResource(deviceId: string, kind: 'profile' | 'state'): Promise<ThinqConnectPayload> {
 		const data = await this.get<ThinqConnectResourceResponse>(`/devices/${encodeURIComponent(deviceId)}/${kind}`);
 		const response = data.response;
-		return typeof response === 'object' && response !== null && !Array.isArray(response)
-			? (response as ThinqConnectResource)
-			: {};
+		if (Array.isArray(response)) {
+			return response;
+		}
+		return typeof response === 'object' && response !== null ? (response as ThinqConnectResource) : {};
 	}
 
 	private async get<T>(path: string): Promise<T> {

@@ -404,7 +404,7 @@ describe('ThinqConnectApiClient', () => {
 			expect(result).toEqual({});
 		});
 
-		it('should return an empty object when response is an array', async () => {
+		it('should return the array unchanged when profile response is an array', async () => {
 			// Arrange
 			mockAxios.onGet(AIC_PROFILE_URL).reply(200, { response: [{ a: 1 }] });
 			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
@@ -413,7 +413,47 @@ describe('ThinqConnectApiClient', () => {
 			const result = await client.getDeviceProfile('dev-1');
 
 			// Assert
-			expect(result).toEqual({});
+			expect(result).toEqual([{ a: 1 }]);
+		});
+
+		it('should return the washer location array unchanged when state response is an array', async () => {
+			// Arrange
+			const washerState = [{ location: { locationName: 'MAIN' }, runState: { currentState: 'INITIAL' } }];
+			mockAxios.onGet(AIC_STATE_URL).reply(200, { response: washerState });
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act
+			const result = await client.getDeviceState('dev-1');
+
+			// Assert
+			expect(result).toEqual(washerState);
+			expect(Array.isArray(result)).toBe(true);
+		});
+
+		it('should return the state object unchanged when state response is a plain object (AC)', async () => {
+			// Arrange
+			const acState = { airState: { operation: 1, tempState: { current: 22 } } };
+			mockAxios.onGet(AIC_STATE_URL).reply(200, { response: acState });
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act
+			const result = await client.getDeviceState('dev-1');
+
+			// Assert
+			expect(result).toEqual(acState);
+			expect(Array.isArray(result)).toBe(false);
+		});
+
+		it('should return an empty array unchanged when state response is an empty array', async () => {
+			// Arrange
+			mockAxios.onGet(AIC_STATE_URL).reply(200, { response: [] });
+			const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+			// Act
+			const result = await client.getDeviceState('dev-1');
+
+			// Assert
+			expect(result).toEqual([]);
 		});
 
 		it('should return an empty object when response is null', async () => {
