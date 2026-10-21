@@ -46,6 +46,10 @@ ${b}Connect-probe options:${r}
   ${y}--energy-start${r} Usage start: YYYYMMDD for DAILY, YYYYMM for MONTHLY (default: last 7 days / last 3 months)
   ${y}--energy-end${r}   Usage end, same format as --energy-start
 
+${b}Connect-settings options:${r}
+  ${y}--device-id${r}    Device id to read (default: every device visible to the token)
+  ${y}--brief${r}        Print the settings summary only (omit the raw profile/state JSON)
+
 ${b}Connect-control options:${r}
   ${y}--device-id${r}    Washer device id (required)
   ${y}--send${r}         POWER_ON|POWER_OFF|START (STOP is refused)
@@ -57,6 +61,7 @@ ${row('login', '', 'Authenticate with LG ThinQ (pat = ThinQ Connect Personal Acc
 ${row('devices', '', 'List all discovered ThinQ devices (requires a prior login)')}
 ${row('energy', '[energy options]', 'Print raw AC power/energy snapshot fields (requires a prior login)')}
 ${row('connect-probe', '[connect-probe options]', 'Read-only ThinQ Connect API probe: device profile + state summary (requires a prior PAT login)')}
+${row('connect-settings', '[connect-settings options]', 'Read-only ThinQ Connect settings: every profile property with current value, access, allowed values (requires a prior PAT login)')}
 ${row('connect-control', '[connect-control options]', 'Send ONE guarded control command (POWER_ON|POWER_OFF|START) via ThinQ Connect; dry run unless --yes (requires a prior PAT login)')}
 ${row('help', '', 'Show this help message')}
 
@@ -77,6 +82,10 @@ ${b}Examples:${r}
   npm run cli -- --command ${g}connect-probe${r} --device-id <deviceId>
   npm run cli -- --command ${g}connect-probe${r} --device-id <deviceId> --raw
   npm run cli -- --command ${g}connect-probe${r} --device-id <deviceId> --energy
+  npm run cli -- --command ${g}connect-settings${r}
+  npm run cli -- --command ${g}connect-settings${r} --device-id <deviceId>
+  npm run cli -- --command ${g}connect-settings${r} --device-id <deviceId> --brief
+  npm run cli -- --command ${g}connect-settings${r} --out workspace/out/settings.txt
   npm run cli -- --command ${g}connect-control${r} --device-id <deviceId> --send POWER_ON
   npm run cli -- --command ${g}connect-control${r} --device-id <deviceId> --send START --yes
   npm run cli -- --command ${g}connect-control${r} --device-id <deviceId> --send POWER_OFF

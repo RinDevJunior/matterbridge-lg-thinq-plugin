@@ -3,6 +3,7 @@ import { AnsiLogger, LogLevel } from 'matterbridge/logger';
 import { cmdConnectControl } from './commands/connectControl.js';
 import { parseConnectEnergyOptions } from './commands/connectEnergy.js';
 import { cmdConnectProbe, type ConnectProbeOptions } from './commands/connectProbe.js';
+import { cmdConnectSettings } from './commands/connectSettings.js';
 import { cmdDevices } from './commands/devices.js';
 import { cmdEnergy, parseEnergyOptions } from './commands/energy.js';
 import { type CliLoginType, cmdLogin } from './commands/login.js';
@@ -108,6 +109,18 @@ export async function main(): Promise<void> {
 			}
 
 			await cmdConnectProbe(patSession, probeOptions, logger);
+			return;
+		}
+
+		if (command === 'connect-settings') {
+			const patSession = loadPatSession();
+			if (!patSession) {
+				console.error('No PAT session found. Run `--command login --type pat` first.');
+				process.exitCode = 1;
+				return;
+			}
+
+			await cmdConnectSettings(patSession, { deviceId: args['device-id'], brief: args['brief'] === 'true' }, logger);
 			return;
 		}
 

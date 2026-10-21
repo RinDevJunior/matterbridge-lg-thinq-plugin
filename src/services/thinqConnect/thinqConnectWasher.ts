@@ -67,7 +67,7 @@ function findKey(node: unknown, key: string, depth = 0): unknown {
 	return undefined;
 }
 
-function locationNameOf(node: unknown): string | undefined {
+export function locationNameOf(node: unknown): string | undefined {
 	if (!isPlainObject(node) || !isPlainObject(node.location)) {
 		return undefined;
 	}

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vite
 
 vi.mock('../../cli/commands/connectProbe.js');
 vi.mock('../../cli/commands/connectControl.js');
+vi.mock('../../cli/commands/connectSettings.js');
 vi.mock('../../cli/commands/devices.js');
 vi.mock('../../cli/commands/login.js');
 vi.mock('../../cli/help.js');
@@ -11,6 +12,7 @@ vi.mock('../../cli/outputCapture.js');
 
 import { cmdConnectControl } from '../../cli/commands/connectControl.js';
 import { cmdConnectProbe } from '../../cli/commands/connectProbe.js';
+import { cmdConnectSettings } from '../../cli/commands/connectSettings.js';
 import { cmdDevices } from '../../cli/commands/devices.js';
 import { cmdLogin } from '../../cli/commands/login.js';
 import { HELP_TEXT } from '../../cli/help.js';
@@ -438,6 +440,76 @@ describe('main', () => {
 			// Assert
 			expect(consoleErrorSpy).toHaveBeenCalledWith('Error:', 'probe exploded');
 			expect(processExitSpy).toHaveBeenCalledWith(1);
+		});
+	});
+
+	describe('connect-settings command', () => {
+		const PAT_SESSION = { country: 'US', personalAccessToken: 'pat-secret-1234567890' };
+
+		afterEach(() => {
+			process.exitCode = undefined;
+		});
+
+		it('should call cmdConnectSettings with no device id and brief false when no flags are given', async () => {
+			// Arrange
+			vi.mocked(parseArgs).mockReturnValue({ command: 'connect-settings' });
+			vi.mocked(loadPatSession).mockReturnValue(PAT_SESSION);
+			vi.mocked(cmdConnectSettings).mockResolvedValue(undefined);
+
+			// Act
+			await main();
+
+			// Assert
+			expect(cmdConnectSettings).toHaveBeenCalledWith(
+				PAT_SESSION,
+				{ deviceId: undefined, brief: false },
+				expect.any(Object),
+			);
+		});
+
+		it('should call cmdConnectSettings with the device id and brief true when --device-id and --brief true are given', async () => {
+			// Arrange
+			vi.mocked(parseArgs).mockReturnValue({ command: 'connect-settings', 'device-id': 'washer-1', brief: 'true' });
+			vi.mocked(loadPatSession).mockReturnValue(PAT_SESSION);
+			vi.mocked(cmdConnectSettings).mockResolvedValue(undefined);
+
+			// Act
+			await main();
+
+			// Assert
+			expect(cmdConnectSettings).toHaveBeenCalledWith(
+				PAT_SESSION,
+				{ deviceId: 'washer-1', brief: true },
+				expect.any(Object),
+			);
+		});
+
+		it('should start output capture for --out when the command is connect-settings', async () => {
+			// Arrange
+			vi.mocked(parseArgs).mockReturnValue({ command: 'connect-settings', out: 'x.txt' });
+			vi.mocked(loadPatSession).mockReturnValue(PAT_SESSION);
+			vi.mocked(cmdConnectSettings).mockResolvedValue(undefined);
+
+			// Act
+			await main();
+
+			// Assert
+			expect(startOutputCapture).toHaveBeenCalledWith('x.txt', expect.any(Object));
+			expect(cmdConnectSettings).toHaveBeenCalledTimes(1);
+		});
+
+		it('should print the missing PAT message, set exitCode 1 and not call cmdConnectSettings when no PAT session exists', async () => {
+			// Arrange
+			vi.mocked(parseArgs).mockReturnValue({ command: 'connect-settings' });
+			vi.mocked(loadPatSession).mockReturnValue(null);
+
+			// Act
+			await main();
+
+			// Assert
+			expect(consoleErrorSpy).toHaveBeenCalledWith('No PAT session found. Run `--command login --type pat` first.');
+			expect(process.exitCode).toBe(1);
+			expect(cmdConnectSettings).not.toHaveBeenCalled();
 		});
 	});
 

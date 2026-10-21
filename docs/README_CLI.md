@@ -22,13 +22,14 @@ npm run cli -- --command <command> [options]
 
 ## Commands
 
-| Command           | Options                                    | Description                                            |
-| ----------------- | ------------------------------------------ | ------------------------------------------------------ |
-| `login`           | `--type`, `--country`, `--language`        | Authenticate and save session                          |
-| `devices`         |                                            | List all discovered ThinQ devices (requires `login`)   |
-| `connect-probe`   | `--device-id`, `--raw`, `--energy`         | Read-only ThinQ Connect probe (requires PAT `login`)   |
-| `connect-control` | `--device-id`, `--send`, `--yes`, `--wait` | Send one guarded washer command (requires PAT `login`) |
-| `help`            |                                            | Show help message                                      |
+| Command            | Options                                    | Description                                                    |
+| ------------------ | ------------------------------------------ | -------------------------------------------------------------- |
+| `login`            | `--type`, `--country`, `--language`        | Authenticate and save session                                  |
+| `devices`          |                                            | List all discovered ThinQ devices (requires `login`)           |
+| `connect-probe`    | `--device-id`, `--raw`, `--energy`         | Read-only ThinQ Connect probe (requires PAT `login`)           |
+| `connect-settings` | `--device-id`, `--brief`                   | Read-only ThinQ Connect device settings (requires PAT `login`) |
+| `connect-control`  | `--device-id`, `--send`, `--yes`, `--wait` | Send one guarded washer command (requires PAT `login`)         |
+| `help`             |                                            | Show help message                                              |
 
 ## Login Command
 
@@ -154,6 +155,66 @@ npm run cli -- --command connect-probe --device-id <deviceId>
 npm run cli -- --command connect-probe --device-id <deviceId> --energy
 ```
 
+## Connect-Settings Command
+
+Read-only. Prints every device setting from the ThinQ Connect profile, grouped by resource group, with the current value (from the state), access (`r` read, `w` write, `rw`, `fixed` for a fixed value), the allowed values or range, and the unit. Then the raw profile and state JSON. Requires a prior PAT login. Uses only `GET /devices`, `GET /devices/{id}/profile` and `GET /devices/{id}/state`.
+
+- `--device-id`: read one device (default: every device visible to the token)
+- `--brief`: print the settings summary only, without the raw profile/state JSON (the AC profile is long)
+
+Washers: ThinQ Connect exposes no washer course (program) selection in any profile checked, so the command prints `courses: no course settings in the ThinQ Connect profile for this model (V1 legacy API has them)`. Course settings exist only in the V1 API, which this command does not use.
+
+```bash
+npm run cli -- --command connect-settings
+npm run cli -- --command connect-settings --device-id <deviceId> --brief
+npm run cli -- --command connect-settings --out workspace/out/settings.txt
+```
+
+Washer example (`--brief`):
+
+```
+Device: Washer [DEVICE_WASHER] VCDWL_QEUK (5d0fcc73...b02d3)
+  settings:
+  location MAIN
+    [runState]
+      currentState  r  = POWER_OFF  (REFRESHING, RUNNING, POWER_OFF, SOAKING, DETECTING, FROZEN_PREVENT_RUNNING, RINSING, DETERGENT_AMOUNT, FROZEN_PREVENT_PAUSE, DRYING, RESERVED, FROZEN_PREVENT_INITIAL, RINSE_HOLD, PREWASH, END, PAUSE, ERROR, STEAM_SOFTENING, SPINNING, DISPENSING, INITIAL, ADD_DRAIN)
+    [operation]
+      washerOperationMode  w  = -  (write: START, STOP, POWER_OFF, POWER_ON)
+    [detergent]
+      detergentSetting  fixed  = AUTO
+    [remoteControlEnable]
+      remoteControlEnabled  r  = false  (false, true)
+    [timer]
+      remainHour            r   = 0  (0..30 step 1)
+      remainMinute          r   = 0  (0..59 step 1)
+      totalHour             r   = 1  (0..30 step 1)
+      totalMinute           r   = 58  (0..59 step 1)
+      relativeHourToStop    rw  = 0  (3..19 step 1)
+      relativeMinuteToStop  r   = 0  (0..30 step 1)
+    [cycle]
+      cycleCount  r  = 15
+  courses: no course settings in the ThinQ Connect profile for this model (V1 legacy API has them)
+```
+
+AC example (`--brief`, excerpt):
+
+```
+Device: Study Room - Air Conditioner [DEVICE_AIR_CONDITIONER] RAC_056905_WW (30ed71f9...b068)
+  settings:
+    [airConJobMode]
+      currentJobMode        rw  = COOL    (FAN, AIR_DRY, COOL, AUTO)
+    [operation]
+      airConOperationMode   rw  = POWER_OFF  (POWER_ON, POWER_OFF)
+    [temperature]
+      currentTemperature    r   = 30 C
+      targetTemperature     rw  = 27 C    (16..30 step 0.5)
+    [temperatureInUnits F]
+      targetTemperature     r   = 80 F
+      coolTargetTemperature w   = -       (60..86 step 1)
+    [airFlow]
+      windStrength          rw  = HIGH    (LOW, MID, HIGH, AUTO)
+```
+
 ## Connect-Control Command
 
 Sends ONE guarded washer command through the ThinQ Connect API. Requires a prior PAT login.
@@ -171,7 +232,7 @@ npm run cli -- --command connect-control --device-id <deviceId> --send POWER_ON 
 
 ### cli-runner MCP tool
 
-The Claude `cli-runner` tool exposes the same commands as `connect-probe` and `connect-control`. Params: `deviceId`, `raw` and `energy` (probe, boolean), and for control `sendValue`, `wait` (seconds, default 3, max 20) and `yes`. `yes` must be the boolean `true` to send; anything else is a dry run. The tool does not expose `--out`, because its output is already returned to Claude.
+The Claude `cli-runner` tool exposes the commands `devices`, `energy`, `connect-probe`, `connect-settings`, `connect-control` and `help` (no `login`). Params: `deviceId`, `raw` and `energy` (probe, boolean), `energyPeriod` (DAILY|MONTHLY), `energyStart`/`energyEnd` (YYYYMMDD for DAILY, YYYYMM for MONTHLY; validated before the CLI runs), `brief` (settings, boolean), `dumpDevice`/`dumpSnapshot`/`probeFilter` (devices, device ids), `device`/`samples` (1-20)/`interval` (1-60 s)/`keepAlive` (energy), and for control `sendValue`, `wait` (seconds, default 3, max 20) and `yes`. `yes` must be the boolean `true` to send; anything else is a dry run. `out` saves the output to a file that must resolve inside `workspace/`. `showSecrets` (boolean) prints the real serial/MAC for `dumpDevice` and `connect-probe` with `raw`; use it only when the user asks.
 
 ## Saving Output to a File
 
