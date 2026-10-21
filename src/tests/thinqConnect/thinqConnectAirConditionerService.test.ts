@@ -4,10 +4,10 @@ import { ThinqConnectApiError } from '../../errors/index.js';
 import { readAirConditionerProfile } from '../../services/thinqConnect/thinqConnectAirConditioner.js';
 import type { ThinqConnectPayload } from '../../services/thinqConnect/thinqConnectApiClient.js';
 import {
-	THINQ_V2_AC_POST_COMMAND_REFRESH_DELAY_MS,
-	type ThinqV2AirConditioner,
-	ThinqV2AirConditionerService,
-} from '../../thinqV2/thinqV2AirConditionerService.js';
+	THINQ_CONNECT_AC_POST_COMMAND_REFRESH_DELAY_MS,
+	type ThinqConnectAirConditioner,
+	ThinqConnectAirConditionerService,
+} from '../../thinqConnect/thinqConnectAirConditionerService.js';
 import { createMockLogger } from '../helpers/testUtils.js';
 import {
 	BEDROOM_PROFILE,
@@ -15,7 +15,7 @@ import {
 	STUDY_PROFILE,
 	STUDY_STATE,
 	STUDY_STATE_FAHRENHEIT,
-} from '../helpers/thinqV2AirConditionerFixtures.js';
+} from '../helpers/thinqConnectAirConditionerFixtures.js';
 
 const PAT_SENTINEL = 'pat-sentinel-do-not-log-1234567890';
 
@@ -36,7 +36,7 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 	return { promise, resolve };
 }
 
-function buildStudyAc(overrides: Partial<ThinqV2AirConditioner> = {}): ThinqV2AirConditioner {
+function buildStudyAc(overrides: Partial<ThinqConnectAirConditioner> = {}): ThinqConnectAirConditioner {
 	return {
 		deviceId: 'study-ac',
 		name: 'Study Room AC',
@@ -45,7 +45,7 @@ function buildStudyAc(overrides: Partial<ThinqV2AirConditioner> = {}): ThinqV2Ai
 	};
 }
 
-function buildBedroomAc(overrides: Partial<ThinqV2AirConditioner> = {}): ThinqV2AirConditioner {
+function buildBedroomAc(overrides: Partial<ThinqConnectAirConditioner> = {}): ThinqConnectAirConditioner {
 	return {
 		deviceId: 'bedroom-ac',
 		name: 'Bedroom AC',
@@ -54,10 +54,10 @@ function buildBedroomAc(overrides: Partial<ThinqV2AirConditioner> = {}): ThinqV2
 	};
 }
 
-describe('ThinqV2AirConditionerService', () => {
+describe('ThinqConnectAirConditionerService', () => {
 	let logger: ReturnType<typeof createMockLogger>;
 	let client: ReturnType<typeof createMockClient>;
-	let service: ThinqV2AirConditionerService;
+	let service: ThinqConnectAirConditionerService;
 
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -65,7 +65,7 @@ describe('ThinqV2AirConditionerService', () => {
 		client = createMockClient();
 		client.getDeviceState.mockResolvedValue(STUDY_STATE);
 		client.controlDevice.mockResolvedValue({});
-		service = new ThinqV2AirConditionerService(client, logger);
+		service = new ThinqConnectAirConditionerService(client, logger);
 	});
 
 	describe('discoverAirConditioners', () => {
@@ -612,7 +612,7 @@ describe('ThinqV2AirConditionerService', () => {
 			await service.setPower(ac, true);
 
 			// Act
-			await vi.advanceTimersByTimeAsync(THINQ_V2_AC_POST_COMMAND_REFRESH_DELAY_MS - 1);
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_AC_POST_COMMAND_REFRESH_DELAY_MS - 1);
 			const beforeDelay = listener.mock.calls.length;
 			await vi.advanceTimersByTimeAsync(1);
 

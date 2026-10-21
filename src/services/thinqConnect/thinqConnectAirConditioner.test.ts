@@ -6,7 +6,7 @@ import {
 	STUDY_PROFILE,
 	STUDY_STATE,
 	STUDY_STATE_FAHRENHEIT,
-} from '../../tests/helpers/thinqV2AirConditionerFixtures.js';
+} from '../../tests/helpers/thinqConnectAirConditionerFixtures.js';
 import {
 	type AirConditionerEnumProfile,
 	type AirConditionerRangeProfile,

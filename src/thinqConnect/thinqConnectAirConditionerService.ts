@@ -19,17 +19,17 @@ import {
 } from '../services/thinqConnect/thinqConnectAirConditioner.js';
 import type { ThinqConnectApiClient, ThinqConnectResource } from '../services/thinqConnect/thinqConnectApiClient.js';
 
-export const THINQ_V2_AC_POST_COMMAND_REFRESH_DELAY_MS = 3000;
+export const THINQ_CONNECT_AC_POST_COMMAND_REFRESH_DELAY_MS = 3000;
 
-export interface ThinqV2AirConditioner {
+export interface ThinqConnectAirConditioner {
 	deviceId: string;
 	name: string;
 	modelName?: string;
 	profile: AirConditionerProfile;
-	initialState?: ThinqV2AirConditionerState;
+	initialState?: ThinqConnectAirConditionerState;
 }
 
-export interface ThinqV2AirConditionerState {
+export interface ThinqConnectAirConditionerState {
 	powerOn?: boolean;
 	jobMode?: string;
 	temperatureUnit?: AirConditionerTemperatureUnit;
@@ -42,15 +42,18 @@ export interface ThinqV2AirConditionerState {
 	filterRemainingPercent?: number;
 }
 
-export type ThinqV2AirConditionerOutcome =
-	| { status: 'sent'; state: ThinqV2AirConditionerState }
-	| { status: 'noop'; state: ThinqV2AirConditionerState }
-	| { status: 'refused'; reason: string; state: ThinqV2AirConditionerState }
-	| { status: 'failed'; error: string; state: ThinqV2AirConditionerState };
+export type ThinqConnectAirConditionerOutcome =
+	| { status: 'sent'; state: ThinqConnectAirConditionerState }
+	| { status: 'noop'; state: ThinqConnectAirConditionerState }
+	| { status: 'refused'; reason: string; state: ThinqConnectAirConditionerState }
+	| { status: 'failed'; error: string; state: ThinqConnectAirConditionerState };
 
-export type ThinqV2AirConditionerStateListener = (deviceId: string, state: ThinqV2AirConditionerState) => void;
+export type ThinqConnectAirConditionerStateListener = (
+	deviceId: string,
+	state: ThinqConnectAirConditionerState,
+) => void;
 
-export type ThinqV2AirConditionerConnectClient = Pick<
+export type ThinqConnectAirConditionerClient = Pick<
 	ThinqConnectApiClient,
 	'getDevices' | 'getDeviceProfile' | 'getDeviceState' | 'controlDevice'
 >;
@@ -58,7 +61,7 @@ export type ThinqV2AirConditionerConnectClient = Pick<
 type CommandPlan =
 	| { kind: 'noop' }
 	| { kind: 'refuse'; reason: string }
-	| { kind: 'send'; payload: ThinqConnectResource; patch: Partial<ThinqV2AirConditionerState> };
+	| { kind: 'send'; payload: ThinqConnectResource; patch: Partial<ThinqConnectAirConditionerState> };
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -69,7 +72,7 @@ const toCelsius = (value: number | undefined, unit: AirConditionerTemperatureUni
 	return unit === 'F' ? fahrenheitToCelsius(value) : value;
 };
 
-const toState = (raw: AirConditionerRawState): ThinqV2AirConditionerState => ({
+const toState = (raw: AirConditionerRawState): ThinqConnectAirConditionerState => ({
 	powerOn: raw.powerOn,
 	jobMode: raw.jobMode,
 	temperatureUnit: raw.temperatureUnit,
@@ -83,23 +86,23 @@ const toState = (raw: AirConditionerRawState): ThinqV2AirConditionerState => ({
 });
 
 /** Discovers ThinQ Connect air conditioners, reads their state, sends guarded commands, and polls state. */
-export class ThinqV2AirConditionerService {
-	private readonly lastState = new Map<string, ThinqV2AirConditionerState>();
+export class ThinqConnectAirConditionerService {
+	private readonly lastState = new Map<string, ThinqConnectAirConditionerState>();
 	private readonly lastRaw = new Map<string, AirConditionerRawState>();
 	private readonly inFlight = new Set<string>();
 	private readonly refreshTimers = new Set<NodeJS.Timeout>();
 	private pollTimer: NodeJS.Timeout | undefined;
 	private tickRunning = false;
-	private listener: ThinqV2AirConditionerStateListener | undefined;
+	private listener: ThinqConnectAirConditionerStateListener | undefined;
 
 	constructor(
-		private readonly client: ThinqV2AirConditionerConnectClient,
+		private readonly client: ThinqConnectAirConditionerClient,
 		private readonly logger: AnsiLogger,
 	) {}
 
-	public async discoverAirConditioners(): Promise<ThinqV2AirConditioner[]> {
+	public async discoverAirConditioners(): Promise<ThinqConnectAirConditioner[]> {
 		const devices = await this.client.getDevices();
-		const airConditioners: ThinqV2AirConditioner[] = [];
+		const airConditioners: ThinqConnectAirConditioner[] = [];
 
 		for (const device of devices) {
 			if (device.deviceInfo?.deviceType !== 'DEVICE_AIR_CONDITIONER') {
@@ -107,7 +110,7 @@ export class ThinqV2AirConditionerService {
 			}
 			try {
 				const profile = await this.client.getDeviceProfile(device.deviceId);
-				const airConditioner: ThinqV2AirConditioner = {
+				const airConditioner: ThinqConnectAirConditioner = {
 					deviceId: device.deviceId,
 					name: device.deviceInfo.alias?.trim() || device.deviceInfo.modelName || 'LG Air Conditioner',
 					modelName: device.deviceInfo.modelName,
@@ -131,7 +134,7 @@ export class ThinqV2AirConditionerService {
 		return airConditioners;
 	}
 
-	public async readState(ac: ThinqV2AirConditioner): Promise<ThinqV2AirConditionerState> {
+	public async readState(ac: ThinqConnectAirConditioner): Promise<ThinqConnectAirConditionerState> {
 		const payload = await this.client.getDeviceState(ac.deviceId);
 		const raw = readAirConditionerState(payload);
 		const state = toState(raw);
@@ -140,12 +143,12 @@ export class ThinqV2AirConditionerService {
 		return state;
 	}
 
-	public async setPower(ac: ThinqV2AirConditioner, on: boolean): Promise<ThinqV2AirConditionerOutcome> {
+	public async setPower(ac: ThinqConnectAirConditioner, on: boolean): Promise<ThinqConnectAirConditionerOutcome> {
 		const label = on ? 'POWER_ON' : 'POWER_OFF';
 		return this.runCommand(ac, label, (state) => this.planPower(ac, state, on));
 	}
 
-	public async setCoolMode(ac: ThinqV2AirConditioner): Promise<ThinqV2AirConditionerOutcome> {
+	public async setCoolMode(ac: ThinqConnectAirConditioner): Promise<ThinqConnectAirConditionerOutcome> {
 		return this.runCommand(ac, 'COOL', (state) => {
 			if (state.powerOn === undefined) {
 				return { kind: 'refuse', reason: 'Air conditioner state is unknown; refusing to send.' };
@@ -167,7 +170,10 @@ export class ThinqV2AirConditionerService {
 		});
 	}
 
-	public async setTargetTemperature(ac: ThinqV2AirConditioner, celsius: number): Promise<ThinqV2AirConditionerOutcome> {
+	public async setTargetTemperature(
+		ac: ThinqConnectAirConditioner,
+		celsius: number,
+	): Promise<ThinqConnectAirConditionerOutcome> {
 		return this.runCommand(ac, 'TARGET_TEMPERATURE', (state) => {
 			const offReason = this.requirePoweredOn(state);
 			if (offReason !== undefined) {
@@ -193,9 +199,9 @@ export class ThinqV2AirConditionerService {
 	}
 
 	public async setWindStrength(
-		ac: ThinqV2AirConditioner,
+		ac: ThinqConnectAirConditioner,
 		strength: 'LOW' | 'MID' | 'HIGH' | 'AUTO',
-	): Promise<ThinqV2AirConditionerOutcome> {
+	): Promise<ThinqConnectAirConditionerOutcome> {
 		return this.runCommand(ac, `WIND_${strength}`, (state) => {
 			const offReason = this.requirePoweredOn(state);
 			if (offReason !== undefined) {
@@ -220,9 +226,9 @@ export class ThinqV2AirConditionerService {
 	}
 
 	public async setSwing(
-		ac: ThinqV2AirConditioner,
+		ac: ThinqConnectAirConditioner,
 		axes: { rotateUpDown?: boolean; rotateLeftRight?: boolean },
-	): Promise<ThinqV2AirConditionerOutcome> {
+	): Promise<ThinqConnectAirConditionerOutcome> {
 		return this.runCommand(ac, 'SWING', (state) => {
 			const offReason = this.requirePoweredOn(state);
 			if (offReason !== undefined) {
@@ -254,8 +260,8 @@ export class ThinqV2AirConditionerService {
 
 	public startPolling(
 		intervalMs: number,
-		acs: readonly ThinqV2AirConditioner[],
-		listener: ThinqV2AirConditionerStateListener,
+		acs: readonly ThinqConnectAirConditioner[],
+		listener: ThinqConnectAirConditionerStateListener,
 	): void {
 		this.stopPolling();
 		this.listener = listener;
@@ -294,14 +300,14 @@ export class ThinqV2AirConditionerService {
 		this.listener = undefined;
 	}
 
-	private requirePoweredOn(state: ThinqV2AirConditionerState): string | undefined {
+	private requirePoweredOn(state: ThinqConnectAirConditionerState): string | undefined {
 		if (state.powerOn === undefined) {
 			return 'Air conditioner state is unknown; refusing to send.';
 		}
 		return state.powerOn ? undefined : 'Air conditioner is off; refusing to change settings.';
 	}
 
-	private planPower(ac: ThinqV2AirConditioner, state: ThinqV2AirConditionerState, on: boolean): CommandPlan {
+	private planPower(ac: ThinqConnectAirConditioner, state: ThinqConnectAirConditionerState, on: boolean): CommandPlan {
 		const reason = evaluateAirConditionerEnumWrite(
 			'operation.airConOperationMode',
 			ac.profile.power,
@@ -321,10 +327,10 @@ export class ThinqV2AirConditionerService {
 
 	/** Never throws; every path resolves to an outcome. Refused/failed outcomes carry the freshly read state. */
 	private async runCommand(
-		ac: ThinqV2AirConditioner,
+		ac: ThinqConnectAirConditioner,
 		label: string,
-		plan: (state: ThinqV2AirConditionerState) => CommandPlan,
-	): Promise<ThinqV2AirConditionerOutcome> {
+		plan: (state: ThinqConnectAirConditionerState) => CommandPlan,
+	): Promise<ThinqConnectAirConditionerOutcome> {
 		const { deviceId } = ac;
 
 		if (this.inFlight.has(deviceId)) {
@@ -335,7 +341,7 @@ export class ThinqV2AirConditionerService {
 
 		this.inFlight.add(deviceId);
 		try {
-			let state: ThinqV2AirConditionerState;
+			let state: ThinqConnectAirConditionerState;
 			try {
 				state = await this.readState(ac);
 			} catch (error) {
@@ -370,7 +376,7 @@ export class ThinqV2AirConditionerService {
 		}
 	}
 
-	private scheduleRefresh(ac: ThinqV2AirConditioner): void {
+	private scheduleRefresh(ac: ThinqConnectAirConditioner): void {
 		const { listener } = this;
 		if (!listener) {
 			return;
@@ -382,7 +388,7 @@ export class ThinqV2AirConditionerService {
 				(error: unknown) =>
 					this.logger.warn(`ThinQ Connect: post-command refresh failed for ${ac.deviceId}: ${errorMessage(error)}`),
 			);
-		}, THINQ_V2_AC_POST_COMMAND_REFRESH_DELAY_MS);
+		}, THINQ_CONNECT_AC_POST_COMMAND_REFRESH_DELAY_MS);
 		this.refreshTimers.add(timer);
 	}
 }

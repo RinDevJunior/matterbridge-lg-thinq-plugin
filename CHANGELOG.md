@@ -9,6 +9,7 @@
 ### Changed
 
 - **PAT devices run in server mode** — with PAT login, washers and air conditioners are now standalone Matter nodes, each paired on its own, like the account login. They get new device IDs: remove the old PAT devices from your controller and pair them again.
+- **ThinQ Connect log messages renamed** — the internal "V2" naming is now "ThinQ Connect" in log output (`ThinQ V2` is now `ThinQ Connect`); no behavior change.
 
 ## [0.1.1-rc04] - 2026-10-21
 
@@ -16,7 +17,7 @@
 
 - **Personal Access Token (PAT) login type** — a new `pat` login type for the official ThinQ Connect API, in the plugin config and the CLI (`login --type pat`).
 - **`connect-probe` and `connect-control` CLI commands** — `connect-probe` is a read-only check of the device profile and state; `connect-control` sends one guarded washer command (POWER_ON, POWER_OFF or START) and is a dry run unless `--yes` is given.
-- **ThinQ Connect (V2) container with Google Home washer on/off** — with PAT login, the washer can be turned on and off from Google Home; state is polled every `refreshIntervalSeconds` (minimum 15 s). Only washers are registered; air conditioners are not supported with PAT.
+- **ThinQ Connect container with Google Home washer on/off** — with PAT login, the washer can be turned on and off from Google Home; state is polled every `refreshIntervalSeconds` (minimum 15 s). Only washers are registered; air conditioners are not supported with PAT.
 
 ### Fixed
 

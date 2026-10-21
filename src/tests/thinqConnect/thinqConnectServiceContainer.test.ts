@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ThinqConnectApiError } from '../../errors/index.js';
 import { ThinqConnectApiClient } from '../../services/thinqConnect/thinqConnectApiClient.js';
-import { ThinqServiceV2Container, type ThinqV2Options } from '../../thinqV2/thinqServiceV2Container.js';
+import {
+	type ThinqConnectOptions,
+	ThinqConnectServiceContainer,
+} from '../../thinqConnect/thinqConnectServiceContainer.js';
 import { asPartial, createMockLogger } from '../helpers/testUtils.js';
 
 vi.mock('../../services/thinqConnect/thinqConnectApiClient.js', () => ({
@@ -11,11 +14,11 @@ vi.mock('../../services/thinqConnect/thinqConnectApiClient.js', () => ({
 
 const PAT_SENTINEL = 'pat-sentinel-do-not-log-1234567890';
 
-function createOptions(overrides: Partial<ThinqV2Options> = {}): ThinqV2Options {
+function createOptions(overrides: Partial<ThinqConnectOptions> = {}): ThinqConnectOptions {
 	return { personalAccessToken: PAT_SENTINEL, country: 'US', pollIntervalSeconds: 60, ...overrides };
 }
 
-describe('ThinqServiceV2Container', () => {
+describe('ThinqConnectServiceContainer', () => {
 	let logger: ReturnType<typeof createMockLogger>;
 
 	beforeEach(() => {
@@ -29,7 +32,7 @@ describe('ThinqServiceV2Container', () => {
 	describe('getConnectApiClient', () => {
 		it('should return the same client instance on repeated calls', () => {
 			// Arrange
-			const container = new ThinqServiceV2Container(logger, createOptions());
+			const container = new ThinqConnectServiceContainer(logger, createOptions());
 
 			// Act
 			const client1 = container.getConnectApiClient();
@@ -41,7 +44,7 @@ describe('ThinqServiceV2Container', () => {
 
 		it('should construct ThinqConnectApiClient with the token, country and logger', () => {
 			// Arrange
-			const container = new ThinqServiceV2Container(logger, createOptions({ country: 'DE' }));
+			const container = new ThinqConnectServiceContainer(logger, createOptions({ country: 'DE' }));
 
 			// Act
 			container.getConnectApiClient();
@@ -52,7 +55,7 @@ describe('ThinqServiceV2Container', () => {
 
 		it('should not construct the client until getConnectApiClient is called', () => {
 			// Arrange & Act
-			const container = new ThinqServiceV2Container(logger, createOptions({ personalAccessToken: '' }));
+			const container = new ThinqConnectServiceContainer(logger, createOptions({ personalAccessToken: '' }));
 
 			// Assert
 			expect(container).toBeDefined();
@@ -64,7 +67,7 @@ describe('ThinqServiceV2Container', () => {
 			vi.mocked(ThinqConnectApiClient).mockImplementationOnce(function () {
 				throw new ThinqConnectApiError('A ThinQ Personal Access Token is required', '1103');
 			});
-			const container = new ThinqServiceV2Container(logger, createOptions({ personalAccessToken: '' }));
+			const container = new ThinqConnectServiceContainer(logger, createOptions({ personalAccessToken: '' }));
 
 			// Act & Assert
 			expect(() => container.getConnectApiClient()).toThrow(ThinqConnectApiError);
@@ -74,7 +77,7 @@ describe('ThinqServiceV2Container', () => {
 	describe('getWasherService', () => {
 		it('should return the same washer service instance on repeated calls', () => {
 			// Arrange
-			const container = new ThinqServiceV2Container(logger, createOptions());
+			const container = new ThinqConnectServiceContainer(logger, createOptions());
 
 			// Act
 			const service1 = container.getWasherService();
@@ -88,7 +91,7 @@ describe('ThinqServiceV2Container', () => {
 	describe('getAirConditionerService', () => {
 		it('should return the same air conditioner service instance on repeated calls', () => {
 			// Arrange
-			const container = new ThinqServiceV2Container(logger, createOptions());
+			const container = new ThinqConnectServiceContainer(logger, createOptions());
 
 			// Act
 			const service1 = container.getAirConditionerService();
@@ -100,7 +103,7 @@ describe('ThinqServiceV2Container', () => {
 
 		it('should share the same Connect API client as the washer service', () => {
 			// Arrange
-			const container = new ThinqServiceV2Container(logger, createOptions());
+			const container = new ThinqConnectServiceContainer(logger, createOptions());
 
 			// Act
 			const airConditionerService = container.getAirConditionerService();
@@ -115,7 +118,7 @@ describe('ThinqServiceV2Container', () => {
 	describe('pollIntervalMs', () => {
 		it('should return 60000 ms for a 60 second interval', () => {
 			// Arrange
-			const container = new ThinqServiceV2Container(logger, createOptions({ pollIntervalSeconds: 60 }));
+			const container = new ThinqConnectServiceContainer(logger, createOptions({ pollIntervalSeconds: 60 }));
 
 			// Act & Assert
 			expect(container.pollIntervalMs).toBe(60000);
@@ -123,7 +126,7 @@ describe('ThinqServiceV2Container', () => {
 
 		it('should clamp a 5 second interval up to 15000 ms', () => {
 			// Arrange
-			const container = new ThinqServiceV2Container(logger, createOptions({ pollIntervalSeconds: 5 }));
+			const container = new ThinqConnectServiceContainer(logger, createOptions({ pollIntervalSeconds: 5 }));
 
 			// Act & Assert
 			expect(container.pollIntervalMs).toBe(15000);
@@ -131,7 +134,7 @@ describe('ThinqServiceV2Container', () => {
 
 		it('should keep a 15 second interval at exactly 15000 ms', () => {
 			// Arrange
-			const container = new ThinqServiceV2Container(logger, createOptions({ pollIntervalSeconds: 15 }));
+			const container = new ThinqConnectServiceContainer(logger, createOptions({ pollIntervalSeconds: 15 }));
 
 			// Act & Assert
 			expect(container.pollIntervalMs).toBe(15000);
@@ -141,7 +144,7 @@ describe('ThinqServiceV2Container', () => {
 	describe('shutdown', () => {
 		it('should not throw when the washer service was never created', () => {
 			// Arrange
-			const container = new ThinqServiceV2Container(logger, createOptions());
+			const container = new ThinqConnectServiceContainer(logger, createOptions());
 
 			// Act & Assert
 			expect(() => container.shutdown()).not.toThrow();
@@ -149,7 +152,7 @@ describe('ThinqServiceV2Container', () => {
 
 		it('should stop washer polling when the washer service was created', () => {
 			// Arrange
-			const container = new ThinqServiceV2Container(logger, createOptions());
+			const container = new ThinqConnectServiceContainer(logger, createOptions());
 			const service = container.getWasherService();
 			const stopSpy = vi.spyOn(service, 'stopPolling');
 
@@ -164,7 +167,7 @@ describe('ThinqServiceV2Container', () => {
 	describe('shutdown with air conditioner polling', () => {
 		it('should not throw when the air conditioner service was never created', () => {
 			// Arrange
-			const container = new ThinqServiceV2Container(logger, createOptions());
+			const container = new ThinqConnectServiceContainer(logger, createOptions());
 
 			// Act & Assert
 			expect(() => container.shutdown()).not.toThrow();
@@ -172,7 +175,7 @@ describe('ThinqServiceV2Container', () => {
 
 		it('should stop air conditioner polling and still stop washer polling', () => {
 			// Arrange
-			const container = new ThinqServiceV2Container(logger, createOptions());
+			const container = new ThinqConnectServiceContainer(logger, createOptions());
 			const airConditionerService = container.getAirConditionerService();
 			const washerService = container.getWasherService();
 			const airStopSpy = vi.spyOn(airConditionerService, 'stopPolling');
@@ -190,7 +193,7 @@ describe('ThinqServiceV2Container', () => {
 	describe('logging', () => {
 		it('should never log the PAT while creating and shutting down the client and service', () => {
 			// Arrange
-			const container = new ThinqServiceV2Container(logger, createOptions());
+			const container = new ThinqConnectServiceContainer(logger, createOptions());
 
 			// Act
 			container.getWasherService();

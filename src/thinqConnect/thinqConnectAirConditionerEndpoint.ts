@@ -11,12 +11,12 @@ import {
 
 import type { AirConditionerProfile } from '../services/thinqConnect/thinqConnectAirConditioner.js';
 import type {
-	ThinqV2AirConditioner,
-	ThinqV2AirConditionerOutcome,
-	ThinqV2AirConditionerService,
-	ThinqV2AirConditionerState,
-} from './thinqV2AirConditionerService.js';
-import type { ThinqV2MatterIdentityOverride } from './thinqV2MatterIdentity.js';
+	ThinqConnectAirConditioner,
+	ThinqConnectAirConditionerOutcome,
+	ThinqConnectAirConditionerService,
+	ThinqConnectAirConditionerState,
+} from './thinqConnectAirConditionerService.js';
+import type { ThinqConnectMatterIdentityOverride } from './thinqConnectMatterIdentity.js';
 
 type FanTier = 'complete' | 'default' | 'onOff';
 type WindStrength = 'LOW' | 'MID' | 'HIGH' | 'AUTO';
@@ -89,7 +89,7 @@ export function describeFanTier(profile: AirConditionerProfile): FanTier {
 	return profile.rotateUpDown || profile.rotateLeftRight ? 'complete' : 'default';
 }
 
-function thermostatLimitsCelsius(ac: ThinqV2AirConditioner): { min: number; max: number } {
+function thermostatLimitsCelsius(ac: ThinqConnectAirConditioner): { min: number; max: number } {
 	const range = ac.profile.targetTemperature;
 	if (!range) {
 		return { min: DEFAULT_MIN_CELSIUS, max: DEFAULT_MAX_CELSIUS };
@@ -102,14 +102,14 @@ function thermostatLimitsCelsius(ac: ThinqV2AirConditioner): { min: number; max:
  * arrive as raw attribute writes, so they are observed with `subscribeAttribute` (ignoring our own
  * `updateAttribute` echoes) and always re-synced to the real device state afterwards.
  */
-export function buildThinqV2AirConditionerEndpoint(
-	ac: ThinqV2AirConditioner,
+export function buildThinqConnectAirConditionerEndpoint(
+	ac: ThinqConnectAirConditioner,
 	service: Pick<
-		ThinqV2AirConditionerService,
+		ThinqConnectAirConditionerService,
 		'setPower' | 'setCoolMode' | 'setTargetTemperature' | 'setWindStrength' | 'setSwing'
 	>,
 	logger: AnsiLogger,
-	identity: ThinqV2MatterIdentityOverride = {},
+	identity: ThinqConnectMatterIdentityOverride = {},
 ): MatterbridgeEndpoint {
 	const { profile } = ac;
 	const limits = thermostatLimitsCelsius(ac);
@@ -173,7 +173,7 @@ export function buildThinqV2AirConditionerEndpoint(
 		endpoint.createDefaultHepaFilterMonitoringClusterServer();
 		endpoint.addCommandHandler('resetCondition', async () => {
 			logger.warn(
-				`ThinQ V2 ${ac.deviceId}: filter reset requested but is not available through the ThinQ Connect API.`,
+				`ThinQ Connect ${ac.deviceId}: filter reset requested but is not available through the ThinQ Connect API.`,
 			);
 			throw new Error('Filter reset is not available through the ThinQ Connect API.');
 		});
@@ -181,20 +181,20 @@ export function buildThinqV2AirConditionerEndpoint(
 
 	const settle = async (
 		name: string,
-		action: () => Promise<ThinqV2AirConditionerOutcome>,
-		revert?: (state: ThinqV2AirConditionerState) => Promise<void>,
+		action: () => Promise<ThinqConnectAirConditionerOutcome>,
+		revert?: (state: ThinqConnectAirConditionerState) => Promise<void>,
 	): Promise<void> => {
 		try {
 			const outcome = await action();
-			logger.debug(`ThinQ V2 ${ac.deviceId} ${name} -> ${outcome.status}`);
-			await applyThinqV2AirConditionerState(endpoint, ac, outcome.state, logger);
+			logger.debug(`ThinQ Connect ${ac.deviceId} ${name} -> ${outcome.status}`);
+			await applyThinqConnectAirConditionerState(endpoint, ac, outcome.state, logger);
 			await revert?.(outcome.state);
 		} catch (error) {
-			logger.error(`ThinQ V2 ${ac.deviceId} ${name} handler failed: ${errorMessage(error)}`);
+			logger.error(`ThinQ Connect ${ac.deviceId} ${name} handler failed: ${errorMessage(error)}`);
 			try {
 				await revert?.({});
 			} catch (revertError) {
-				logger.error(`ThinQ V2 ${ac.deviceId} ${name} revert failed: ${errorMessage(revertError)}`);
+				logger.error(`ThinQ Connect ${ac.deviceId} ${name} revert failed: ${errorMessage(revertError)}`);
 			}
 		}
 	};
@@ -202,11 +202,11 @@ export function buildThinqV2AirConditionerEndpoint(
 	const handlePower = async (on: boolean): Promise<void> => {
 		try {
 			const outcome = await service.setPower(ac, on);
-			logger.debug(`ThinQ V2 ${ac.deviceId} power ${on ? 'on' : 'off'} -> ${outcome.status}`);
+			logger.debug(`ThinQ Connect ${ac.deviceId} power ${on ? 'on' : 'off'} -> ${outcome.status}`);
 			const powerOn = outcome.state.powerOn ?? (outcome.status === 'sent' ? on : !on);
-			await applyThinqV2AirConditionerState(endpoint, ac, { ...outcome.state, powerOn }, logger);
+			await applyThinqConnectAirConditionerState(endpoint, ac, { ...outcome.state, powerOn }, logger);
 		} catch (error) {
-			logger.error(`ThinQ V2 ${ac.deviceId} power handler failed: ${errorMessage(error)}`);
+			logger.error(`ThinQ Connect ${ac.deviceId} power handler failed: ${errorMessage(error)}`);
 		}
 	};
 
@@ -235,7 +235,7 @@ export function buildThinqV2AirConditionerEndpoint(
 
 	const revertSystemMode =
 		(oldValue: Thermostat.SystemMode) =>
-		async (state: ThinqV2AirConditionerState): Promise<void> => {
+		async (state: ThinqConnectAirConditionerState): Promise<void> => {
 			if (state.powerOn === undefined) {
 				await endpoint.updateAttribute(Thermostat.id, 'systemMode', oldValue, logger);
 			}
@@ -256,9 +256,9 @@ export function buildThinqV2AirConditionerEndpoint(
 				void settle('system mode cool', () => service.setCoolMode(ac), revertSystemMode(oldValue));
 				return;
 			}
-			logger.warn(`ThinQ V2 ${ac.deviceId}: system mode ${newValue} is not supported, reverting.`);
+			logger.warn(`ThinQ Connect ${ac.deviceId}: system mode ${newValue} is not supported, reverting.`);
 			void endpoint.updateAttribute(Thermostat.id, 'systemMode', oldValue, logger).catch((error: unknown) => {
-				logger.error(`ThinQ V2 ${ac.deviceId} system mode revert failed: ${errorMessage(error)}`);
+				logger.error(`ThinQ Connect ${ac.deviceId} system mode revert failed: ${errorMessage(error)}`);
 			});
 		},
 		endpoint.log,
@@ -269,7 +269,7 @@ export function buildThinqV2AirConditionerEndpoint(
 	}
 
 	const revertFan = async (
-		state: ThinqV2AirConditionerState,
+		state: ThinqConnectAirConditionerState,
 		oldMode: FanControl.FanMode | undefined,
 	): Promise<void> => {
 		if (state.windStrength === undefined && oldMode !== undefined) {
@@ -286,9 +286,9 @@ export function buildThinqV2AirConditionerEndpoint(
 			}
 			const strength = mapFanModeToWindStrength(newValue);
 			if (strength === undefined) {
-				logger.warn(`ThinQ V2 ${ac.deviceId}: fan mode ${newValue} is not supported, reverting.`);
+				logger.warn(`ThinQ Connect ${ac.deviceId}: fan mode ${newValue} is not supported, reverting.`);
 				void endpoint.updateAttribute(FanControl.id, 'fanMode', oldValue, logger).catch((error: unknown) => {
-					logger.error(`ThinQ V2 ${ac.deviceId} fan mode revert failed: ${errorMessage(error)}`);
+					logger.error(`ThinQ Connect ${ac.deviceId} fan mode revert failed: ${errorMessage(error)}`);
 				});
 				return;
 			}
@@ -310,9 +310,9 @@ export function buildThinqV2AirConditionerEndpoint(
 			}
 			const strength = newValue === null ? undefined : mapPercentToWindStrength(newValue);
 			if (strength === undefined) {
-				logger.debug(`ThinQ V2 ${ac.deviceId}: ignoring fan percent ${newValue}, reverting.`);
+				logger.debug(`ThinQ Connect ${ac.deviceId}: ignoring fan percent ${newValue}, reverting.`);
 				void endpoint.updateAttribute(FanControl.id, 'percentSetting', oldValue, logger).catch((error: unknown) => {
-					logger.error(`ThinQ V2 ${ac.deviceId} fan percent revert failed: ${errorMessage(error)}`);
+					logger.error(`ThinQ Connect ${ac.deviceId} fan percent revert failed: ${errorMessage(error)}`);
 				});
 				return;
 			}
@@ -354,7 +354,7 @@ export function buildThinqV2AirConditionerEndpoint(
 				};
 				if (Object.keys(axes).length === 0) {
 					void restoreRock().catch((error: unknown) => {
-						logger.error(`ThinQ V2 ${ac.deviceId} swing revert failed: ${errorMessage(error)}`);
+						logger.error(`ThinQ Connect ${ac.deviceId} swing revert failed: ${errorMessage(error)}`);
 					});
 					return;
 				}
@@ -375,10 +375,10 @@ export function buildThinqV2AirConditionerEndpoint(
 	return endpoint;
 }
 
-export async function applyThinqV2AirConditionerState(
+export async function applyThinqConnectAirConditionerState(
 	endpoint: MatterbridgeEndpoint,
-	ac: ThinqV2AirConditioner,
-	state: ThinqV2AirConditionerState,
+	ac: ThinqConnectAirConditioner,
+	state: ThinqConnectAirConditionerState,
 	logger: AnsiLogger,
 ): Promise<void> {
 	const { profile } = ac;

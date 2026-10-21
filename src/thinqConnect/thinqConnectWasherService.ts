@@ -12,9 +12,9 @@ import {
 	type WasherPowerCommand,
 } from '../services/thinqConnect/thinqConnectWasher.js';
 
-export const THINQ_V2_POST_COMMAND_REFRESH_DELAY_MS = 3000;
+export const THINQ_CONNECT_WASHER_POST_COMMAND_REFRESH_DELAY_MS = 3000;
 
-export interface ThinqV2Washer {
+export interface ThinqConnectWasher {
 	deviceId: string;
 	name: string;
 	modelName?: string;
@@ -22,20 +22,20 @@ export interface ThinqV2Washer {
 	operationMode?: WasherOperationModeProfile;
 }
 
-export interface ThinqV2WasherState {
+export interface ThinqConnectWasherState {
 	currentState?: string;
 	powerOn?: boolean;
 }
 
-export type ThinqV2PowerOutcome =
-	| { status: 'sent'; state: ThinqV2WasherState }
-	| { status: 'noop'; state: ThinqV2WasherState }
-	| { status: 'refused'; reason: string; state: ThinqV2WasherState }
-	| { status: 'failed'; error: string; state: ThinqV2WasherState };
+export type ThinqConnectWasherPowerOutcome =
+	| { status: 'sent'; state: ThinqConnectWasherState }
+	| { status: 'noop'; state: ThinqConnectWasherState }
+	| { status: 'refused'; reason: string; state: ThinqConnectWasherState }
+	| { status: 'failed'; error: string; state: ThinqConnectWasherState };
 
-export type ThinqV2StateListener = (deviceId: string, state: ThinqV2WasherState) => void;
+export type ThinqConnectWasherStateListener = (deviceId: string, state: ThinqConnectWasherState) => void;
 
-export type ThinqV2ConnectClient = Pick<
+export type ThinqConnectWasherClient = Pick<
 	ThinqConnectApiClient,
 	'getDevices' | 'getDeviceProfile' | 'getDeviceState' | 'controlDevice'
 >;
@@ -43,22 +43,22 @@ export type ThinqV2ConnectClient = Pick<
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /** Discovers ThinQ Connect washers, reads their state, sends guarded power commands, and polls state. */
-export class ThinqV2WasherService {
-	private readonly lastState = new Map<string, ThinqV2WasherState>();
+export class ThinqConnectWasherService {
+	private readonly lastState = new Map<string, ThinqConnectWasherState>();
 	private readonly inFlight = new Set<string>();
 	private readonly refreshTimers = new Set<NodeJS.Timeout>();
 	private pollTimer: NodeJS.Timeout | undefined;
 	private tickRunning = false;
-	private listener: ThinqV2StateListener | undefined;
+	private listener: ThinqConnectWasherStateListener | undefined;
 
 	constructor(
-		private readonly client: ThinqV2ConnectClient,
+		private readonly client: ThinqConnectWasherClient,
 		private readonly logger: AnsiLogger,
 	) {}
 
-	public async discoverWashers(): Promise<ThinqV2Washer[]> {
+	public async discoverWashers(): Promise<ThinqConnectWasher[]> {
 		const devices = await this.client.getDevices();
-		const washers: ThinqV2Washer[] = [];
+		const washers: ThinqConnectWasher[] = [];
 
 		for (const device of devices) {
 			if (device.deviceInfo?.deviceType !== 'DEVICE_WASHER') {
@@ -83,16 +83,16 @@ export class ThinqV2WasherService {
 		return washers;
 	}
 
-	public async readState(washer: ThinqV2Washer): Promise<ThinqV2WasherState> {
+	public async readState(washer: ThinqConnectWasher): Promise<ThinqConnectWasherState> {
 		const payload = await this.client.getDeviceState(washer.deviceId);
 		const currentState = readWasherCurrentState(payload, washer.locationName);
-		const state: ThinqV2WasherState = { currentState, powerOn: isWasherPoweredOn(currentState) };
+		const state: ThinqConnectWasherState = { currentState, powerOn: isWasherPoweredOn(currentState) };
 		this.lastState.set(washer.deviceId, state);
 		return state;
 	}
 
 	/** Never throws; every path resolves to an outcome. */
-	public async setPower(washer: ThinqV2Washer, on: boolean): Promise<ThinqV2PowerOutcome> {
+	public async setPower(washer: ThinqConnectWasher, on: boolean): Promise<ThinqConnectWasherPowerOutcome> {
 		const { deviceId } = washer;
 		const command: WasherPowerCommand = on ? 'POWER_ON' : 'POWER_OFF';
 
@@ -104,7 +104,7 @@ export class ThinqV2WasherService {
 
 		this.inFlight.add(deviceId);
 		try {
-			let state: ThinqV2WasherState;
+			let state: ThinqConnectWasherState;
 			try {
 				state = await this.readState(washer);
 			} catch (error) {
@@ -140,7 +140,11 @@ export class ThinqV2WasherService {
 		}
 	}
 
-	public startPolling(intervalMs: number, washers: readonly ThinqV2Washer[], listener: ThinqV2StateListener): void {
+	public startPolling(
+		intervalMs: number,
+		washers: readonly ThinqConnectWasher[],
+		listener: ThinqConnectWasherStateListener,
+	): void {
 		this.stopPolling();
 		this.listener = listener;
 
@@ -178,7 +182,7 @@ export class ThinqV2WasherService {
 		this.listener = undefined;
 	}
 
-	private scheduleRefresh(washer: ThinqV2Washer): void {
+	private scheduleRefresh(washer: ThinqConnectWasher): void {
 		const { listener } = this;
 		if (!listener) {
 			return;
@@ -190,7 +194,7 @@ export class ThinqV2WasherService {
 				(error: unknown) =>
 					this.logger.warn(`ThinQ Connect: post-command refresh failed for ${washer.deviceId}: ${errorMessage(error)}`),
 			);
-		}, THINQ_V2_POST_COMMAND_REFRESH_DELAY_MS);
+		}, THINQ_CONNECT_WASHER_POST_COMMAND_REFRESH_DELAY_MS);
 		this.refreshTimers.add(timer);
 	}
 }

@@ -3,19 +3,23 @@ import { LaundryWasher } from 'matterbridge/devices';
 import type { AnsiLogger } from 'matterbridge/logger';
 import { OnOff } from 'matterbridge/matter/clusters';
 
-import type { ThinqV2MatterIdentityOverride } from './thinqV2MatterIdentity.js';
-import type { ThinqV2Washer, ThinqV2WasherService, ThinqV2WasherState } from './thinqV2WasherService.js';
+import type { ThinqConnectMatterIdentityOverride } from './thinqConnectMatterIdentity.js';
+import type {
+	ThinqConnectWasher,
+	ThinqConnectWasherService,
+	ThinqConnectWasherState,
+} from './thinqConnectWasherService.js';
 
 /**
  * Builds the Matter `LaundryWasher` endpoint for a ThinQ Connect washer. `on`/`off` run the guarded
  * power command first and write the final OnOff value afterwards, because matterbridge does not await
  * the handler and mutates the attribute right after dispatch.
  */
-export function buildThinqV2WasherEndpoint(
-	washer: ThinqV2Washer,
-	service: Pick<ThinqV2WasherService, 'setPower'>,
+export function buildThinqConnectWasherEndpoint(
+	washer: ThinqConnectWasher,
+	service: Pick<ThinqConnectWasherService, 'setPower'>,
 	logger: AnsiLogger,
-	identity: ThinqV2MatterIdentityOverride = {},
+	identity: ThinqConnectMatterIdentityOverride = {},
 ): MatterbridgeEndpoint {
 	const endpoint = new LaundryWasher(washer.name, washer.deviceId);
 	endpoint.createDefaultBasicInformationClusterServer(
@@ -32,12 +36,12 @@ export function buildThinqV2WasherEndpoint(
 	const handlePower = async (on: boolean): Promise<void> => {
 		try {
 			const outcome = await service.setPower(washer, on);
-			logger.debug(`ThinQ V2 ${washer.deviceId} power ${on ? 'on' : 'off'} -> ${outcome.status}`);
+			logger.debug(`ThinQ Connect ${washer.deviceId} power ${on ? 'on' : 'off'} -> ${outcome.status}`);
 			const powerOn = outcome.state.powerOn ?? (outcome.status === 'sent' ? on : !on);
-			await applyThinqV2WasherState(endpoint, { powerOn }, logger);
+			await applyThinqConnectWasherState(endpoint, { powerOn }, logger);
 		} catch (error) {
 			logger.error(
-				`ThinQ V2 ${washer.deviceId} power handler failed: ${error instanceof Error ? error.message : String(error)}`,
+				`ThinQ Connect ${washer.deviceId} power handler failed: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		}
 	};
@@ -48,13 +52,13 @@ export function buildThinqV2WasherEndpoint(
 	return endpoint;
 }
 
-export async function applyThinqV2WasherState(
+export async function applyThinqConnectWasherState(
 	endpoint: MatterbridgeEndpoint,
-	state: ThinqV2WasherState,
+	state: ThinqConnectWasherState,
 	logger: AnsiLogger,
 ): Promise<void> {
 	if (state.powerOn === undefined) {
-		logger.debug('ThinQ V2 washer state has unknown power state, skipping OnOff update.');
+		logger.debug('ThinQ Connect washer state has unknown power state, skipping OnOff update.');
 		return;
 	}
 	await endpoint.updateAttribute(OnOff.id, 'onOff', state.powerOn, logger);

@@ -2,18 +2,18 @@ import type { MatterbridgeEndpoint } from 'matterbridge';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { readAirConditionerProfile } from '../../services/thinqConnect/thinqConnectAirConditioner.js';
-import { buildThinqV2AirConditionerEndpoint } from '../../thinqV2/thinqV2AirConditionerEndpoint.js';
-import { registerThinqV2AirConditioners } from '../../thinqV2/thinqV2AirConditionerRegistration.js';
+import { buildThinqConnectAirConditionerEndpoint } from '../../thinqConnect/thinqConnectAirConditionerEndpoint.js';
+import { registerThinqConnectAirConditioners } from '../../thinqConnect/thinqConnectAirConditionerRegistration.js';
 import type {
-	ThinqV2AirConditioner,
-	ThinqV2AirConditionerService,
-} from '../../thinqV2/thinqV2AirConditionerService.js';
-import type { ThinqV2MatterIdentityOverride } from '../../thinqV2/thinqV2MatterIdentity.js';
+	ThinqConnectAirConditioner,
+	ThinqConnectAirConditionerService,
+} from '../../thinqConnect/thinqConnectAirConditionerService.js';
+import type { ThinqConnectMatterIdentityOverride } from '../../thinqConnect/thinqConnectMatterIdentity.js';
 import { asPartial, createMockLogger } from '../helpers/testUtils.js';
-import { STUDY_PROFILE } from '../helpers/thinqV2AirConditionerFixtures.js';
+import { STUDY_PROFILE } from '../helpers/thinqConnectAirConditionerFixtures.js';
 
-vi.mock('../../thinqV2/thinqV2AirConditionerEndpoint.js', () => ({
-	buildThinqV2AirConditionerEndpoint: vi.fn(),
+vi.mock('../../thinqConnect/thinqConnectAirConditionerEndpoint.js', () => ({
+	buildThinqConnectAirConditionerEndpoint: vi.fn(),
 }));
 
 const ENDPOINTS = new Map<string, MatterbridgeEndpoint>();
@@ -28,13 +28,13 @@ function endpointFor(deviceId: string): MatterbridgeEndpoint {
 	return endpoint;
 }
 
-function buildAc(deviceId: string, name: string): ThinqV2AirConditioner {
+function buildAc(deviceId: string, name: string): ThinqConnectAirConditioner {
 	return { deviceId, name, profile: readAirConditionerProfile(STUDY_PROFILE) };
 }
 
-describe('registerThinqV2AirConditioners', () => {
+describe('registerThinqConnectAirConditioners', () => {
 	type Service = Pick<
-		ThinqV2AirConditionerService,
+		ThinqConnectAirConditionerService,
 		'discoverAirConditioners' | 'setPower' | 'setCoolMode' | 'setTargetTemperature' | 'setWindStrength' | 'setSwing'
 	>;
 
@@ -69,7 +69,7 @@ describe('registerThinqV2AirConditioners', () => {
 				.mockResolvedValue(undefined),
 			remember: vi.fn<(deviceId: string, endpoint: MatterbridgeEndpoint) => void>(),
 		};
-		vi.mocked(buildThinqV2AirConditionerEndpoint).mockImplementation((ac) => endpointFor(ac.deviceId));
+		vi.mocked(buildThinqConnectAirConditionerEndpoint).mockImplementation((ac) => endpointFor(ac.deviceId));
 	});
 
 	it('should register and remember both air conditioners and return both', async () => {
@@ -79,7 +79,7 @@ describe('registerThinqV2AirConditioners', () => {
 		deps.service.discoverAirConditioners.mockResolvedValue([studyAc, bedroomAc]);
 
 		// Act
-		const result = await registerThinqV2AirConditioners(deps);
+		const result = await registerThinqConnectAirConditioners(deps);
 
 		// Assert
 		expect(deps.registerDevice).toHaveBeenCalledWith(endpointFor('study-ac'));
@@ -94,7 +94,7 @@ describe('registerThinqV2AirConditioners', () => {
 		deps.service.discoverAirConditioners.mockResolvedValue([buildAc('ignored-ac', 'Ignored AC')]);
 
 		// Act
-		const result = await registerThinqV2AirConditioners(deps);
+		const result = await registerThinqConnectAirConditioners(deps);
 
 		// Assert
 		expect(deps.unregisterIgnoredDevice).toHaveBeenCalledWith('ignored-ac', endpointFor('ignored-ac'));
@@ -110,7 +110,7 @@ describe('registerThinqV2AirConditioners', () => {
 		deps.registerDevice.mockRejectedValueOnce(new Error('bridge refused'));
 
 		// Act
-		const result = await registerThinqV2AirConditioners(deps);
+		const result = await registerThinqConnectAirConditioners(deps);
 
 		// Assert
 		expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('bridge refused'));
@@ -124,7 +124,7 @@ describe('registerThinqV2AirConditioners', () => {
 		deps.service.discoverAirConditioners.mockResolvedValue([]);
 
 		// Act
-		const result = await registerThinqV2AirConditioners(deps);
+		const result = await registerThinqConnectAirConditioners(deps);
 
 		// Assert
 		expect(result).toEqual([]);
@@ -137,7 +137,7 @@ describe('registerThinqV2AirConditioners', () => {
 		deps.service.discoverAirConditioners.mockRejectedValue(new Error('discovery unavailable'));
 
 		// Act & Assert
-		await expect(registerThinqV2AirConditioners(deps)).rejects.toThrow('discovery unavailable');
+		await expect(registerThinqConnectAirConditioners(deps)).rejects.toThrow('discovery unavailable');
 		expect(deps.registerDevice).not.toHaveBeenCalled();
 	});
 
@@ -147,20 +147,20 @@ describe('registerThinqV2AirConditioners', () => {
 			const studyAc = buildAc('study-ac', 'Study Room AC');
 			const bedroomAc = buildAc('bedroom-ac', 'Bedroom AC');
 			deps.service.discoverAirConditioners.mockResolvedValue([studyAc, bedroomAc]);
-			const resolveIdentity = vi.fn<(deviceId: string) => ThinqV2MatterIdentityOverride>((deviceId) =>
+			const resolveIdentity = vi.fn<(deviceId: string) => ThinqConnectMatterIdentityOverride>((deviceId) =>
 				deviceId === 'study-ac' ? { productName: 'Study AC' } : { vendorName: 'Acme' },
 			);
 
 			// Act
-			await registerThinqV2AirConditioners({ ...deps, resolveIdentity });
+			await registerThinqConnectAirConditioners({ ...deps, resolveIdentity });
 
 			// Assert
 			expect(resolveIdentity).toHaveBeenCalledWith('study-ac');
 			expect(resolveIdentity).toHaveBeenCalledWith('bedroom-ac');
-			expect(buildThinqV2AirConditionerEndpoint).toHaveBeenCalledWith(studyAc, deps.service, logger, {
+			expect(buildThinqConnectAirConditionerEndpoint).toHaveBeenCalledWith(studyAc, deps.service, logger, {
 				productName: 'Study AC',
 			});
-			expect(buildThinqV2AirConditionerEndpoint).toHaveBeenCalledWith(bedroomAc, deps.service, logger, {
+			expect(buildThinqConnectAirConditionerEndpoint).toHaveBeenCalledWith(bedroomAc, deps.service, logger, {
 				vendorName: 'Acme',
 			});
 		});
@@ -171,10 +171,10 @@ describe('registerThinqV2AirConditioners', () => {
 			deps.service.discoverAirConditioners.mockResolvedValue([studyAc]);
 
 			// Act
-			const result = await registerThinqV2AirConditioners(deps);
+			const result = await registerThinqConnectAirConditioners(deps);
 
 			// Assert
-			expect(vi.mocked(buildThinqV2AirConditionerEndpoint).mock.calls[0]?.[3]).toBeUndefined();
+			expect(vi.mocked(buildThinqConnectAirConditionerEndpoint).mock.calls[0]?.[3]).toBeUndefined();
 			expect(deps.registerDevice).toHaveBeenCalledWith(endpointFor('study-ac'));
 			expect(result).toEqual([studyAc]);
 		});

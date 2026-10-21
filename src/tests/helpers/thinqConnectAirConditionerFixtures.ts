@@ -3,7 +3,7 @@ import type { ThinqConnectPayload } from '../../services/thinqConnect/thinqConne
 /*
  * Retyped from the read-only ThinQ Connect probes in workspace/thinq-v2-air-conditioner
  * (probe-RAC_056905_WW.txt = Study Room AC, probe-RAC_0B0001_WW.txt = Bedroom AC).
- * Shortened to the fields the V2 AC code reads. Structure and values are kept as probed.
+ * Shortened to the fields the ThinQ Connect AC code reads. Structure and values are kept as probed.
  */
 
 const C_RANGE = { max: 30, min: 16, step: 0.5 };

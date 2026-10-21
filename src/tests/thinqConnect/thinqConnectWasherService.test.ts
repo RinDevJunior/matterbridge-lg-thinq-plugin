@@ -4,11 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ThinqConnectApiError } from '../../errors/index.js';
 import type { ThinqConnectPayload } from '../../services/thinqConnect/thinqConnectApiClient.js';
 import {
-	THINQ_V2_POST_COMMAND_REFRESH_DELAY_MS,
-	type ThinqV2ConnectClient,
-	type ThinqV2Washer,
-	ThinqV2WasherService,
-} from '../../thinqV2/thinqV2WasherService.js';
+	THINQ_CONNECT_WASHER_POST_COMMAND_REFRESH_DELAY_MS,
+	type ThinqConnectWasher,
+	type ThinqConnectWasherClient,
+	ThinqConnectWasherService,
+} from '../../thinqConnect/thinqConnectWasherService.js';
 import { createMockLogger } from '../helpers/testUtils.js';
 
 interface MockClient {
@@ -38,24 +38,24 @@ function washerState(currentState: string, locationName = 'MAIN'): ThinqConnectP
 	return [{ location: { locationName }, runState: { currentState }, operation: { washerOperationMode: 'POWER_ON' } }];
 }
 
-const WASHER: ThinqV2Washer = {
+const WASHER: ThinqConnectWasher = {
 	deviceId: 'w1',
 	name: 'Laundry',
 	locationName: 'MAIN',
 	operationMode: { writable: true, allowedValues: ['START', 'STOP', 'POWER_OFF', 'POWER_ON'] },
 };
 
-describe('ThinqV2WasherService', () => {
+describe('ThinqConnectWasherService', () => {
 	let logger: ReturnType<typeof createMockLogger>;
 	let client: MockClient;
-	let service: ThinqV2WasherService;
+	let service: ThinqConnectWasherService;
 
 	beforeEach(() => {
 		vi.clearAllMocks();
 		vi.useFakeTimers();
 		logger = createMockLogger();
 		client = createMockClient();
-		service = new ThinqV2WasherService(client satisfies ThinqV2ConnectClient, logger);
+		service = new ThinqConnectWasherService(client satisfies ThinqConnectWasherClient, logger);
 	});
 
 	afterEach(() => {
@@ -317,7 +317,7 @@ describe('ThinqV2WasherService', () => {
 		it('should refuse when the profile is not writable', async () => {
 			// Arrange
 			client.getDeviceState.mockResolvedValue(washerState('INITIAL'));
-			const readOnlyWasher: ThinqV2Washer = {
+			const readOnlyWasher: ThinqConnectWasher = {
 				...WASHER,
 				operationMode: { writable: false, allowedValues: ['POWER_OFF'] },
 			};
@@ -333,7 +333,7 @@ describe('ThinqV2WasherService', () => {
 		it('should refuse when the value is not listed in the profile', async () => {
 			// Arrange
 			client.getDeviceState.mockResolvedValue(washerState('POWER_OFF'));
-			const limitedWasher: ThinqV2Washer = {
+			const limitedWasher: ThinqConnectWasher = {
 				...WASHER,
 				operationMode: { writable: true, allowedValues: ['START'] },
 			};
@@ -481,7 +481,7 @@ describe('ThinqV2WasherService', () => {
 
 			// Act
 			await service.setPower(WASHER, true);
-			await vi.advanceTimersByTimeAsync(THINQ_V2_POST_COMMAND_REFRESH_DELAY_MS);
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_WASHER_POST_COMMAND_REFRESH_DELAY_MS);
 
 			// Assert
 			expect(client.getDeviceState.mock.calls.length - readsBefore).toBe(2);
@@ -511,7 +511,7 @@ describe('ThinqV2WasherService', () => {
 
 			// Act
 			service.stopPolling();
-			await vi.advanceTimersByTimeAsync(THINQ_V2_POST_COMMAND_REFRESH_DELAY_MS);
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_WASHER_POST_COMMAND_REFRESH_DELAY_MS);
 
 			// Assert
 			expect(client.getDeviceState.mock.calls.length).toBe(readsBefore);
@@ -549,7 +549,7 @@ describe('ThinqV2WasherService', () => {
 
 		it('should warn for a failing washer without stopping the others or later ticks', async () => {
 			// Arrange
-			const other: ThinqV2Washer = { ...WASHER, deviceId: 'w2', name: 'Other' };
+			const other: ThinqConnectWasher = { ...WASHER, deviceId: 'w2', name: 'Other' };
 			client.getDeviceState.mockImplementation(async (deviceId: string) => {
 				if (deviceId === 'w1') {
 					throw new Error('w1 offline');

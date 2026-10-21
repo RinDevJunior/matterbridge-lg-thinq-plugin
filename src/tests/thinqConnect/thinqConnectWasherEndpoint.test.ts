@@ -3,9 +3,12 @@ import { OnOff } from 'matterbridge/matter/clusters';
 import type { Mock } from 'vitest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ThinqV2MatterIdentityOverride } from '../../thinqV2/thinqV2MatterIdentity.js';
-import { applyThinqV2WasherState, buildThinqV2WasherEndpoint } from '../../thinqV2/thinqV2WasherEndpoint.js';
-import type { ThinqV2Washer, ThinqV2WasherState } from '../../thinqV2/thinqV2WasherService.js';
+import type { ThinqConnectMatterIdentityOverride } from '../../thinqConnect/thinqConnectMatterIdentity.js';
+import {
+	applyThinqConnectWasherState,
+	buildThinqConnectWasherEndpoint,
+} from '../../thinqConnect/thinqConnectWasherEndpoint.js';
+import type { ThinqConnectWasher, ThinqConnectWasherState } from '../../thinqConnect/thinqConnectWasherService.js';
 import { createMockLogger } from '../helpers/testUtils.js';
 
 const mocks = vi.hoisted(() => ({
@@ -29,7 +32,7 @@ interface MockService {
 	setPower: Mock;
 }
 
-const WASHER: ThinqV2Washer = {
+const WASHER: ThinqConnectWasher = {
 	deviceId: 'w1',
 	name: 'Laundry',
 	locationName: 'MAIN',
@@ -48,7 +51,7 @@ function getHandler(name: 'on' | 'off'): PowerHandler {
 	return call[1] as PowerHandler;
 }
 
-describe('thinqV2WasherEndpoint', () => {
+describe('thinqConnectWasherEndpoint', () => {
 	let logger: ReturnType<typeof createMockLogger>;
 	let service: MockService;
 
@@ -59,10 +62,10 @@ describe('thinqV2WasherEndpoint', () => {
 		mocks.endpoint.mode = undefined;
 	});
 
-	describe('buildThinqV2WasherEndpoint', () => {
+	describe('buildThinqConnectWasherEndpoint', () => {
 		it('should set the endpoint mode to server so the washer runs as its own Matter node', () => {
 			// Arrange & Act
-			buildThinqV2WasherEndpoint(WASHER, service, logger);
+			buildThinqConnectWasherEndpoint(WASHER, service, logger);
 
 			// Assert
 			expect(mocks.endpoint.mode).toBe('server');
@@ -70,7 +73,7 @@ describe('thinqV2WasherEndpoint', () => {
 
 		it('should register exactly the on and off command handlers', () => {
 			// Arrange & Act
-			buildThinqV2WasherEndpoint(WASHER, service, logger);
+			buildThinqConnectWasherEndpoint(WASHER, service, logger);
 
 			// Assert
 			const names = mocks.endpoint.addCommandHandler.mock.calls.map((entry: unknown[]) => entry[0]);
@@ -79,7 +82,7 @@ describe('thinqV2WasherEndpoint', () => {
 
 		it('should set basic information with the washer name and deviceId', () => {
 			// Arrange & Act
-			buildThinqV2WasherEndpoint(WASHER, service, logger);
+			buildThinqConnectWasherEndpoint(WASHER, service, logger);
 
 			// Assert
 			expect(mocks.endpoint.createDefaultBasicInformationClusterServer).toHaveBeenCalledWith(
@@ -95,7 +98,7 @@ describe('thinqV2WasherEndpoint', () => {
 
 	describe('on handler', () => {
 		beforeEach(() => {
-			buildThinqV2WasherEndpoint(WASHER, service, logger);
+			buildThinqConnectWasherEndpoint(WASHER, service, logger);
 		});
 
 		it('should write true once after a sent outcome', async () => {
@@ -174,7 +177,7 @@ describe('thinqV2WasherEndpoint', () => {
 
 	describe('off handler', () => {
 		beforeEach(() => {
-			buildThinqV2WasherEndpoint(WASHER, service, logger);
+			buildThinqConnectWasherEndpoint(WASHER, service, logger);
 		});
 
 		it('should write true back after a refused outcome while the washer is RUNNING', async () => {
@@ -217,7 +220,7 @@ describe('thinqV2WasherEndpoint', () => {
 
 	describe('handler resilience', () => {
 		beforeEach(() => {
-			buildThinqV2WasherEndpoint(WASHER, service, logger);
+			buildThinqConnectWasherEndpoint(WASHER, service, logger);
 		});
 
 		it('should resolve without throwing when setPower returns a failed outcome', async () => {
@@ -260,14 +263,14 @@ describe('thinqV2WasherEndpoint', () => {
 		});
 	});
 
-	describe('applyThinqV2WasherState', () => {
+	describe('applyThinqConnectWasherState', () => {
 		it.each<[boolean]>([[true], [false]])('should write OnOff with powerOn %s', async (powerOn) => {
 			// Arrange
-			const endpoint = buildThinqV2WasherEndpoint(WASHER, service, logger);
-			const state: ThinqV2WasherState = { powerOn };
+			const endpoint = buildThinqConnectWasherEndpoint(WASHER, service, logger);
+			const state: ThinqConnectWasherState = { powerOn };
 
 			// Act
-			await applyThinqV2WasherState(endpoint, state, logger);
+			await applyThinqConnectWasherState(endpoint, state, logger);
 
 			// Assert
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', powerOn, logger);
@@ -275,11 +278,11 @@ describe('thinqV2WasherEndpoint', () => {
 
 		it('should skip the write and log debug when powerOn is undefined', async () => {
 			// Arrange
-			const endpoint = buildThinqV2WasherEndpoint(WASHER, service, logger);
-			const state: ThinqV2WasherState = { currentState: undefined, powerOn: undefined };
+			const endpoint = buildThinqConnectWasherEndpoint(WASHER, service, logger);
+			const state: ThinqConnectWasherState = { currentState: undefined, powerOn: undefined };
 
 			// Act
-			await applyThinqV2WasherState(endpoint, state, logger);
+			await applyThinqConnectWasherState(endpoint, state, logger);
 
 			// Assert
 			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
@@ -287,10 +290,10 @@ describe('thinqV2WasherEndpoint', () => {
 		});
 	});
 
-	describe('buildThinqV2WasherEndpoint identity overrides', () => {
+	describe('buildThinqConnectWasherEndpoint identity overrides', () => {
 		const WASHER_IDENTITY_CASES: {
 			field: string;
-			identity: ThinqV2MatterIdentityOverride;
+			identity: ThinqConnectMatterIdentityOverride;
 			expected: [number, string, number, string];
 		}[] = [
 			{ field: 'no override (defaults)', identity: {}, expected: [0xfff1, 'Matterbridge', 0x8001, 'LG Washer'] },
@@ -313,7 +316,7 @@ describe('thinqV2WasherEndpoint', () => {
 			'should apply only the $field identity field to basic information',
 			({ identity, expected }) => {
 				// Arrange & Act
-				buildThinqV2WasherEndpoint(WASHER, service, logger, identity);
+				buildThinqConnectWasherEndpoint(WASHER, service, logger, identity);
 
 				// Assert
 				expect(mocks.endpoint.createDefaultBasicInformationClusterServer).toHaveBeenCalledWith(
@@ -326,7 +329,7 @@ describe('thinqV2WasherEndpoint', () => {
 
 		it('should keep the deviceId as serial number and uniqueId when every identity field is overridden', () => {
 			// Arrange
-			const identity: ThinqV2MatterIdentityOverride = {
+			const identity: ThinqConnectMatterIdentityOverride = {
 				vendorId: 0x1234,
 				vendorName: 'Acme',
 				productId: 0x8123,
@@ -334,7 +337,7 @@ describe('thinqV2WasherEndpoint', () => {
 			};
 
 			// Act
-			buildThinqV2WasherEndpoint(WASHER, service, logger, identity);
+			buildThinqConnectWasherEndpoint(WASHER, service, logger, identity);
 
 			// Assert
 			expect(mocks.endpoint.createDefaultBasicInformationClusterServer).toHaveBeenCalledWith(
