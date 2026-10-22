@@ -23,6 +23,7 @@ import type {
 	ThinqConnectAirConditionerService,
 	ThinqConnectAirConditionerState,
 } from './thinqConnectAirConditionerService.js';
+import { deferThinqConnectApply } from './thinqConnectDeferredApply.js';
 import type { ThinqConnectMatterIdentityOverride } from './thinqConnectMatterIdentity.js';
 
 type FanTier = 'complete' | 'default' | 'onOff';
@@ -128,14 +129,15 @@ export function buildThinqConnectAirConditionerEndpoint(
 	const fanTier = describeFanTier(profile);
 	const windStepScale = readWindStepScale(profile);
 	const setWindStep = service.setWindStep?.bind(service);
+	const matterId = identity.legacyId ?? ac.deviceId;
 
 	const endpoint = new MatterbridgeEndpoint([roomAirConditioner, powerSource], {
-		id: `${ac.name.replaceAll(' ', '')}-${ac.deviceId.replaceAll(' ', '')}`,
+		id: `${ac.name.replaceAll(' ', '')}-${matterId.replaceAll(' ', '')}`,
 	})
 		.createDefaultIdentifyClusterServer()
 		.createDefaultBasicInformationClusterServer(
 			ac.name,
-			ac.deviceId,
+			matterId,
 			identity.vendorId ?? 0xfff1,
 			identity.vendorName ?? 'Matterbridge',
 			identity.productId ?? 0x8000,
@@ -216,14 +218,29 @@ export function buildThinqConnectAirConditionerEndpoint(
 	};
 
 	const handlePower = async (on: boolean): Promise<void> => {
+		let outcome: ThinqConnectAirConditionerOutcome;
 		try {
-			const outcome = await service.setPower(ac, on);
-			logger.debug(`ThinQ Connect ${ac.deviceId} power ${on ? 'on' : 'off'} -> ${outcome.status}`);
-			const powerOn = outcome.state.powerOn ?? (outcome.status === 'sent' ? on : !on);
-			await applyThinqConnectAirConditionerState(endpoint, ac, { ...outcome.state, powerOn }, logger);
+			outcome = await service.setPower(ac, on);
 		} catch (error) {
 			logger.error(`ThinQ Connect ${ac.deviceId} power handler failed: ${errorMessage(error)}`);
+			throw error;
 		}
+		logger.debug(`ThinQ Connect ${ac.deviceId} power ${on ? 'on' : 'off'} -> ${outcome.status}`);
+		if (outcome.status === 'refused' || outcome.status === 'failed') {
+			const powerOn = outcome.state.powerOn ?? !on;
+			deferThinqConnectApply(
+				`ThinQ Connect ${ac.deviceId} corrective state apply`,
+				() => applyThinqConnectAirConditionerState(endpoint, ac, { ...outcome.state, powerOn }, logger),
+				logger,
+			);
+			throw new Error(outcome.status === 'refused' ? outcome.reason : outcome.error);
+		}
+		const powerOn = outcome.state.powerOn ?? on;
+		deferThinqConnectApply(
+			`ThinQ Connect ${ac.deviceId} state apply`,
+			() => applyThinqConnectAirConditionerState(endpoint, ac, { ...outcome.state, powerOn }, logger),
+			logger,
+		);
 	};
 
 	endpoint.addCommandHandler('on', async () => handlePower(true));

@@ -22,6 +22,7 @@
 - **Push updates (ThinQ Connect)** — PAT login now receives device events over MQTT and re-reads the state on each event. Polling stays as a fallback and slows to a 5 minute safety net while push is healthy; there is no new setting. Not yet tested against the real LG service.
 - **Finer air conditioner fan steps (ThinQ Connect)** — the fan slider uses the unit's `windStep` levels (20/40/60/80/100 %) when it reports them.
 - **Air conditioner error warning (ThinQ Connect)** — an air conditioner that reports ERROR logs one warning per change, and one message when it recovers.
+- **Keep your Matter pairing when switching to PAT login** — an optional `serial-number-mapping` file in the plugin storage folder maps a ThinQ Connect device id to its old account-login device id so the PAT device keeps the same Matter identity. Not yet tested on hardware.
 
 ### Changed
 
@@ -34,6 +35,7 @@
 
 - **Washer state read as empty** — the ThinQ Connect state response is an array; it is now read correctly instead of being treated as empty.
 - **Fahrenheit air conditioners (ThinQ Connect)** — units that report Fahrenheit now get correct limits, rounding and unit on temperature writes. Not tested on hardware.
+- **Air conditioner and washer on/off stuck (ThinQ Connect)** — turning a PAT air conditioner or washer on or off from Matter could hang, so Apple Home showed OFF a few seconds after turning it on and later taps did nothing. The on/off and Start/Stop commands no longer wait on their own state update. Not yet tested on a real Apple Home.
 
 <a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
 

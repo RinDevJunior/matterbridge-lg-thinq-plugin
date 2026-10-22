@@ -1,8 +1,9 @@
 import { LaundryWasher } from 'matterbridge/devices';
 import { OnOff, OperationalState } from 'matterbridge/matter/clusters';
 import type { Mock } from 'vitest';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS } from '../../thinqConnect/thinqConnectDeferredApply.js';
 import type { ThinqConnectMatterIdentityOverride } from '../../thinqConnect/thinqConnectMatterIdentity.js';
 import {
 	applyThinqConnectWasherState,
@@ -116,23 +117,29 @@ describe('thinqConnectWasherEndpoint', () => {
 
 	describe('on handler', () => {
 		beforeEach(() => {
+			vi.useFakeTimers();
 			buildThinqConnectWasherEndpoint(WASHER, service, logger);
 		});
 
-		it('should write true once after a sent outcome', async () => {
+		afterEach(() => {
+			vi.clearAllTimers();
+			vi.useRealTimers();
+		});
+
+		it('should write nothing when the command was sent, even after the deferred delay', async () => {
 			// Arrange
 			service.setPower.mockResolvedValue({ status: 'sent', state: { powerOn: true } });
 
 			// Act
 			await getHandler('on')();
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
 
 			// Assert
 			expect(service.setPower).toHaveBeenCalledWith(WASHER, true);
-			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledTimes(1);
-			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', true, logger);
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
 		});
 
-		it('should write true after a noop outcome with powerOn true', async () => {
+		it('should write true once after the deferred delay when noop with powerOn true', async () => {
 			// Arrange
 			service.setPower.mockResolvedValue({ status: 'noop', state: { powerOn: true } });
 
@@ -140,51 +147,88 @@ describe('thinqConnectWasherEndpoint', () => {
 			await getHandler('on')();
 
 			// Assert
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
+
+			// Act
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
+
+			// Assert
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledTimes(1);
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', true, logger);
 		});
 
-		it('should write false after a refused outcome with powerOn false', async () => {
+		it('should write the requested true after the deferred delay when noop with an empty state', async () => {
+			// Arrange
+			service.setPower.mockResolvedValue({ status: 'noop', state: {} });
+
+			// Act
+			await getHandler('on')();
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', true, logger);
+		});
+
+		it('should reject with the reason and write false after the deferred delay when refused with powerOn false', async () => {
 			// Arrange
 			service.setPower.mockResolvedValue({ status: 'refused', reason: 'guard', state: { powerOn: false } });
 
 			// Act
-			await getHandler('on')();
+			const rejection = getHandler('on')();
+
+			// Assert
+			await expect(rejection).rejects.toThrow('guard');
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
+
+			// Act
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
 
 			// Assert
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledTimes(1);
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', false, logger);
 		});
 
-		it('should write false (the requested inverse) after a failed outcome with empty state', async () => {
+		it('should reject with the error and write false (the requested inverse) after the deferred delay when failed with empty state', async () => {
 			// Arrange
 			service.setPower.mockResolvedValue({ status: 'failed', error: 'boom', state: {} });
 
 			// Act
-			await getHandler('on')();
+			const rejection = getHandler('on')();
+
+			// Assert
+			await expect(rejection).rejects.toThrow('boom');
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
+
+			// Act
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
 
 			// Assert
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledTimes(1);
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', false, logger);
 		});
 
-		it('should write the requested value after an outcome with unknown power state', async () => {
+		it('should write the requested value after the deferred delay when noop with an unknown power state', async () => {
 			// Arrange
-			service.setPower.mockResolvedValue({ status: 'sent', state: { currentState: undefined, powerOn: undefined } });
+			service.setPower.mockResolvedValue({
+				status: 'noop',
+				state: { currentState: undefined, powerOn: undefined },
+			});
 
 			// Act
 			await getHandler('on')();
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
 
 			// Assert
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', true, logger);
 		});
 
-		it('should write OnOff only after setPower resolved', async () => {
+		it('should call setPower before the deferred OnOff write when noop', async () => {
 			// Arrange
-			service.setPower.mockResolvedValue({ status: 'sent', state: { powerOn: true } });
+			service.setPower.mockResolvedValue({ status: 'noop', state: { powerOn: true } });
 
 			// Act
 			await getHandler('on')();
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
 
 			// Assert
 			const setPowerOrder = service.setPower.mock.invocationCallOrder[0] ?? Number.NaN;
@@ -195,40 +239,60 @@ describe('thinqConnectWasherEndpoint', () => {
 
 	describe('off handler', () => {
 		beforeEach(() => {
+			vi.useFakeTimers();
 			buildThinqConnectWasherEndpoint(WASHER, service, logger);
 		});
 
-		it('should write true back after a refused outcome while the washer is RUNNING', async () => {
+		afterEach(() => {
+			vi.clearAllTimers();
+			vi.useRealTimers();
+		});
+
+		it('should reject with the reason and write true after the deferred delay when refused while RUNNING', async () => {
 			// Arrange
 			service.setPower.mockResolvedValue({ status: 'refused', reason: 'running', state: { powerOn: true } });
 
 			// Act
-			await getHandler('off')();
+			const rejection = getHandler('off')();
 
 			// Assert
+			await expect(rejection).rejects.toThrow('running');
 			expect(service.setPower).toHaveBeenCalledWith(WASHER, false);
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
+
+			// Act
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
+
+			// Assert
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledTimes(1);
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', true, logger);
 		});
 
-		it('should write false after a sent outcome', async () => {
+		it('should write nothing when the command was sent, even after the deferred delay', async () => {
 			// Arrange
 			service.setPower.mockResolvedValue({ status: 'sent', state: { powerOn: false } });
 
 			// Act
 			await getHandler('off')();
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
 
 			// Assert
-			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledTimes(1);
-			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', false, logger);
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
 		});
 
-		it('should write true (the inverse of the requested value) after a failed outcome with empty state', async () => {
+		it('should reject with the error and write true (the inverse of the requested value) after the deferred delay when failed with empty state', async () => {
 			// Arrange
 			service.setPower.mockResolvedValue({ status: 'failed', error: 'boom', state: {} });
 
 			// Act
-			await getHandler('off')();
+			const rejection = getHandler('off')();
+
+			// Assert
+			await expect(rejection).rejects.toThrow('boom');
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
+
+			// Act
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
 
 			// Assert
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledTimes(1);
@@ -238,34 +302,47 @@ describe('thinqConnectWasherEndpoint', () => {
 
 	describe('handler resilience', () => {
 		beforeEach(() => {
+			vi.useFakeTimers();
 			buildThinqConnectWasherEndpoint(WASHER, service, logger);
 		});
 
-		it('should resolve without throwing when setPower returns a failed outcome', async () => {
+		afterEach(() => {
+			vi.clearAllTimers();
+			vi.useRealTimers();
+		});
+
+		it('should reject with the error text when setPower returns a failed outcome', async () => {
 			// Arrange
 			service.setPower.mockResolvedValue({ status: 'failed', error: 'boom', state: {} });
 
 			// Act & Assert
-			await expect(getHandler('on')()).resolves.toBeUndefined();
+			await expect(getHandler('on')()).rejects.toThrow('boom');
 		});
 
-		it('should swallow and log an updateAttribute rejection without rethrowing', async () => {
+		it('should log and swallow an updateAttribute rejection from the deferred write after a noop outcome', async () => {
 			// Arrange
-			service.setPower.mockResolvedValue({ status: 'sent', state: { powerOn: true } });
+			service.setPower.mockResolvedValue({ status: 'noop', state: { powerOn: true } });
 			mocks.endpoint.updateAttribute.mockRejectedValueOnce(new Error('write failed'));
 
-			// Act & Assert
+			// Act
 			await expect(getHandler('on')()).resolves.toBeUndefined();
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
+
+			// Assert
 			expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('write failed'));
 		});
 
-		it('should swallow and log a setPower rejection without rethrowing', async () => {
+		it('should rethrow and log a setPower rejection without writing any attribute', async () => {
 			// Arrange
 			service.setPower.mockRejectedValueOnce(new Error('unexpected'));
 
-			// Act & Assert
-			await expect(getHandler('off')()).resolves.toBeUndefined();
+			// Act
+			const rejection = getHandler('off')();
+
+			// Assert
+			await expect(rejection).rejects.toThrow('unexpected');
 			expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('unexpected'));
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
 			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
 		});
 
@@ -274,7 +351,8 @@ describe('thinqConnectWasherEndpoint', () => {
 			service.setPower.mockResolvedValue({ status: 'refused', reason: 'running', state: { powerOn: true } });
 
 			// Act
-			await getHandler('off')();
+			await expect(getHandler('off')()).rejects.toThrow('running');
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
 
 			// Assert
 			expect(logger.error).not.toHaveBeenCalled();
@@ -285,20 +363,27 @@ describe('thinqConnectWasherEndpoint', () => {
 		const { Running, Stopped } = OperationalState.OperationalStateEnum;
 
 		beforeEach(() => {
+			vi.useFakeTimers();
 			buildThinqConnectWasherEndpoint(WASHER, service, logger);
 		});
 
-		it('should resolve without writing any attribute when startCycle returns sent', async () => {
+		afterEach(() => {
+			vi.clearAllTimers();
+			vi.useRealTimers();
+		});
+
+		it('should resolve without writing any attribute when startCycle returns sent, even after the deferred delay', async () => {
 			// Arrange
 			service.startCycle.mockResolvedValue({ status: 'sent', state: {} });
 
 			// Act & Assert
 			await expect(getHandler('start')()).resolves.toBeUndefined();
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
 			expect(service.startCycle).toHaveBeenCalledWith(WASHER);
 			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
 		});
 
-		it('should write the real operational state and resolve when startCycle returns noop', async () => {
+		it('should resolve and write the real operational state only after the deferred delay when startCycle returns noop', async () => {
 			// Arrange
 			service.startCycle.mockResolvedValue({
 				status: 'noop',
@@ -306,7 +391,13 @@ describe('thinqConnectWasherEndpoint', () => {
 			});
 
 			// Act
-			await getHandler('start')();
+			await expect(getHandler('start')()).resolves.toBeUndefined();
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
+
+			// Act
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
 
 			// Assert
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
@@ -318,7 +409,7 @@ describe('thinqConnectWasherEndpoint', () => {
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OperationalState.id, 'countdownTime', 60, logger);
 		});
 
-		it('should write Stopped before rejecting with the refusal reason when refused in POWER_OFF', async () => {
+		it('should reject with the refusal reason and write Stopped only after the deferred delay when refused in POWER_OFF', async () => {
 			// Arrange
 			service.startCycle.mockResolvedValue({
 				status: 'refused',
@@ -328,6 +419,12 @@ describe('thinqConnectWasherEndpoint', () => {
 
 			// Act & Assert
 			await expect(getHandler('start')()).rejects.toThrow('Washer is powered off. Turn it on first.');
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
+
+			// Act
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
+
+			// Assert
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
 				OperationalState.id,
 				'operationalState',
@@ -336,7 +433,7 @@ describe('thinqConnectWasherEndpoint', () => {
 			);
 		});
 
-		it('should reject with the hint and revert to the previous Stopped state when failed with empty state', async () => {
+		it('should reject with the hint and revert to the previous Stopped state after the deferred delay when failed with empty state', async () => {
 			// Arrange
 			mocks.endpoint.getAttribute.mockReturnValue(Stopped);
 			service.startCycle.mockResolvedValue({
@@ -349,6 +446,7 @@ describe('thinqConnectWasherEndpoint', () => {
 			// Act & Assert
 			await expect(getHandler('start')()).rejects.toThrow('Remote start is off on the washer.');
 			expect(mocks.endpoint.getAttribute).toHaveBeenCalledWith(OperationalState.id, 'operationalState');
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
 				OperationalState.id,
 				'operationalState',
@@ -357,13 +455,14 @@ describe('thinqConnectWasherEndpoint', () => {
 			);
 		});
 
-		it('should revert to the previous Running state when failed with empty state', async () => {
+		it('should revert to the previous Running state after the deferred delay when failed with empty state', async () => {
 			// Arrange
 			mocks.endpoint.getAttribute.mockReturnValue(Running);
 			service.startCycle.mockResolvedValue({ status: 'failed', error: 'boom', hint: 'hint', state: {} });
 
 			// Act
 			await expect(getHandler('start')()).rejects.toThrow('hint');
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
 
 			// Assert
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
@@ -374,13 +473,14 @@ describe('thinqConnectWasherEndpoint', () => {
 			);
 		});
 
-		it('should reject and revert to the previous state when startCycle throws unexpectedly', async () => {
+		it('should reject and revert to the previous state after the deferred delay when startCycle throws unexpectedly', async () => {
 			// Arrange
 			mocks.endpoint.getAttribute.mockReturnValue(Stopped);
 			service.startCycle.mockRejectedValue(new Error('unexpected'));
 
 			// Act & Assert
 			await expect(getHandler('start')()).rejects.toThrow('unexpected');
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
 				OperationalState.id,
 				'operationalState',
@@ -389,7 +489,7 @@ describe('thinqConnectWasherEndpoint', () => {
 			);
 		});
 
-		it('should keep the refusal error and log a warning when the revert write rejects', async () => {
+		it('should keep the refusal error and log a warning after the deferred delay when the revert write rejects', async () => {
 			// Arrange
 			service.startCycle.mockResolvedValue({
 				status: 'refused',
@@ -400,6 +500,7 @@ describe('thinqConnectWasherEndpoint', () => {
 
 			// Act & Assert
 			await expect(getHandler('start')()).rejects.toThrow('Refused reason');
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
 			expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('write failed'));
 		});
 	});
@@ -408,25 +509,38 @@ describe('thinqConnectWasherEndpoint', () => {
 		const { Running, Stopped } = OperationalState.OperationalStateEnum;
 
 		beforeEach(() => {
+			vi.useFakeTimers();
 			buildThinqConnectWasherEndpoint(WASHER, service, logger);
 		});
 
-		it('should resolve without writing any attribute when stopCycle returns sent', async () => {
+		afterEach(() => {
+			vi.clearAllTimers();
+			vi.useRealTimers();
+		});
+
+		it('should resolve without writing any attribute when stopCycle returns sent, even after the deferred delay', async () => {
 			// Arrange
 			service.stopCycle.mockResolvedValue({ status: 'sent', state: {} });
 
 			// Act & Assert
 			await expect(getHandler('stop')()).resolves.toBeUndefined();
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
 			expect(service.stopCycle).toHaveBeenCalledWith(WASHER);
 			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
 		});
 
-		it('should write the real state and resolve when stopCycle returns noop', async () => {
+		it('should resolve and write the real state only after the deferred delay when stopCycle returns noop', async () => {
 			// Arrange
 			service.stopCycle.mockResolvedValue({ status: 'noop', state: { currentState: 'POWER_OFF', powerOn: false } });
 
 			// Act
-			await getHandler('stop')();
+			await expect(getHandler('stop')()).resolves.toBeUndefined();
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
+
+			// Act
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
 
 			// Assert
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', false, logger);
@@ -438,7 +552,7 @@ describe('thinqConnectWasherEndpoint', () => {
 			);
 		});
 
-		it('should write Running back and reject when refused with Remote Start off while RUNNING', async () => {
+		it('should reject with the reason and write Running only after the deferred delay when refused with Remote Start off while RUNNING', async () => {
 			// Arrange
 			service.stopCycle.mockResolvedValue({
 				status: 'refused',
@@ -448,6 +562,12 @@ describe('thinqConnectWasherEndpoint', () => {
 
 			// Act & Assert
 			await expect(getHandler('stop')()).rejects.toThrow('Remote start is off on the washer.');
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
+
+			// Act
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
+
+			// Assert
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
 				OperationalState.id,
 				'operationalState',
@@ -456,13 +576,14 @@ describe('thinqConnectWasherEndpoint', () => {
 			);
 		});
 
-		it('should revert to the previous Running state and reject when failed with empty state', async () => {
+		it('should revert to the previous Running state after the deferred delay and reject when failed with empty state', async () => {
 			// Arrange
 			mocks.endpoint.getAttribute.mockReturnValue(Running);
 			service.stopCycle.mockResolvedValue({ status: 'failed', error: 'boom', hint: 'The washer failed.', state: {} });
 
 			// Act & Assert
 			await expect(getHandler('stop')()).rejects.toThrow('The washer failed.');
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
 				OperationalState.id,
 				'operationalState',
@@ -476,15 +597,23 @@ describe('thinqConnectWasherEndpoint', () => {
 		const { Running, Paused, Stopped } = OperationalState.OperationalStateEnum;
 
 		beforeEach(() => {
+			vi.useFakeTimers();
 			buildThinqConnectWasherEndpoint(WASHER, service, logger);
 		});
 
-		it('should reject with a not-supported error and restore the previous Running state on pause', async () => {
+		afterEach(() => {
+			vi.clearAllTimers();
+			vi.useRealTimers();
+		});
+
+		it('should reject with a not-supported error and restore the previous Running state after the deferred delay on pause', async () => {
 			// Arrange
 			mocks.endpoint.getAttribute.mockReturnValue(Running);
 
 			// Act & Assert
 			await expect(getHandler('pause')()).rejects.toThrow('Pause and resume are not supported');
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
 				OperationalState.id,
 				'operationalState',
@@ -493,12 +622,14 @@ describe('thinqConnectWasherEndpoint', () => {
 			);
 		});
 
-		it('should reject with a not-supported error and restore the previous Paused state on resume', async () => {
+		it('should reject with a not-supported error and restore the previous Paused state after the deferred delay on resume', async () => {
 			// Arrange
 			mocks.endpoint.getAttribute.mockReturnValue(Paused);
 
 			// Act & Assert
 			await expect(getHandler('resume')()).rejects.toThrow('Pause and resume are not supported');
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
 				OperationalState.id,
 				'operationalState',
@@ -507,12 +638,13 @@ describe('thinqConnectWasherEndpoint', () => {
 			);
 		});
 
-		it('should fall back to Stopped when no previous state can be read on pause', async () => {
+		it('should fall back to Stopped after the deferred delay when no previous state can be read on pause', async () => {
 			// Arrange
 			mocks.endpoint.getAttribute.mockReturnValue(undefined);
 
 			// Act & Assert
 			await expect(getHandler('pause')()).rejects.toThrow('Pause and resume are not supported');
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
 				OperationalState.id,
 				'operationalState',
@@ -528,12 +660,131 @@ describe('thinqConnectWasherEndpoint', () => {
 			// Act
 			await expect(getHandler('pause')()).rejects.toThrow();
 			await expect(getHandler('resume')()).rejects.toThrow();
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
 
 			// Assert
 			expect(service.startCycle).not.toHaveBeenCalled();
 			expect(service.stopCycle).not.toHaveBeenCalled();
 			expect(service.setPower).not.toHaveBeenCalled();
 		});
+	});
+
+	describe('deadlock regression (never-resolving OnOff/OperationalState write)', () => {
+		const { Running } = OperationalState.OperationalStateEnum;
+
+		const outcomeOf = (promise: Promise<void>): Promise<string> =>
+			promise.then(
+				() => 'resolved',
+				(error: unknown) => `rejected: ${error instanceof Error ? error.message : String(error)}`,
+			);
+
+		beforeEach(() => {
+			vi.useFakeTimers();
+			mocks.endpoint.updateAttribute.mockImplementation(() => new Promise<void>(() => {}));
+			buildThinqConnectWasherEndpoint(WASHER, service, logger);
+		});
+
+		afterEach(() => {
+			mocks.endpoint.updateAttribute.mockReset();
+			vi.clearAllTimers();
+			vi.useRealTimers();
+		});
+
+		it.each<[CommandName, () => void, string]>([
+			['on', () => service.setPower.mockResolvedValue({ status: 'noop', state: { powerOn: true } }), 'resolved'],
+			[
+				'on',
+				() => service.setPower.mockResolvedValue({ status: 'refused', reason: 'guard', state: { powerOn: false } }),
+				'rejected: guard',
+			],
+			[
+				'on',
+				() => service.setPower.mockResolvedValue({ status: 'failed', error: 'boom', state: {} }),
+				'rejected: boom',
+			],
+			['off', () => service.setPower.mockResolvedValue({ status: 'sent', state: { powerOn: false } }), 'resolved'],
+			[
+				'off',
+				() => service.setPower.mockResolvedValue({ status: 'refused', reason: 'running', state: { powerOn: true } }),
+				'rejected: running',
+			],
+			[
+				'off',
+				() => service.setPower.mockResolvedValue({ status: 'failed', error: 'boom', state: {} }),
+				'rejected: boom',
+			],
+			[
+				'start',
+				() =>
+					service.startCycle.mockResolvedValue({ status: 'noop', state: { currentState: 'RUNNING', powerOn: true } }),
+				'resolved',
+			],
+			[
+				'start',
+				() =>
+					service.startCycle.mockResolvedValue({
+						status: 'refused',
+						reason: 'Refused reason',
+						state: { currentState: 'POWER_OFF', powerOn: false },
+					}),
+				'rejected: Refused reason',
+			],
+			[
+				'start',
+				() => service.startCycle.mockResolvedValue({ status: 'failed', error: 'boom', hint: 'hint', state: {} }),
+				'rejected: hint',
+			],
+			[
+				'stop',
+				() =>
+					service.stopCycle.mockResolvedValue({ status: 'noop', state: { currentState: 'POWER_OFF', powerOn: false } }),
+				'resolved',
+			],
+			[
+				'stop',
+				() =>
+					service.stopCycle.mockResolvedValue({
+						status: 'refused',
+						reason: 'Remote start is off.',
+						state: { currentState: 'RUNNING', powerOn: true },
+					}),
+				'rejected: Remote start is off.',
+			],
+			[
+				'stop',
+				() =>
+					service.stopCycle.mockResolvedValue({
+						status: 'failed',
+						error: 'boom',
+						hint: 'The washer failed.',
+						state: {},
+					}),
+				'rejected: The washer failed.',
+			],
+			[
+				'pause',
+				() => mocks.endpoint.getAttribute.mockReturnValue(Running),
+				'rejected: Pause and resume are not supported by the ThinQ Connect API.',
+			],
+			[
+				'resume',
+				() => mocks.endpoint.getAttribute.mockReturnValue(Running),
+				'rejected: Pause and resume are not supported by the ThinQ Connect API.',
+			],
+		])(
+			'should settle the %s handler without waiting for the write (arrange %#)',
+			async (command, arrange, expected) => {
+				// Arrange
+				arrange();
+
+				// Act
+				const settled = outcomeOf(getHandler(command)());
+				await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
+
+				// Assert
+				await expect(settled).resolves.toBe(expected);
+			},
+		);
 	});
 
 	describe('exported state sets', () => {
@@ -903,6 +1154,112 @@ describe('thinqConnectWasherEndpoint', () => {
 				'Den Washer',
 			);
 			expect(vi.mocked(LaundryWasher)).toHaveBeenCalledWith('Laundry', 'w1');
+		});
+
+		describe('legacyId (account-login id) identity', () => {
+			const LEGACY_WASHER_ID = 'ee7980cc-7dba-13a4-af04-dc69cc57b6a8';
+
+			it('should construct the LaundryWasher and basic information with the legacy id when legacyId is set', () => {
+				// Arrange
+				const identity: ThinqConnectMatterIdentityOverride = { legacyId: LEGACY_WASHER_ID };
+
+				// Act
+				const endpoint = buildThinqConnectWasherEndpoint(WASHER, service, logger, identity);
+
+				// Assert
+				expect(vi.mocked(LaundryWasher)).toHaveBeenCalledWith('Laundry', LEGACY_WASHER_ID);
+				expect(mocks.endpoint.createDefaultBasicInformationClusterServer).toHaveBeenCalledWith(
+					'Laundry',
+					LEGACY_WASHER_ID,
+					0xfff1,
+					'Matterbridge',
+					0x8001,
+					'LG Washer',
+				);
+				expect(mocks.endpoint.mode).toBe('server');
+				expect(endpoint).toBe(mocks.endpoint);
+			});
+
+			it('should keep the existing w1 id and serial when legacyId is undefined', () => {
+				// Arrange
+				const identity: ThinqConnectMatterIdentityOverride = { legacyId: undefined };
+
+				// Act
+				buildThinqConnectWasherEndpoint(WASHER, service, logger, identity);
+
+				// Assert
+				expect(vi.mocked(LaundryWasher)).toHaveBeenCalledWith('Laundry', 'w1');
+				expect(mocks.endpoint.createDefaultBasicInformationClusterServer).toHaveBeenCalledWith(
+					'Laundry',
+					'w1',
+					0xfff1,
+					'Matterbridge',
+					0x8001,
+					'LG Washer',
+				);
+			});
+
+			it('should apply the vendor and product overrides and use the legacy id as serial when both are set', () => {
+				// Arrange
+				const identity: ThinqConnectMatterIdentityOverride = {
+					legacyId: LEGACY_WASHER_ID,
+					vendorId: 0x1234,
+					vendorName: 'Acme',
+					productId: 0x8123,
+					productName: 'Den Washer',
+				};
+
+				// Act
+				buildThinqConnectWasherEndpoint(WASHER, service, logger, identity);
+
+				// Assert
+				expect(vi.mocked(LaundryWasher)).toHaveBeenCalledWith('Laundry', LEGACY_WASHER_ID);
+				expect(mocks.endpoint.createDefaultBasicInformationClusterServer).toHaveBeenCalledWith(
+					'Laundry',
+					LEGACY_WASHER_ID,
+					0x1234,
+					'Acme',
+					0x8123,
+					'Den Washer',
+				);
+			});
+
+			it('should call the power command with the original washer when legacyId is set', async () => {
+				// Arrange
+				service.setPower.mockResolvedValue({ status: 'sent', state: { powerOn: true } });
+				buildThinqConnectWasherEndpoint(WASHER, service, logger, { legacyId: LEGACY_WASHER_ID });
+
+				// Act
+				await getHandler('on')();
+
+				// Assert
+				expect(service.setPower).toHaveBeenCalledWith(WASHER, true);
+				expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining('ThinQ Connect w1'));
+				expect(logger.debug).not.toHaveBeenCalledWith(expect.stringContaining(LEGACY_WASHER_ID));
+			});
+
+			it.each(['start', 'stop'] as const)(
+				'should call the %s cycle command with the original washer when legacyId is set',
+				async (command) => {
+					// Arrange
+					service.startCycle.mockResolvedValue({ status: 'sent', state: {} });
+					service.stopCycle.mockResolvedValue({ status: 'sent', state: {} });
+					buildThinqConnectWasherEndpoint(WASHER, service, logger, { legacyId: LEGACY_WASHER_ID });
+
+					// Act
+					await getHandler(command)();
+
+					// Assert
+					const cycleMock = command === 'start' ? service.startCycle : service.stopCycle;
+					expect(cycleMock).toHaveBeenCalledWith(WASHER);
+					expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalledWith(
+						expect.anything(),
+						'operationalState',
+						expect.anything(),
+						expect.anything(),
+					);
+				},
+			);
 		});
 	});
 });

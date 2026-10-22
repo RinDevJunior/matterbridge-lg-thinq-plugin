@@ -92,6 +92,25 @@ What it does today:
 - The air conditioner's room temperature is also reported as a Matter temperature sensor.
 - Because PAT devices now run in server mode, they get new device IDs. Remove any previously paired PAT washer or air conditioner from your controller and pair it again with its new pairing code.
 
+#### Keep your Matter pairing when you switch from account login to PAT
+
+If you already paired devices while using the account login (V1), you can keep them paired by telling the plugin which old device ID belongs to each PAT device. Without this, the devices get new identities and must be paired again.
+
+- The file is `serial-number-mapping` in the plugin storage folder: `<matterbridge plugin storage>/matterbridge-lg-thinq-plugin/serial-number-mapping`. The plugin creates it automatically at start-up with comments only, and never overwrites an existing file.
+- One device per line: `<ThinQ Connect id> = <account login id>`. For example, `5d0fcc73...b02d3 = ee7980cc-7dba-13a4-af04-dc69cc57b6a8` (a washer). Lines starting with `#` and blank lines are ignored. Accepted separators are `=`, `->`, `=>`, `:`, `,` or spaces.
+- Steps:
+  1. While still on the account login, start the plugin once so the file is created.
+  2. Get the ThinQ Connect ids (`npm run cli -- connect-probe`, or the first PAT start log) and the old ids (`npm run cli -- devices`).
+  3. Write one line per device: `connect id = old id`.
+  4. Do not rename the device in the LG ThinQ app, and keep your product name and `overrideMatterConfiguration` settings as they were.
+  5. Set **Login Type** to `pat` and restart the plugin.
+  6. Check the log for `loaded N device mapping(s) from serial-number-mapping.` and confirm the controller still shows the device.
+- Caveats:
+  - The device name (the LG alias) must stay identical. It decides which stored Matter node is reused.
+  - A device without a line gets a new identity, as before.
+  - A bad line or an unknown id is reported as a warning in the log and skipped.
+  - This is based on reading Matterbridge's code and is not yet tested on hardware. Keep a copy of the `matterstorage` folder in `~/.matterbridge` before you switch.
+
 Limits:
 
 - Air conditioner: no heat mode, energy monitoring, filter reset, swing angle, dust values, display light, timers.
