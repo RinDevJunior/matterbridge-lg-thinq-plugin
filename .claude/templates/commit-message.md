@@ -2,7 +2,7 @@
 Commit message template. Subject <= 72 chars, imperative mood, lowercase after the type, no trailing period.
 Body optional: explain WHY and the effect, wrap at about 72 chars, blank line between subject and body.
 Do NOT add Co-Authored-By or any "Generated with" line.
-Trailer: end with the attribution line given by the session (Claude-Session: ...) when present; never hard-code it here.
+No trailer: do NOT end with a Claude-Session line or any other attribution line, even when the session offers one.
 Do NOT name where an idea came from (a reference repo, tool or version, e.g. "follows <project> 1.2"). Describe what the change does and why.
 -->
 
