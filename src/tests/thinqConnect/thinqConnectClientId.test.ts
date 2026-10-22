@@ -27,19 +27,22 @@ describe('loadOrCreateThinqConnectClientId', () => {
 		fs.rmSync(tempRoot, { recursive: true, force: true });
 	});
 
-	it('should create the file with a generated id and mode 0600 when the file is missing', () => {
-		// Arrange
-		// (filePath does not exist; its parent directory does not exist either)
+	it.skipIf(process.platform === 'win32')(
+		'should create the file with a generated id and mode 0600 when the file is missing',
+		() => {
+			// Arrange
+			// (filePath does not exist; its parent directory does not exist either)
 
-		// Act
-		const id = loadOrCreateThinqConnectClientId(filePath);
+			// Act
+			const id = loadOrCreateThinqConnectClientId(filePath);
 
-		// Assert
-		expect(id).toMatch(CLIENT_ID_PATTERN);
-		expect(fs.existsSync(filePath)).toBe(true);
-		expect(fs.statSync(filePath).mode & 0o777).toBe(0o600);
-		expect(JSON.parse(fs.readFileSync(filePath, 'utf8'))).toEqual({ clientId: id });
-	});
+			// Assert
+			expect(id).toMatch(CLIENT_ID_PATTERN);
+			expect(fs.existsSync(filePath)).toBe(true);
+			expect(fs.statSync(filePath).mode & 0o777).toBe(0o600);
+			expect(JSON.parse(fs.readFileSync(filePath, 'utf8'))).toEqual({ clientId: id });
+		},
+	);
 
 	it('should return the same id on a second call when the file was just created', () => {
 		// Arrange

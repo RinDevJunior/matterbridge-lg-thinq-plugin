@@ -312,18 +312,21 @@ describe('ensureIdentityMappingFile', () => {
 		fs.rmSync(tempRoot, { recursive: true, force: true });
 	});
 
-	it('should create the template in a missing nested directory with mode 0600 when the file is missing', () => {
-		// Arrange
-		// (neither the file nor its parent directories exist)
+	it.skipIf(process.platform === 'win32')(
+		'should create the template in a missing nested directory with mode 0600 when the file is missing',
+		() => {
+			// Arrange
+			// (neither the file nor its parent directories exist)
 
-		// Act
-		const outcome = ensureIdentityMappingFile(filePath);
+			// Act
+			const outcome = ensureIdentityMappingFile(filePath);
 
-		// Assert
-		expect(outcome).toBe('created');
-		expect(fs.readFileSync(filePath, 'utf8')).toBe(buildIdentityMappingTemplate());
-		expect(fs.statSync(filePath).mode & 0o777).toBe(0o600);
-	});
+			// Assert
+			expect(outcome).toBe('created');
+			expect(fs.readFileSync(filePath, 'utf8')).toBe(buildIdentityMappingTemplate());
+			expect(fs.statSync(filePath).mode & 0o777).toBe(0o600);
+		},
+	);
 
 	it('should leave an existing empty file untouched when the file is empty', () => {
 		// Arrange

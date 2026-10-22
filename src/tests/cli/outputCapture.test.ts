@@ -171,18 +171,21 @@ describe('outputCapture', () => {
 	});
 
 	describe('startOutputCapture', () => {
-		it('should create parent directories and an empty 0600 file before any output', () => {
-			// Arrange
-			const nested = path.join(tmpDir, 'a', 'b', 'out.txt');
+		it.skipIf(process.platform === 'win32')(
+			'should create parent directories and an empty 0600 file before any output',
+			() => {
+				// Arrange
+				const nested = path.join(tmpDir, 'a', 'b', 'out.txt');
 
-			// Act
-			capture = startOutputCapture(nested, META);
+				// Act
+				capture = startOutputCapture(nested, META);
 
-			// Assert
-			expect(capture.filePath).toBe(nested);
-			expect(fs.readFileSync(nested, 'utf8')).toBe('');
-			expect(fs.statSync(nested).mode & 0o777).toBe(0o600);
-		});
+				// Assert
+				expect(capture.filePath).toBe(nested);
+				expect(fs.readFileSync(nested, 'utf8')).toBe('');
+				expect(fs.statSync(nested).mode & 0o777).toBe(0o600);
+			},
+		);
 
 		it('should throw and leave the writers untouched when the path is an existing directory', () => {
 			// Act & Assert
@@ -247,22 +250,25 @@ describe('outputCapture', () => {
 			expect(fs.readFileSync(file, 'utf8')).not.toContain('Saved output');
 		});
 
-		it('should set mode 0600 and replace old content when overwriting a 0644 file', () => {
-			// Arrange
-			fs.writeFileSync(file, 'old content');
-			fs.chmodSync(file, 0o644);
-			capture = startOutputCapture(file, META);
-			process.stdout.write('new\n');
+		it.skipIf(process.platform === 'win32')(
+			'should set mode 0600 and replace old content when overwriting a 0644 file',
+			() => {
+				// Arrange
+				fs.writeFileSync(file, 'old content');
+				fs.chmodSync(file, 0o644);
+				capture = startOutputCapture(file, META);
+				process.stdout.write('new\n');
 
-			// Act
-			capture.finish();
+				// Act
+				capture.finish();
 
-			// Assert
-			expect(fs.statSync(file).mode & 0o777).toBe(0o600);
-			const content = fs.readFileSync(file, 'utf8');
-			expect(content).not.toContain('old content');
-			expect(content).toContain('new\n');
-		});
+				// Assert
+				expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+				const content = fs.readFileSync(file, 'utf8');
+				expect(content).not.toContain('old content');
+				expect(content).toContain('new\n');
+			},
+		);
 
 		it('should report the failure without throwing when the write fails', () => {
 			// Arrange
