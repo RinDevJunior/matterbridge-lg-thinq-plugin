@@ -8,6 +8,7 @@ import {
 	ResourceMonitoring,
 	TemperatureMeasurement,
 	Thermostat,
+	ThermostatUserInterfaceConfiguration,
 } from 'matterbridge/matter/clusters';
 
 import {
@@ -15,6 +16,7 @@ import {
 	percentToWindStep,
 	readWindStepScale,
 	resolveCelsiusTargetRange,
+	resolveTargetTemperatureUnit,
 	windStepToPercent,
 } from '../services/thinqConnect/thinqConnectAirConditioner.js';
 import type {
@@ -97,6 +99,13 @@ export function describeFanTier(profile: AirConditionerProfile): FanTier {
 	return profile.rotateUpDown || profile.rotateLeftRight ? 'complete' : 'default';
 }
 
+/** Home-only display setting: ThinQ has no writable display unit, so this only mirrors the unit the AC reports. */
+function toTemperatureDisplayMode(unit: 'C' | 'F'): ThermostatUserInterfaceConfiguration.TemperatureDisplayMode {
+	return unit === 'F'
+		? ThermostatUserInterfaceConfiguration.TemperatureDisplayMode.Fahrenheit
+		: ThermostatUserInterfaceConfiguration.TemperatureDisplayMode.Celsius;
+}
+
 function thermostatLimitsCelsius(ac: ThinqConnectAirConditioner): { min: number; max: number } {
 	const range = resolveCelsiusTargetRange(ac.profile);
 	if (!range) {
@@ -146,7 +155,9 @@ export function buildThinqConnectAirConditionerEndpoint(
 		.createDefaultPowerSourceWiredClusterServer()
 		.createDeadFrontOnOffClusterServer(ac.initialState?.powerOn ?? false)
 		.createDefaultCoolingThermostatClusterServer(initialLocal, initialTarget, limits.min, limits.max)
-		.createDefaultThermostatUserInterfaceConfigurationClusterServer();
+		.createDefaultThermostatUserInterfaceConfigurationClusterServer(
+			toTemperatureDisplayMode(ac.initialState?.temperatureUnit ?? resolveTargetTemperatureUnit(profile)),
+		);
 
 	// Standalone Matter node (own pairing code), matching the account-login air conditioner.
 	endpoint.mode = 'server';
@@ -468,6 +479,15 @@ export async function applyThinqConnectAirConditionerState(
 	if (state.targetTemperatureC !== undefined) {
 		const clamped = Math.min(limits.max, Math.max(limits.min, state.targetTemperatureC));
 		await endpoint.updateAttribute(Thermostat.id, 'occupiedCoolingSetpoint', Math.round(clamped * 100), logger);
+	}
+
+	if (state.temperatureUnit !== undefined) {
+		await endpoint.updateAttribute(
+			ThermostatUserInterfaceConfiguration.id,
+			'temperatureDisplayMode',
+			toTemperatureDisplayMode(state.temperatureUnit),
+			logger,
+		);
 	}
 
 	const fanTier = describeFanTier(profile);
