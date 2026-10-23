@@ -28,7 +28,6 @@ It is version-controlled — commit and push changes so teammates can pull the l
 <!-- Coding patterns established in this project -->
 
 - **Commit messages:** `<type>: <short summary>` + optional why-body, per `.claude/templates/commit-message.md` (PRs: `pull-request.md`). Imperative mood; no scope; no `Co-Authored-By`.
-- Per-device override pattern: array of objects with key (`serialNumber`) + value (`productName`), gated by a boolean in `advancedFeature.settings`. See `DeviceProductNameOverride` (`RoborockPluginPlatformConfig.ts:58`).
 - New config sections in schema use JSON Schema `if/then` blocks under `advancedFeature.allOf`.
 - **Agent frontmatter:** `effort`/`maxTurns` after `color`, before `tools`; `tools` MUST be a comma-separated string — YAML block lists silently fail and the subagent falls back to Read/Write/Edit/Bash only.
 - **Subagent toolsets (macOS, re-verified Jul 10 2026):** native `Glob`/`Grep` absent from Task subagents — `mcp__glob-grep__*` is the only working search. `LSP` newly reachable in wildcard-tools subagents via deferred ToolSearch (one probe; explicit `tools:` lists historically never got it) — don't rely on it in agent definitions.
@@ -37,6 +36,7 @@ It is version-controlled — commit and push changes so teammates can pull the l
 - **ThinQ Connect control (Oct 21, 2026):** `ThinqConnectApiClient.controlDevice` = POST `/devices/{id}/control` + `x-conditional-control:true`; CLI `connect-control` dry-run unless `--yes`; allowlist POWER_ON/POWER_OFF/START (planned), STOP refused at parse time. cli-runner `.cjs` on disk is stale Roborock-era (see `workspace/connect-power-toggle/plan.md`).
 - **`format:ci` rewrites files in place** (reports `FORMAT: N file(s)`); re-run `format:ci` until `FORMAT PASS` before lint/type-check.
 - **cli-runner `.cjs` (Oct 21, 2026):** allow-list = devices/energy/connect-*/help; `out` containment via `path.relative(WORKSPACE_DIR)` (not `startsWith`); energy window validated pre-spawn. Test file `src/tests/tools/cliRunnerServer.test.ts`.
+- **ThinQ command body (Oct 22, 2026):** `sendCommand*` spreads the payload AFTER `command:'Set'` — an explicit `command: undefined` wipes the default; omit the key instead.
 - **Env pitfall (Oct 21, 2026):** `node_modules/matterbridge` can be an EMPTY dir → `type-check:ci` fails with TS2307/TS2339 cascade on every file. Not a code error; check `ls node_modules/matterbridge` before blaming code, and leave the reinstall to compiler.
 
 ## Decisions Made
@@ -219,6 +219,8 @@ It is version-controlled — commit and push changes so teammates can pull the l
 - **ThinQ Washer parameter config Amendment 2 test rewrite (Sep 25, 2026):** `ThinqWasherCourseConfig.parameters` changed `{name,value,valueType}[]` → `Record<string,string>` (drop valueType, store value as string only). Type coercion relocated from `resolveWasherCourseSelectionFromConfig` (now trivial passthrough, only test defensive copy + optional-return branches) into `extractWasherStartCommand` (test coercion against course-default types: number→parse/finite/else-default, boolean→'true'/else-false, string→passthrough, unknown-key→drop fail-closed). Test file rewrites: (1) reconciler—full rewrite, preserve test groupings, only parameter fixtures change array→object; (2) resolver—full rewrite, delete all coercion/valueType tests, keep passthrough tests (courseId+entry exists, defensive copy, unset/missing/empty-washerControl). Test file edits: (3) extractor—6 existing tests edit input literals (900/400/20→strings), add 10 new coercion tests (number/boolean/string/unknown-name/zero-negative edges); (4–5) configurator/platformConfigManager—parameter fixtures only (array→object). Comments updated reflecting coercion now tested in extractor.
 - **ThinQ Connect AC test patterns (Oct 21, 2026):** mock typing: `vi.fn<Service['method']>()` + `Mock<Service['method']>`; `ReturnType<typeof vi.fn>` fails `Pick<Service>` assignability (TS2345). Shared PAT-free fixtures: `src/tests/helpers/thinqConnectAirConditionerFixtures.ts`; fire-and-forget `subscribeAttribute` handlers asserted via `vi.waitFor`.
 - **Matter thermostat factory units (Oct 21, 2026):** `createDefaultCoolingThermostatClusterServer(localC, targetC, minC, maxC)` takes degC and multiplies by 100 internally (`matterbridgeEndpoint.js:1196`). Assert degC args (23,23,16,30), not 1/100 values.
+- **Washer CLI tests (Oct 23, 2026):** `vi.mock` washerCommon via importOriginal overriding only `createWasherClient`; non-WASHER device test needs explicit `deviceId` (`findWasherTarget` filters WASHER otherwise). Shared fixtures: `src/tests/helpers/washerFixtures.ts`.
+- **Known source bug guard (Oct 23, 2026):** `it.fails` keeps the gate green while documenting a confirmed bug and flips red once fixed (then drop the marker). Live case: `extractWasherVtReturnCodes` skips nested `vtAck.response.*` shapes.
 
 ## Common Pitfalls
 

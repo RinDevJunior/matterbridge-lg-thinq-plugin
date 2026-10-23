@@ -23,6 +23,8 @@
 - **Finer air conditioner fan steps (ThinQ Connect)** — the fan slider uses the unit's `windStep` levels (20/40/60/80/100 %) when it reports them.
 - **Air conditioner error warning (ThinQ Connect)** — an air conditioner that reports ERROR logs one warning per change, and one message when it recovers.
 - **Keep your Matter pairing when switching to PAT login** — an optional `serial-number-mapping` file in the plugin storage folder maps a ThinQ Connect device id to its old account-login device id so the PAT device keeps the same Matter identity. Not yet tested on hardware.
+- **`washer-status` and `washer-control` CLI commands (legacy V1 login)** — `washer-status` is a read-only view of the washer snapshot and model controls; `washer-control` sends one guarded command (wake, osp-wake, download-off, download-on) and is a dry run unless `--yes` is given. Used to test whether the legacy API can send a course to the washer. Not used by the plugin runtime; no behavior change.
+- **`washer-control` vtCtrl sends (legacy V1 login)** — new `--send vt-course`, `vt-start`, `vt-pause` and `vt-power-on` use the LG app's own `vtCtrl` command, with `--rinse`, `--soil` and `--variant` options. Same safety rules as before: dry run unless `--yes`, state guards, and `vt-start` also needs `--allow-start`. After a send it polls the status like the app and prints a verdict. Used to test whether the legacy API can send a course to the washer; not used by the plugin runtime; no behavior change.
 
 ### Changed
 

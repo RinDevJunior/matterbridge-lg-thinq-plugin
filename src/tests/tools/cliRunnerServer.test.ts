@@ -86,8 +86,45 @@ describe('cli-runner-server buildCliArgs', () => {
 				'connect-probe',
 				'connect-control',
 				'connect-settings',
+				'washer-status',
 				'help',
 			]);
+		});
+
+		it('should not allow washer-control because it can send to a real washer', () => {
+			// Arrange
+			const input = { command: 'washer-control' };
+
+			// Act
+			const result = cliRunner.buildCliArgs(input);
+
+			// Assert
+			expect(cliRunner.ALLOWED_COMMANDS).not.toContain('washer-control');
+			expect(result.args).toBeUndefined();
+			expect(result.error).toContain('unknown or disallowed command');
+		});
+
+		it('should build the washer-status args with device and model when both are given', () => {
+			// Arrange
+			const input = { command: 'washer-status', device: 'dev-1', model: true };
+
+			// Act
+			const result = cliRunner.buildCliArgs(input);
+
+			// Assert
+			expect(result).toEqual({ args: ['--command', 'washer-status', '--device', 'dev-1', '--model', 'true'] });
+		});
+
+		it.each(['--yes', 'a b', ''])('should reject washer-status device %j before spawning', (device) => {
+			// Arrange
+			const input = { command: 'washer-status', device };
+
+			// Act
+			const result = cliRunner.buildCliArgs(input);
+
+			// Assert
+			expect(result.args).toBeUndefined();
+			expect(result.error).toContain('--device needs a device id');
 		});
 
 		it.each(REMOVED_COMMANDS)('should reject removed command "%s" as disallowed', (command) => {

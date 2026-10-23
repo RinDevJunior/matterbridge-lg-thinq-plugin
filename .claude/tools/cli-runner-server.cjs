@@ -16,7 +16,7 @@ const TIMEOUT_MS = 30000;
 
 // Commands allowed through this tool. `login` is intentionally excluded —
 // the user handles authentication manually via `npm run cli -- --command login`.
-const ALLOWED_COMMANDS = ['devices', 'energy', 'connect-probe', 'connect-control', 'connect-settings', 'help'];
+const ALLOWED_COMMANDS = ['devices', 'energy', 'connect-probe', 'connect-control', 'connect-settings', 'washer-status', 'help'];
 
 const CONNECT_SEND_VALUES = ['POWER_ON', 'POWER_OFF', 'START'];
 const MAX_WAIT_SECONDS = 20;
@@ -145,7 +145,7 @@ function buildCliArgs(input) {
   const {
     command, debug, deviceId, sendValue, yes, raw, wait, energy, brief, out, showSecrets,
     dumpDevice, dumpSnapshot, probeFilter, device, samples, interval, keepAlive,
-    energyPeriod, energyStart, energyEnd,
+    energyPeriod, energyStart, energyEnd, model,
   } = input;
 
   if (!command) {
@@ -216,6 +216,17 @@ function buildCliArgs(input) {
       args.push('--interval', String(interval));
     }
     if (keepAlive === true) args.push('--keep-alive', 'true');
+  }
+
+  // washer-status is READ-ONLY. washer-control is deliberately NOT allow-listed here (it can send to a real washer).
+  if (command === 'washer-status') {
+    if (isProvided(device)) {
+      if (!isDeviceId(device)) {
+        return { error: 'Error: --device needs a device id (letters, digits, "_" or "-", max 128 characters).' };
+      }
+      args.push('--device', device);
+    }
+    if (model === true) args.push('--model', 'true');
   }
 
   if (deviceId && isConnect) args.push('--device-id', String(deviceId));
@@ -289,7 +300,7 @@ const TOOL_DEFINITIONS = [
   {
     name: 'RunCli',
     description:
-      "Run this project's compiled CLI (dist/cli.js) and capture stdout/stderr for investigation. Does not support the 'login' command — handle authentication manually first. 'devices' lists ThinQ devices (optional dumpDevice/dumpSnapshot/probeFilter device ids). 'energy' prints V1 AC power/energy snapshots (read-only). 'connect-probe' and 'connect-settings' are read-only ThinQ Connect probes; set 'energy' on connect-probe to also call the read-only Energy API (energyPeriod/energyStart/energyEnd). 'connect-control' (washer POWER_ON|POWER_OFF|START) is a DRY RUN by default; it only sends a REAL command to the appliance when 'yes' is true, which requires the user's explicit approval for that specific send. Never set 'yes' on your own initiative. 'out' saves the output to a file inside workspace/ only. 'showSecrets' prints the real serial/MAC (devices dumpDevice, connect-probe raw) — use only when the user asks.",
+      "Run this project's compiled CLI (dist/cli.js) and capture stdout/stderr for investigation. Does not support the 'login' command — handle authentication manually first. 'devices' lists ThinQ devices (optional dumpDevice/dumpSnapshot/probeFilter device ids). 'energy' prints V1 AC power/energy snapshots (read-only). 'connect-probe' and 'connect-settings' are read-only ThinQ Connect probes; set 'energy' on connect-probe to also call the read-only Energy API (energyPeriod/energyStart/energyEnd). 'washer-status' is a READ-ONLY legacy (V1 login) washer snapshot (device optional; model=true also prints the model control templates); it never sends anything. 'connect-control' (washer POWER_ON|POWER_OFF|START) is a DRY RUN by default; it only sends a REAL command to the appliance when 'yes' is true, which requires the user's explicit approval for that specific send. Never set 'yes' on your own initiative. 'out' saves the output to a file inside workspace/ only. 'showSecrets' prints the real serial/MAC (devices dumpDevice, connect-probe raw) — use only when the user asks.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -311,7 +322,8 @@ const TOOL_DEFINITIONS = [
         dumpDevice: { type: 'string', description: 'devices only: device id; prints its raw device-list entry (serial/MAC masked unless showSecrets)' },
         dumpSnapshot: { type: 'string', description: 'devices only: device id; prints its full raw ThinQ snapshot JSON' },
         probeFilter: { type: 'string', description: 'devices only: device id; sends a filterMngStateCtrl Get probe and prints the raw response JSON' },
-        device: { type: 'string', description: 'energy only: device id (default: first AC device)' },
+        device: { type: 'string', description: 'energy: device id (default: first AC device); washer-status: device id (default: first washer)' },
+        model: { type: 'boolean', description: 'washer-status only: also print the model control templates and course options (read-only)' },
         samples: { type: 'number', description: 'energy only: number of snapshots to fetch, integer 1-20 (default 1)' },
         interval: { type: 'number', description: 'energy only: seconds between samples, 1-60 (default 5)' },
         keepAlive: { type: 'boolean', description: 'energy only: send the plugin keep-alive first, wait 2s, then sample' },

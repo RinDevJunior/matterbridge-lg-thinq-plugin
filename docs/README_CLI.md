@@ -22,14 +22,16 @@ npm run cli -- --command <command> [options]
 
 ## Commands
 
-| Command            | Options                                    | Description                                                    |
-| ------------------ | ------------------------------------------ | -------------------------------------------------------------- |
-| `login`            | `--type`, `--country`, `--language`        | Authenticate and save session                                  |
-| `devices`          |                                            | List all discovered ThinQ devices (requires `login`)           |
-| `connect-probe`    | `--device-id`, `--raw`, `--energy`         | Read-only ThinQ Connect probe (requires PAT `login`)           |
-| `connect-settings` | `--device-id`, `--brief`                   | Read-only ThinQ Connect device settings (requires PAT `login`) |
-| `connect-control`  | `--device-id`, `--send`, `--yes`, `--wait` | Send one guarded washer command (requires PAT `login`)         |
-| `help`             |                                            | Show help message                                              |
+| Command            | Options                                                                                                                                                 | Description                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `login`            | `--type`, `--country`, `--language`                                                                                                                     | Authenticate and save session                                                                 |
+| `devices`          |                                                                                                                                                         | List all discovered ThinQ devices (requires `login`)                                          |
+| `connect-probe`    | `--device-id`, `--raw`, `--energy`                                                                                                                      | Read-only ThinQ Connect probe (requires PAT `login`)                                          |
+| `connect-settings` | `--device-id`, `--brief`                                                                                                                                | Read-only ThinQ Connect device settings (requires PAT `login`)                                |
+| `connect-control`  | `--device-id`, `--send`, `--yes`, `--wait`                                                                                                              | Send one guarded washer command (requires PAT `login`)                                        |
+| `washer-status`    | `--device`, `--model`                                                                                                                                   | Read-only washer snapshot; `--model` adds control templates (requires `login`)                |
+| `washer-control`   | `--device`, `--send`, `--yes`, `--allow-start`, `--wait`, `--course`, `--spin`, `--temp`, `--rinse`, `--soil`, `--variant`, `--signature`, `--endpoint` | Send one guarded washer command via the legacy API; dry run unless `--yes` (requires `login`) |
+| `help`             |                                                                                                                                                         | Show help message                                                                             |
 
 ## Login Command
 
@@ -232,7 +234,63 @@ npm run cli -- --command connect-control --device-id <deviceId> --send POWER_ON 
 
 ### cli-runner MCP tool
 
-The Claude `cli-runner` tool exposes the commands `devices`, `energy`, `connect-probe`, `connect-settings`, `connect-control` and `help` (no `login`). Params: `deviceId`, `raw` and `energy` (probe, boolean), `energyPeriod` (DAILY|MONTHLY), `energyStart`/`energyEnd` (YYYYMMDD for DAILY, YYYYMM for MONTHLY; validated before the CLI runs), `brief` (settings, boolean), `dumpDevice`/`dumpSnapshot`/`probeFilter` (devices, device ids), `device`/`samples` (1-20)/`interval` (1-60 s)/`keepAlive` (energy), and for control `sendValue`, `wait` (seconds, default 3, max 20) and `yes`. `yes` must be the boolean `true` to send; anything else is a dry run. `out` saves the output to a file that must resolve inside `workspace/`. `showSecrets` (boolean) prints the real serial/MAC for `dumpDevice` and `connect-probe` with `raw`; use it only when the user asks.
+The Claude `cli-runner` tool exposes the commands `devices`, `energy`, `connect-probe`, `connect-settings`, `connect-control`, `washer-status` (read-only; `device`, `model`) and `help` (no `login`, no `washer-control`). Params: `deviceId`, `raw` and `energy` (probe, boolean), `energyPeriod` (DAILY|MONTHLY), `energyStart`/`energyEnd` (YYYYMMDD for DAILY, YYYYMM for MONTHLY; validated before the CLI runs), `brief` (settings, boolean), `dumpDevice`/`dumpSnapshot`/`probeFilter` (devices, device ids), `device`/`samples` (1-20)/`interval` (1-60 s)/`keepAlive` (energy), and for control `sendValue`, `wait` (seconds, default 3, max 20) and `yes`. `yes` must be the boolean `true` to send; anything else is a dry run. `out` saves the output to a file that must resolve inside `workspace/`. `showSecrets` (boolean) prints the real serial/MAC for `dumpDevice` and `connect-probe` with `raw`; use it only when the user asks.
+
+## Washer-Status Command
+
+Read-only. Prints the washer snapshot fields (`washerDryer.*`). `--model` also prints the model's `ControlWifi` templates, the relevant `Config` flags and the default course's spin/temp options. Sends nothing. Requires an account or token `login`.
+
+```bash
+npm run cli -- --command washer-status
+npm run cli -- --command washer-status --model
+npm run cli -- --command washer-status --device <deviceId> --model --out workspace/out/washer-model.txt
+```
+
+## Washer-Control Command
+
+Legacy-login (account or token) experiment: tests whether the V1 API can stage a course on the washer with `WMDownload` ("Send to washer"). It sends at most ONE command per run, and only with `--yes`.
+
+- `--send wake|osp-wake|download-off|download-on|vt-course|vt-start|vt-pause|vt-power-on` (required). Dry run unless `--yes`.
+- `--allow-start` is also required for `download-on` and `vt-start` (they may start a cycle).
+- `--course`, `--spin`, `--temp`, `--signature` apply to `download-*` only; `--course`, `--spin`, `--temp`, `--rinse`, `--soil` also apply to `vt-course`. `--spin`/`--temp`/`--rinse`/`--soil` take a value or a shorthand (`800`, `COLD`) or the full enum name, and must be listed by the course. `--rinse`/`--soil` apply to `vt-course` only.
+- `--variant A|B` (default `A`) applies to the `vt-*` sends only: `A` puts the `vtCtrl` data directly in `dataSetList`, `B` wraps it as `dataSetList.vtCtrl`.
+- `--wait` (extra seconds when nothing changed after polling, default 3, `0` skips), `--endpoint control|control-sync` (default `control-sync`).
+- `vt-*` sends (V1 `vtCtrl` command, the same one the LG app uses): `vt-course` selects a course (INITIAL only, Remote Control must be OFF, and it refuses while Remote Control is ON); `vt-start` starts the staged course (INITIAL, door closed, Remote Control ON, course staged); `vt-pause` pauses a running cycle; `vt-power-on` powers on a POWEROFF washer. No `vt-power-off` or resume. Every vt guard also refuses on a child lock or a washer error. Vt sends poll the status 10 times at 500 ms and print a verdict line.
+- The `vt-*` body contains only the course and the options you pass. The LG app also sends the other option cells for the model; if LG answers `0114` or `0110`, that is the first thing to revisit.
+- The guard refuses unless the washer state allows the command: `wake`/`osp-wake` only in POWEROFF, POWERFAIL, INITIAL or END; `download-*` only in INITIAL. `download-off` refuses unless Remote Control is exactly `REMOTE_START_OFF` (missing or any other value refuses too); `download-on` needs exactly `REMOTE_START_ON`. Every send also refuses unless the device list reports `online: true` (`online status unknown` when the flag is absent).
+- Nothing is retried automatically. Passwords, tokens and session data are never printed; device ids are masked.
+
+### Safe Test Recipe
+
+Prerequisites: `npm run build:local`, `npm run cli -- --command login` done once. Washer powered on, Remote Control OFF, drum empty, door closed, you are next to it.
+
+1. `washer-status --model` (read-only). Save with `--out`.
+2. `washer-control --send download-off --signature` (dry run). Check: `Guard: PASS`, body has `downloadCourse: COURSE_TYPE_COURSE`, `downloadSlotNumber: 0`, `categoryNumber: 0`, no `courseDownloadType`.
+3. Same, plus the values you want kept: `--spin 1200 --temp COLD` (dry run).
+4. The one real command: `washer-control --send download-off --signature --spin 1200 --temp COLD --yes`.
+5. Read the result. `0000` plus `wifiSDS` OFF to ON, or changed `initialTimeMinute`/`spin`/`temp`, means it worked. `0111` means the washer did not answer. Other codes are explained in the output.
+6. If only `0111`: run the same command once more with `--endpoint control`. If it fails again, stop.
+
+Send back: the full terminal output of steps 1, 4 and the retry (if any), plus a second `washer-status` run about 30 s later.
+
+Result codes: `0000` OK; `0111` RESPONSE_DELAY_DEVICE (LG accepted, washer did not answer in time); others are described in the output as "Unknown LG result code" when not listed.
+
+Safety notes: a dry run is the default; `--yes` is required; the guard refuses unless the state is INITIAL; `download-on` needs `--allow-start`, Remote Control ON, and may start a cycle; `download-*` overwrites the staged app profile with the template defaults unless `--spin`/`--temp`/`--course` are given.
+
+### V1 vtCtrl Test Recipe
+
+Tests whether the LG app's own `vtCtrl` command can stage a course through the legacy API. Only `vt-course` is needed for the first test.
+
+1. Prerequisites: `npm run build:local`, `login` done. Washer ON (display lit, state INITIAL), Remote Control OFF, drum empty, child lock off, no error. You stand next to the washer.
+2. `npm run cli -- --command washer-status --model --out workspace/out/vt-before.txt` (read-only). Check `uniProtocol = true`, `vtCtrl` is listed, and the `childLock`/`error` lines are present.
+3. Dry run: `npm run cli -- --command washer-control --send vt-course --course NORMAL`. Expect `Guard: PASS`, `DRY RUN`, `ctrlKey: vtCtrl`, `vtData.UNDEFINE = [{cmd: course, value: NORMAL, type: ABSOLUTE}]`, `reqDevType: APP`.
+4. First real command: `npm run cli -- --command washer-control --send vt-course --course NORMAL --yes` (endpoint `control-sync`, variant A, one cell). It only selects a course; it cannot start a wash.
+5. Reading the result: `0000` = accepted; `0111` = the washer answered late (the LG app counts it as success when the status changes; the output says `LIKELY applied` only when a tracked field changed, which is an inference); other codes = rejected, with the text printed. Look at `Changes`: `course` (and `initialTimeMinute`) changing is the signal. Using a different course than the current one proves it better (try `--course COTTONPLUS`).
+6. If `0000`/`0111` and nothing changed: ONE retry with `--variant b`; then ONE retry with `--endpoint control`. Stop after that and send the output back. Never loop.
+7. Later steps (only after step 4 works, and only on request): `vt-power-on` while POWEROFF. `vt-start` needs Remote Control pressed for 3 s on the washer (light on), door closed, course staged, and `--yes --allow-start`; it may start the cycle. `vt-pause` pauses a running cycle for the moment.
+8. Send back: the full output of steps 2, 4 and any retry, plus a second `washer-status` about 30 s after the send.
+
+Each `vt-*` send also prints `Variant:` and a `Verdict:` line. The `dataSetList` shapes (variant A and B) and the endpoint are inferred from the LG app, not proven.
 
 ## Saving Output to a File
 
@@ -287,7 +345,7 @@ Third-party SSO (Google, Apple, Facebook, Amazon) is not yet supported in this C
 
 ### Device Control
 
-This CLI supports authentication (`login`) and device discovery/listing (`devices`). Device control is not yet available and is handled by the full Matterbridge runtime instead.
+This CLI supports authentication (`login`) and device discovery/listing (`devices`). Device control is not yet available and is handled by the full Matterbridge runtime instead. The exception is the experimental legacy-login `washer-control` command, which sends one guarded command only when `--yes` is given (see below).
 
 ### Credentials Security
 

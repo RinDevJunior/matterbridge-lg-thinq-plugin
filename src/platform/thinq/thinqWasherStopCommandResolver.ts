@@ -44,7 +44,7 @@ export type WasherPauseCommandPayload = WasherStopCommandPayload;
  */
 function extractControlWifiEntry(
 	deviceModel: Record<string, unknown>,
-	key: 'WMStop' | 'WMOff',
+	key: 'WMStop' | 'WMOff' | 'WMWakeup' | 'ospWakeup',
 ): WasherStopCommandPayload | undefined {
 	if (!isRecord(deviceModel)) {
 		return undefined;
@@ -77,4 +77,24 @@ export function extractWasherPauseCommand(deviceModel: Record<string, unknown>):
  */
 export function extractWasherStopCommand(deviceModel: Record<string, unknown>): WasherStopCommandPayload | undefined {
 	return extractControlWifiEntry(deviceModel, 'WMOff');
+}
+
+export type WasherWakeupCommandPayload = WasherStopCommandPayload;
+
+/**
+ * Extracts LG's `WMWakeup` control payload. CLI only; not wired into the plugin runtime.
+ */
+export function extractWasherWakeupCommand(
+	deviceModel: Record<string, unknown>,
+): WasherWakeupCommandPayload | undefined {
+	return extractControlWifiEntry(deviceModel, 'WMWakeup');
+}
+
+/**
+ * Extracts LG's `ospWakeup` control payload. CLI only; not wired into the plugin runtime.
+ */
+export function extractWasherOspWakeupCommand(
+	deviceModel: Record<string, unknown>,
+): WasherWakeupCommandPayload | undefined {
+	return extractControlWifiEntry(deviceModel, 'ospWakeup');
 }
