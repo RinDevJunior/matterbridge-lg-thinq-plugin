@@ -9,11 +9,28 @@ import {
 	extractWasherVtReturnCodes,
 	isWasherVtSendName,
 	pollWasherFields,
+	WASHER_VT_SEND_NAMES,
 	type WasherVtSendName,
 } from '../../../cli/commands/washerVtCtrl.js';
 import { createFakeWasherModel, fieldsOf } from '../../helpers/washerFixtures.js';
 
 const VT_COURSE_CELL = { cmd: 'course', value: 'NORMAL', type: 'ABSOLUTE' };
+
+const RUNNING_STATE_NAMES = [
+	'DETECTING',
+	'ADD_DRAIN',
+	'DETERGENT_AMOUNT',
+	'SOAK',
+	'PREWASH',
+	'RUNNING',
+	'RINSING',
+	'RINSEHOLD',
+	'SPINNING',
+	'DRYING',
+	'REFRESHING',
+];
+
+const UNKNOWN_STATE_NAMES = ['POWERFAIL', 'STANDBY_ON', 'FRESHCARE', 'SOMETHING_NEW'];
 
 /** Healthy washer, ready for vt-course: INITIAL, Remote Control OFF, child lock off, no error. */
 const READY_FOR_COURSE = {
@@ -35,22 +52,41 @@ const READY_FOR_START = {
 	online: true,
 };
 
+/** Healthy washer, ready for vt-resume: PAUSE, child lock off, no error. */
+const READY_FOR_PAUSE = {
+	state: 'PAUSE',
+	childLock: 'CHILDLOCK_OFF',
+	error: 'ERROR_NO',
+	online: true,
+};
+
 describe('washerVtCtrl', () => {
 	describe('isWasherVtSendName', () => {
-		it.each(['vt-course', 'vt-start', 'vt-pause', 'vt-power-on'])('should return true for %s', (name) => {
-			// Arrange / Act
-			const result = isWasherVtSendName(name);
+		it.each(['vt-course', 'vt-start', 'vt-pause', 'vt-power-on', 'vt-resume', 'vt-power-off'])(
+			'should return true for %s',
+			(name) => {
+				// Arrange / Act
+				const result = isWasherVtSendName(name);
 
-			// Assert
-			expect(result).toBe(true);
-		});
+				// Assert
+				expect(result).toBe(true);
+			},
+		);
 
-		it.each(['wake', 'download-off', 'vt-power-off', 'VT-COURSE'])('should return false for %s', (name) => {
+		it.each(['wake', 'download-off', 'vt-cancel', 'VT-COURSE'])('should return false for %s', (name) => {
 			// Arrange / Act
 			const result = isWasherVtSendName(name);
 
 			// Assert
 			expect(result).toBe(false);
+		});
+
+		it('should list vt-resume and vt-power-off last in WASHER_VT_SEND_NAMES', () => {
+			// Arrange / Act
+			const names = [...WASHER_VT_SEND_NAMES];
+
+			// Assert
+			expect(names.slice(-2)).toStrictEqual(['vt-resume', 'vt-power-off']);
 		});
 	});
 
@@ -117,6 +153,28 @@ describe('washerVtCtrl', () => {
 
 			// Assert
 			expect(cells).toStrictEqual([{ cmd: 'power', value: 'POWER_ON', type: 'ABSOLUTE' }]);
+		});
+
+		it('should emit a single wmControl RESUME cell for vt-resume and ignore course and options', () => {
+			// Arrange
+			const options = { spin: 'SPIN_800' };
+
+			// Act
+			const cells = buildWasherVtCells('vt-resume', 'NORMAL', options);
+
+			// Assert
+			expect(cells).toStrictEqual([{ cmd: 'wmControl', value: 'RESUME', type: 'ABSOLUTE' }]);
+		});
+
+		it('should emit a single power POWER_OFF cell for vt-power-off and ignore course and options', () => {
+			// Arrange
+			const options = { temp: 'TEMP_COLD' };
+
+			// Act
+			const cells = buildWasherVtCells('vt-power-off', 'NORMAL', options);
+
+			// Assert
+			expect(cells).toStrictEqual([{ cmd: 'power', value: 'POWER_OFF', type: 'ABSOLUTE' }]);
 		});
 	});
 
@@ -249,7 +307,341 @@ describe('washerVtCtrl', () => {
 		});
 	});
 
+	describe('buildWasherVtRequest for vt-resume and vt-power-off', () => {
+		it.each([
+			['vt-resume', 'wmControl', 'RESUME'],
+			['vt-power-off', 'power', 'POWER_OFF'],
+		] as const)('should build a single-cell vtCtrl Set body for %s (variant a)', (name, cmd, value) => {
+			// Arrange
+			const model = createFakeWasherModel();
+
+			// Act
+			const request = buildWasherVtRequest(name, model, { variant: 'a' });
+
+			// Assert
+			expect(request?.name).toBe(name);
+			expect(request?.body).toStrictEqual({
+				ctrlKey: 'vtCtrl',
+				command: 'Set',
+				dataSetList: {
+					ctrlTarget: ['UNDEFINE'],
+					reqDevType: 'APP',
+					productType: 'NORMAL',
+					vtData: { UNDEFINE: [{ cmd, value, type: 'ABSOLUTE' }] },
+				},
+			});
+		});
+
+		it.each([
+			['vt-resume', 'wmControl', 'RESUME'],
+			['vt-power-off', 'power', 'POWER_OFF'],
+		] as const)('should wrap the same cell under dataSetList.vtCtrl for %s (variant b)', (name, cmd, value) => {
+			// Arrange
+			const model = createFakeWasherModel();
+			const variantA = buildWasherVtRequest(name, model, { variant: 'a' });
+
+			// Act
+			const variantB = buildWasherVtRequest(name, model, { variant: 'b' });
+
+			// Assert
+			expect(variantB?.body.dataSetList).toStrictEqual({ vtCtrl: variantA?.body.dataSetList });
+			expect(variantB?.body.dataSetList).toMatchObject({ vtCtrl: { vtData: { UNDEFINE: [{ cmd, value }] } } });
+		});
+
+		it('should set mayStartCycle true for vt-resume and false for vt-power-off', () => {
+			// Arrange
+			const model = createFakeWasherModel();
+
+			// Act
+			const resume = buildWasherVtRequest('vt-resume', model, { variant: 'a' });
+			const powerOff = buildWasherVtRequest('vt-power-off', model, { variant: 'a' });
+
+			// Assert
+			expect(resume?.mayStartCycle).toBe(true);
+			expect(powerOff?.mayStartCycle).toBe(false);
+		});
+
+		it.each(['vt-resume', 'vt-power-off'] as const)(
+			'should return undefined for %s when Config.uniProtocol is not true',
+			(name) => {
+				// Arrange
+				const model = createFakeWasherModel();
+				(model.Config as Record<string, unknown>).uniProtocol = false;
+
+				// Act
+				const request = buildWasherVtRequest(name, model, { variant: 'a' });
+
+				// Assert
+				expect(request).toBeUndefined();
+			},
+		);
+
+		it.each(['vt-resume', 'vt-power-off'] as const)(
+			'should return undefined for %s when ControlWifi.vtCtrl is missing',
+			(name) => {
+				// Arrange
+				const model = createFakeWasherModel();
+				delete (model.ControlWifi as Record<string, unknown>).vtCtrl;
+
+				// Act
+				const request = buildWasherVtRequest(name, model, { variant: 'a' });
+
+				// Assert
+				expect(request).toBeUndefined();
+			},
+		);
+
+		it.each(['vt-resume', 'vt-power-off'] as const)(
+			'should return undefined for %s when vtCtrl.command is not Set',
+			(name) => {
+				// Arrange
+				const model = createFakeWasherModel();
+				(model.ControlWifi as Record<string, Record<string, unknown>>).vtCtrl.command = 'Get';
+
+				// Act
+				const request = buildWasherVtRequest(name, model, { variant: 'a' });
+
+				// Assert
+				expect(request).toBeUndefined();
+			},
+		);
+	});
+
 	describe('evaluateWasherVtGuard', () => {
+		describe('vt-resume', () => {
+			it('should pass when state is PAUSE, child lock is off and no error', () => {
+				// Arrange
+				const fields = fieldsOf(READY_FOR_PAUSE);
+
+				// Act
+				const reason = evaluateWasherVtGuard('vt-resume', fields, true);
+
+				// Assert
+				expect(reason).toBeUndefined();
+			});
+
+			it('should pass when Remote Control is OFF and the door is not locked, because neither is required', () => {
+				// Arrange
+				const fields = fieldsOf({ ...READY_FOR_PAUSE, remoteStart: 'REMOTE_START_OFF', doorLock: 'DOORLOCK_OFF' });
+
+				// Act
+				const reason = evaluateWasherVtGuard('vt-resume', fields, true);
+
+				// Assert
+				expect(reason).toBeUndefined();
+			});
+
+			it.each(['INITIAL', 'RUNNING', 'DETECTING', 'END', 'ERROR', 'POWEROFF', 'RINSEHOLD', 'AUTO_DT_OPEN_PAUSE'])(
+				'should refuse with needs PAUSE when state is %s',
+				(state) => {
+					// Arrange
+					const fields = fieldsOf({ ...READY_FOR_PAUSE, state });
+
+					// Act
+					const reason = evaluateWasherVtGuard('vt-resume', fields, true);
+
+					// Assert
+					expect(reason).toContain(`washer state is ${state}; vt-resume needs PAUSE.`);
+				},
+			);
+
+			it('should refuse with cannot confirm washer state when state is absent', () => {
+				// Arrange
+				const { state: _omitted, ...rest } = READY_FOR_PAUSE;
+				const fields = fieldsOf(rest);
+
+				// Act
+				const reason = evaluateWasherVtGuard('vt-resume', fields, true);
+
+				// Assert
+				expect(reason).toContain('cannot confirm washer state');
+			});
+
+			it('should refuse with cannot confirm washer state when state is unparseable', () => {
+				// Arrange
+				const fields = { ...fieldsOf(READY_FOR_PAUSE), state: '{not json' };
+
+				// Act
+				const reason = evaluateWasherVtGuard('vt-resume', fields, true);
+
+				// Assert
+				expect(reason).toContain('cannot confirm washer state');
+			});
+
+			it('should refuse with offline when online is false', () => {
+				// Arrange
+				const fields = fieldsOf(READY_FOR_PAUSE);
+
+				// Act
+				const reason = evaluateWasherVtGuard('vt-resume', fields, false);
+
+				// Assert
+				expect(reason).toContain('offline');
+			});
+
+			it('should refuse with online status unknown when online is undefined', () => {
+				// Arrange
+				const fields = fieldsOf(READY_FOR_PAUSE);
+
+				// Act
+				const reason = evaluateWasherVtGuard('vt-resume', fields, undefined);
+
+				// Assert
+				expect(reason).toContain('online status unknown');
+			});
+
+			it.each([
+				['on', 'CHILDLOCK_ON', 'child lock is on'],
+				['absent', undefined, 'child lock is on or unreadable'],
+				['another value', 'CHILDLOCK_XX', 'child lock is on or unreadable'],
+			])('should refuse when child lock is %s', (_label, childLock, message) => {
+				// Arrange
+				const fields = fieldsOf({ ...READY_FOR_PAUSE, childLock });
+
+				// Act
+				const reason = evaluateWasherVtGuard('vt-resume', fields, true);
+
+				// Assert
+				expect(reason).toContain(message);
+			});
+
+			it.each([
+				['ERROR_DE1', 'ERROR_DE1'],
+				['absent', undefined],
+			])('should refuse when error is %s in state PAUSE', (_label, error) => {
+				// Arrange
+				const fields = fieldsOf({ ...READY_FOR_PAUSE, error });
+
+				// Act
+				const reason = evaluateWasherVtGuard('vt-resume', fields, true);
+
+				// Assert
+				expect(reason).toContain('washer reports an error');
+			});
+		});
+
+		describe('vt-power-off', () => {
+			it.each(['INITIAL', 'END', 'ERROR'])(
+				'should pass without the flag when state is %s, even with child lock on and an error present',
+				(state) => {
+					// Arrange
+					const fields = fieldsOf({ state, childLock: 'CHILDLOCK_ON', error: 'ERROR_DE1' });
+
+					// Act
+					const reason = evaluateWasherVtGuard('vt-power-off', fields, true);
+
+					// Assert
+					expect(reason).toBeUndefined();
+				},
+			);
+
+			it.each(['PAUSE', ...RUNNING_STATE_NAMES, ...UNKNOWN_STATE_NAMES])(
+				'should refuse without the flag when state is %s and name --allow-interrupt',
+				(state) => {
+					// Arrange
+					const fields = fieldsOf({ ...READY_FOR_PAUSE, state });
+
+					// Act
+					const reason = evaluateWasherVtGuard('vt-power-off', fields, true);
+
+					// Assert
+					expect(reason).toContain(`washer state is ${state};`);
+					expect(reason).toContain('--allow-interrupt');
+				},
+			);
+
+			it.each(['PAUSE', ...RUNNING_STATE_NAMES, ...UNKNOWN_STATE_NAMES])(
+				'should pass with allowInterrupt when state is %s',
+				(state) => {
+					// Arrange
+					const fields = fieldsOf({ ...READY_FOR_PAUSE, state });
+
+					// Act
+					const reason = evaluateWasherVtGuard('vt-power-off', fields, true, true);
+
+					// Assert
+					expect(reason).toBeUndefined();
+				},
+			);
+
+			it('should refuse with already POWEROFF when state is POWEROFF', () => {
+				// Arrange
+				const fields = fieldsOf({ state: 'POWEROFF' });
+
+				// Act
+				const reason = evaluateWasherVtGuard('vt-power-off', fields, true);
+
+				// Assert
+				expect(reason).toContain('already POWEROFF');
+			});
+
+			it('should refuse with already POWEROFF even when allowInterrupt is true', () => {
+				// Arrange
+				const fields = fieldsOf({ state: 'POWEROFF' });
+
+				// Act
+				const reason = evaluateWasherVtGuard('vt-power-off', fields, true, true);
+
+				// Assert
+				expect(reason).toContain('already POWEROFF');
+			});
+
+			it('should pass with allowInterrupt when state is INITIAL (flag is harmless on a safe state)', () => {
+				// Arrange
+				const fields = fieldsOf({ state: 'INITIAL' });
+
+				// Act
+				const reason = evaluateWasherVtGuard('vt-power-off', fields, true, true);
+
+				// Assert
+				expect(reason).toBeUndefined();
+			});
+
+			it('should refuse with cannot confirm washer state when state is absent, even with allowInterrupt', () => {
+				// Arrange
+				const fields = fieldsOf({ childLock: 'CHILDLOCK_OFF' });
+
+				// Act
+				const reason = evaluateWasherVtGuard('vt-power-off', fields, true, true);
+
+				// Assert
+				expect(reason).toContain('cannot confirm washer state');
+			});
+
+			it('should refuse with cannot confirm washer state when state is unparseable, even with allowInterrupt', () => {
+				// Arrange
+				const fields = { state: '{not json' };
+
+				// Act
+				const reason = evaluateWasherVtGuard('vt-power-off', fields, true, true);
+
+				// Assert
+				expect(reason).toContain('cannot confirm washer state');
+			});
+
+			it('should refuse with offline when online is false, even with allowInterrupt', () => {
+				// Arrange
+				const fields = fieldsOf({ state: 'RUNNING' });
+
+				// Act
+				const reason = evaluateWasherVtGuard('vt-power-off', fields, false, true);
+
+				// Assert
+				expect(reason).toContain('offline');
+			});
+
+			it('should refuse with online status unknown when online is undefined, even with allowInterrupt', () => {
+				// Arrange
+				const fields = fieldsOf({ state: 'RUNNING' });
+
+				// Act
+				const reason = evaluateWasherVtGuard('vt-power-off', fields, undefined, true);
+
+				// Assert
+				expect(reason).toContain('online status unknown');
+			});
+		});
+
 		describe('common checks', () => {
 			it('should refuse when state is absent with the cannot-confirm message', () => {
 				// Arrange

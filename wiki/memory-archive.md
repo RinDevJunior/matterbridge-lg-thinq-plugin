@@ -15,3 +15,7 @@ Older entries pruned from `.claude/memory.md` to respect its per-section cap. Co
 - ThinQ partial push presence-gating tests (Sep 19, 2026): `ThinqSnapshot.has(key)` true iff value neither undefined nor null; `applyThinqSnapshotToAirConditioner` gates each attr write on `snapshot.has(sourceKey)` (see Test Patterns history).
 - **connect-control CLI tests (Oct 21, 2026):** `src/tests/cli/**` is NOT excluded (only `src/cli/**` is); cmd tests mock `ThinqConnectApiClient` via `vi.mock` + `mockImplementation(function(){...})`. Array vs plain-object washer state both must be covered for guards.
 - **Per-device override pattern (archived Oct 22, 2026):** array of objects with key (`serialNumber`) + value (`productName`), gated by a boolean in `advancedFeature.settings`. See `DeviceProductNameOverride` (`RoborockPluginPlatformConfig.ts:58`).
+
+## Test Patterns (archived)
+
+- **LegacyMapParser tests (virtual walls/zones, containment tier, archived Oct 23, 2026):** V1 block decoders via `buildWallBlock`/`buildZoneBlock` (8-byte wall, 16-byte zone stride); truncated buffers drop partial entries. Containment tier tests: containment beats closer centroid; 2+ or 0 matches fall back to nearest-center; exact-pixel priority; namedRooms lookup via containment. Robot mm→pixel uses Y-flip `pyRel = height - 1 - (pyAbs - top)`. Island detection: 4-connectivity BFS, wall tolerance ±3px, 30% size heuristic per-island.

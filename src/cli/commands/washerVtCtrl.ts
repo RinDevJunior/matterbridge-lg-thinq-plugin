@@ -1,7 +1,14 @@
 import type { ThinqCommandPayload } from '../../services/thinq/thinqApiClient.js';
 import { changedWasherFieldKeys, isRecord, parseWasherField, type WasherFields } from './washerCommon.js';
 
-export const WASHER_VT_SEND_NAMES = ['vt-course', 'vt-start', 'vt-pause', 'vt-power-on'] as const;
+export const WASHER_VT_SEND_NAMES = [
+	'vt-course',
+	'vt-start',
+	'vt-pause',
+	'vt-power-on',
+	'vt-resume',
+	'vt-power-off',
+] as const;
 export type WasherVtSendName = (typeof WASHER_VT_SEND_NAMES)[number];
 
 export type WasherVtVariant = 'a' | 'b';
@@ -45,6 +52,8 @@ const RUNNING_STATES: readonly string[] = [
 	'REFRESHING',
 ];
 
+export const WASHER_VT_POWER_OFF_SAFE_STATES: readonly string[] = ['INITIAL', 'END', 'ERROR'];
+
 export function isWasherVtSendName(value: string): value is WasherVtSendName {
 	return (WASHER_VT_SEND_NAMES as readonly string[]).includes(value);
 }
@@ -61,8 +70,14 @@ export function buildWasherVtCells(
 	if (name === 'vt-pause') {
 		return [{ cmd: 'wmControl', value: 'PAUSE', type: 'ABSOLUTE' }];
 	}
+	if (name === 'vt-resume') {
+		return [{ cmd: 'wmControl', value: 'RESUME', type: 'ABSOLUTE' }];
+	}
 	if (name === 'vt-power-on') {
 		return [{ cmd: 'power', value: 'POWER_ON', type: 'ABSOLUTE' }];
+	}
+	if (name === 'vt-power-off') {
+		return [{ cmd: 'power', value: 'POWER_OFF', type: 'ABSOLUTE' }];
 	}
 	if (courseId === undefined) {
 		return [];
@@ -104,7 +119,7 @@ export function buildWasherVtRequest(
 	return {
 		name,
 		body: { ctrlKey: 'vtCtrl', command: 'Set', dataSetList },
-		mayStartCycle: name === 'vt-start',
+		mayStartCycle: name === 'vt-start' || name === 'vt-resume',
 	};
 }
 
@@ -117,6 +132,7 @@ export function evaluateWasherVtGuard(
 	name: WasherVtSendName,
 	fields: WasherFields,
 	online: boolean | undefined,
+	allowInterrupt = false,
 ): string | undefined {
 	const state = parseWasherField(fields, 'state');
 	if (typeof state !== 'string') {
@@ -130,6 +146,16 @@ export function evaluateWasherVtGuard(
 		return state === 'POWEROFF' ? undefined : `washer state is ${state}; vt-power-on needs POWEROFF.`;
 	}
 
+	if (name === 'vt-power-off') {
+		if (state === 'POWEROFF') {
+			return 'washer is already POWEROFF; nothing to power off.';
+		}
+		if (WASHER_VT_POWER_OFF_SAFE_STATES.includes(state) || allowInterrupt) {
+			return undefined;
+		}
+		return `washer state is ${state}; vt-power-off here abandons the cycle (water may stay in the drum, the door may stay locked). Add --allow-interrupt to confirm.`;
+	}
+
 	const childLock = parseWasherField(fields, 'childLock');
 	if (childLock !== 'CHILDLOCK_OFF') {
 		return `child lock is on or unreadable (saw ${sawValue(childLock)}); turn it off on the washer first.`;
@@ -141,6 +167,9 @@ export function evaluateWasherVtGuard(
 
 	if (name === 'vt-pause') {
 		return RUNNING_STATES.includes(state) ? undefined : `washer state is ${state}; vt-pause needs a running cycle.`;
+	}
+	if (name === 'vt-resume') {
+		return state === 'PAUSE' ? undefined : `washer state is ${state}; vt-resume needs PAUSE.`;
 	}
 
 	const remoteStart = parseWasherField(fields, 'remoteStart');

@@ -49,6 +49,14 @@ export const WASHER_CONTROL_SEND_NAMES = [...WASHER_LEGACY_SEND_NAMES, ...WASHER
 export type WasherControlSendName = (typeof WASHER_CONTROL_SEND_NAMES)[number];
 
 const WAKE_STATES: readonly string[] = ['POWEROFF', 'POWERFAIL', 'INITIAL', 'END'];
+const VT_SEND_WARNINGS: Readonly<Partial<Record<WasherControlSendName, string>>> = {
+	'vt-start':
+		'WARNING: this may START a wash cycle (water, heat, motor). Only continue if the drum content is meant to be washed with the course shown above (washerDryer.course).',
+	'vt-resume':
+		'WARNING: this RESUMES the paused wash cycle (water, heat, motor start again). Only continue if the drum content is meant to be washed.',
+	'vt-power-off':
+		'WARNING: this powers the washer OFF. A running or paused cycle is abandoned; water may stay in the drum and the door may stay locked. Use --allow-interrupt only if that is intended.',
+};
 const VALUE_PATTERN = /^[A-Za-z0-9_]+$/;
 const OVERRIDE_PREFIX: Readonly<Record<WasherVtOptionKey, string>> = {
 	soilWash: 'SOILWASH',
@@ -62,6 +70,7 @@ export interface WasherControlOptions {
 	readonly send: WasherControlSendName;
 	readonly yes: boolean;
 	readonly allowStart: boolean;
+	readonly allowInterrupt: boolean;
 	readonly waitSeconds: number;
 	readonly course: string | undefined;
 	readonly spin: string | undefined;
@@ -166,6 +175,7 @@ export function parseWasherControlOptions(args: Record<string, string>): WasherC
 
 	const yes = readBareFlag(args, 'yes');
 	const allowStart = readBareFlag(args, 'allow-start');
+	const allowInterrupt = readBareFlag(args, 'allow-interrupt');
 	const signature = readBareFlag(args, 'signature');
 	const course = readValueOption(args, 'course');
 	const spin = readValueOption(args, 'spin');
@@ -194,8 +204,11 @@ export function parseWasherControlOptions(args: Record<string, string>): WasherC
 		throw new Error('--variant applies only to the vt-* sends.');
 	}
 	const variant = parseVariant(args.variant);
-	if (allowStart && rawSend !== 'download-on' && rawSend !== 'vt-start') {
-		throw new Error('--allow-start applies only to download-on and vt-start.');
+	if (allowStart && rawSend !== 'download-on' && rawSend !== 'vt-start' && rawSend !== 'vt-resume') {
+		throw new Error('--allow-start applies only to download-on, vt-start and vt-resume.');
+	}
+	if (allowInterrupt && rawSend !== 'vt-power-off') {
+		throw new Error('--allow-interrupt applies only to vt-power-off.');
 	}
 
 	const deviceArg = args.device;
@@ -204,6 +217,7 @@ export function parseWasherControlOptions(args: Record<string, string>): WasherC
 		send: rawSend,
 		yes,
 		allowStart,
+		allowInterrupt,
 		waitSeconds: parseWait(args.wait),
 		course,
 		spin,
@@ -516,15 +530,14 @@ export async function cmdWasherControl(
 	if (request.mayStartCycle) {
 		console.log('WARNING: this may START a wash cycle.');
 	}
-	if (send === 'vt-start') {
-		console.log(
-			'WARNING: this may START a wash cycle (water, heat, motor). Only continue if the drum content is meant to be washed with the course shown above (washerDryer.course).',
-		);
+	const sendWarning = VT_SEND_WARNINGS[send];
+	if (sendWarning !== undefined) {
+		console.log(sendWarning);
 	}
 
 	const guardReason =
 		(isVt
-			? evaluateWasherVtGuard(send, before, freshTarget.online)
+			? evaluateWasherVtGuard(send, before, freshTarget.online, options.allowInterrupt)
 			: evaluateWasherGuard(send, before, freshTarget.online)) ??
 		(request.mayStartCycle && !options.allowStart
 			? `--allow-start is required for ${send} (it may start a cycle).`

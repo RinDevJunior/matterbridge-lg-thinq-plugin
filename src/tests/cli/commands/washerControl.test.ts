@@ -44,6 +44,32 @@ const READY_FOR_START = {
 	error: 'ERROR_NO',
 };
 
+const READY_FOR_PAUSE = {
+	state: 'PAUSE',
+	childLock: 'CHILDLOCK_OFF',
+	error: 'ERROR_NO',
+};
+
+/** Expected vtCtrl body for a single-cell send (variant a), as printed by `cmdWasherControl`. */
+function expectedVtBody(cell: { cmd: string; value: string }): unknown {
+	return {
+		command: 'Set',
+		ctrlKey: 'vtCtrl',
+		dataSetList: {
+			ctrlTarget: ['UNDEFINE'],
+			reqDevType: 'APP',
+			productType: 'NORMAL',
+			vtData: { UNDEFINE: [{ ...cell, type: 'ABSOLUTE' }] },
+		},
+	};
+}
+
+/** Parses the JSON printed after `Body: ` in the captured console output. */
+function printedBodyOf(spy: MockInstance): unknown {
+	const line = spy.mock.calls.map((call: unknown[]) => String(call[0])).find((text) => text.startsWith('Body: '));
+	return JSON.parse((line ?? '').slice('Body: '.length)) as unknown;
+}
+
 /** Raw device-list entry for `toThinqDevice`. `deviceType` 201 is WASHER. */
 function rawWasherEntry(
 	washerDryer: Record<string, unknown>,
@@ -75,6 +101,7 @@ function baseOptions(
 		send: 'vt-course',
 		yes: false,
 		allowStart: false,
+		allowInterrupt: false,
 		waitSeconds: 3,
 		course: 'NORMAL',
 		spin: undefined,
@@ -108,6 +135,7 @@ describe('parseWasherControlOptions', () => {
 				allowStart: false,
 				variant: 'a',
 				endpoint: undefined,
+				allowInterrupt: false,
 				waitSeconds: 3,
 			});
 		});
@@ -193,6 +221,7 @@ describe('parseWasherControlOptions', () => {
 				soil: undefined,
 				yes: false,
 				allowStart: false,
+				allowInterrupt: false,
 				waitSeconds: 3,
 			});
 		});
@@ -220,7 +249,9 @@ describe('parseWasherControlOptions', () => {
 			const args = { send: 'vt-course', 'allow-start': 'true' };
 
 			// Act / Assert
-			expect(() => parseWasherControlOptions(args)).toThrow('--allow-start applies only to download-on and vt-start.');
+			expect(() => parseWasherControlOptions(args)).toThrow(
+				'--allow-start applies only to download-on, vt-start and vt-resume.',
+			);
 		});
 
 		it('should refuse --allow-start on wake', () => {
@@ -228,7 +259,9 @@ describe('parseWasherControlOptions', () => {
 			const args = { send: 'wake', 'allow-start': 'true' };
 
 			// Act / Assert
-			expect(() => parseWasherControlOptions(args)).toThrow('--allow-start applies only to download-on and vt-start.');
+			expect(() => parseWasherControlOptions(args)).toThrow(
+				'--allow-start applies only to download-on, vt-start and vt-resume.',
+			);
 		});
 
 		it('should refuse --course, --spin or --temp on wake with the existing message', () => {
@@ -259,6 +292,138 @@ describe('parseWasherControlOptions', () => {
 			expect(() => parseWasherControlOptions(args)).toThrow(
 				'--signature applies only to download-off and download-on.',
 			);
+		});
+	});
+
+	describe('new vt-resume and vt-power-off options', () => {
+		const NEW_SENDS = ['vt-resume', 'vt-power-off'] as const;
+
+		it('should accept --allow-start on vt-resume and set allowStart true', () => {
+			// Arrange
+			const args = { send: 'vt-resume', 'allow-start': 'true' };
+
+			// Act
+			const options = parseWasherControlOptions(args);
+
+			// Assert
+			expect(options.allowStart).toBe(true);
+		});
+
+		it('should accept vt-resume without --allow-start and leave allowStart false', () => {
+			// Arrange
+			const args = { send: 'vt-resume' };
+
+			// Act
+			const options = parseWasherControlOptions(args);
+
+			// Assert
+			expect(options).toMatchObject({ send: 'vt-resume', allowStart: false, allowInterrupt: false });
+		});
+
+		it('should accept --allow-interrupt on vt-power-off and set allowInterrupt true', () => {
+			// Arrange
+			const args = { send: 'vt-power-off', 'allow-interrupt': 'true' };
+
+			// Act
+			const options = parseWasherControlOptions(args);
+
+			// Assert
+			expect(options.allowInterrupt).toBe(true);
+		});
+
+		it('should default allowInterrupt to false for vt-power-off', () => {
+			// Arrange
+			const args = { send: 'vt-power-off' };
+
+			// Act
+			const options = parseWasherControlOptions(args);
+
+			// Assert
+			expect(options).toMatchObject({ send: 'vt-power-off', allowInterrupt: false, allowStart: false });
+		});
+
+		it.each(['vt-resume', 'vt-start', 'vt-pause', 'vt-power-on', 'vt-course', 'wake', 'download-on'])(
+			'should refuse --allow-interrupt on %s',
+			(send) => {
+				// Arrange
+				const args = { send, 'allow-interrupt': 'true' };
+
+				// Act / Assert
+				expect(() => parseWasherControlOptions(args)).toThrow('--allow-interrupt applies only to vt-power-off.');
+			},
+		);
+
+		it('should refuse --allow-start on vt-power-off with the new allow-start text', () => {
+			// Arrange
+			const args = { send: 'vt-power-off', 'allow-start': 'true' };
+
+			// Act / Assert
+			expect(() => parseWasherControlOptions(args)).toThrow(
+				'--allow-start applies only to download-on, vt-start and vt-resume.',
+			);
+		});
+
+		it('should refuse --allow-interrupt with a value as a bare-flag error', () => {
+			// Arrange
+			const args = { send: 'vt-power-off', 'allow-interrupt': '5' };
+
+			// Act / Assert
+			expect(() => parseWasherControlOptions(args)).toThrow(
+				'--allow-interrupt is a bare flag and takes no value (got "5").',
+			);
+		});
+
+		it.each(
+			NEW_SENDS.flatMap((send) => [
+				['course', send, 'NORMAL'] as const,
+				['spin', send, '800'] as const,
+				['temp', send, 'COLD'] as const,
+			]),
+		)('should refuse --%s on %s with the vt-course-only message', (key, send, value) => {
+			// Arrange
+			const args = { send, [key]: value };
+
+			// Act / Assert
+			expect(() => parseWasherControlOptions(args)).toThrow(
+				'--course, --spin, --temp, --rinse and --soil apply only to vt-course, download-off and download-on.',
+			);
+		});
+
+		it.each(NEW_SENDS)('should refuse --rinse and --soil on %s', (send) => {
+			// Arrange
+			const args = { send, rinse: '3', soil: 'HEAVY' };
+
+			// Act / Assert
+			expect(() => parseWasherControlOptions(args)).toThrow('--rinse and --soil apply only to vt-course.');
+		});
+
+		it.each(NEW_SENDS)('should accept --variant B on %s and map it to b', (send) => {
+			// Arrange
+			const args = { send, variant: 'B' };
+
+			// Act
+			const options = parseWasherControlOptions(args);
+
+			// Assert
+			expect(options.variant).toBe('b');
+		});
+
+		it.each(NEW_SENDS)('should refuse --signature on %s', (send) => {
+			// Arrange
+			const args = { send, signature: 'true' };
+
+			// Act / Assert
+			expect(() => parseWasherControlOptions(args)).toThrow(
+				'--signature applies only to download-off and download-on.',
+			);
+		});
+
+		it('should refuse an unknown send vt-cancel and list vt-resume and vt-power-off as allowed', () => {
+			// Arrange
+			const args = { send: 'vt-cancel' };
+
+			// Act / Assert
+			expect(() => parseWasherControlOptions(args)).toThrow(/Unknown --send "vt-cancel".*vt-resume, vt-power-off/);
 		});
 	});
 
@@ -643,6 +808,240 @@ describe('cmdWasherControl', () => {
 			expect(client.sendCommandAndGetResponse).toHaveBeenCalledTimes(1);
 			expect(outputOf(logSpy)).not.toContain('Verdict:');
 			expect(outputOf(logSpy)).toContain('--- Status (after 3s) ---');
+		});
+	});
+
+	describe('vt-resume', () => {
+		const RESUME_CELL = { cmd: 'wmControl', value: 'RESUME' };
+
+		it('should print WOULD REFUSE for the missing --allow-start, the RESUME body and warning, and send nothing in a dry run', async () => {
+			// Arrange
+			givenWasher(READY_FOR_PAUSE);
+
+			// Act
+			await cmdWasherControl(SESSION, baseOptions({ send: 'vt-resume', course: undefined }), createMockLogger());
+
+			// Assert
+			const output = outputOf(logSpy);
+			expect(output).toContain('Guard: WOULD REFUSE - --allow-start is required for vt-resume');
+			expect(printedBodyOf(logSpy)).toStrictEqual(expectedVtBody(RESUME_CELL));
+			expect(output).toContain('this RESUMES the paused wash cycle');
+			expect(output).toContain('DRY RUN');
+			expect(client.sendCommandAndGetResponse).not.toHaveBeenCalled();
+		});
+
+		it('should refuse with --allow-start text, exit 1 and send nothing for --yes without --allow-start', async () => {
+			// Arrange
+			givenWasher(READY_FOR_PAUSE);
+
+			// Act
+			await cmdWasherControl(
+				SESSION,
+				baseOptions({ send: 'vt-resume', course: undefined, yes: true }),
+				createMockLogger(),
+			);
+
+			// Assert
+			expect(outputOf(logSpy)).toContain('Refused:');
+			expect(outputOf(logSpy)).toContain('--allow-start is required for vt-resume');
+			expect(client.sendCommandAndGetResponse).not.toHaveBeenCalled();
+			expect(process.exitCode).toBe(1);
+		});
+
+		it('should send exactly once with the RESUME body, print the warning and a Verdict for --yes --allow-start in PAUSE', async () => {
+			// Arrange
+			givenWasher(READY_FOR_PAUSE);
+
+			// Act
+			const run = cmdWasherControl(
+				SESSION,
+				baseOptions({ send: 'vt-resume', course: undefined, yes: true, allowStart: true }),
+				createMockLogger(),
+			);
+			await vi.runAllTimersAsync();
+			await run;
+
+			// Assert
+			expect(client.sendCommandAndGetResponse).toHaveBeenCalledTimes(1);
+			expect(client.sendCommandAndGetResponse.mock.calls[0][0]).toBe(FULL_DEVICE_ID);
+			expect(client.sendCommandAndGetResponse.mock.calls[0][1]).toMatchObject({ ctrlKey: 'vtCtrl', command: 'Set' });
+			expect(printedBodyOf(logSpy)).toStrictEqual(expectedVtBody(RESUME_CELL));
+			expect(outputOf(logSpy)).toContain('this RESUMES the paused wash cycle');
+			expect(outputOf(logSpy)).toContain('Verdict:');
+		});
+
+		it('should refuse with needs PAUSE and send nothing for --yes --allow-start in RUNNING', async () => {
+			// Arrange
+			givenWasher({ ...READY_FOR_PAUSE, state: 'RUNNING' });
+
+			// Act
+			await cmdWasherControl(
+				SESSION,
+				baseOptions({ send: 'vt-resume', course: undefined, yes: true, allowStart: true }),
+				createMockLogger(),
+			);
+
+			// Assert
+			expect(outputOf(logSpy)).toContain('Refused:');
+			expect(outputOf(logSpy)).toContain('vt-resume needs PAUSE');
+			expect(client.sendCommandAndGetResponse).not.toHaveBeenCalled();
+			expect(process.exitCode).toBe(1);
+		});
+	});
+
+	describe('vt-power-off', () => {
+		const POWER_OFF_CELL = { cmd: 'power', value: 'POWER_OFF' };
+
+		it('should print Guard PASS, the POWER_OFF body and warning, and send nothing in a dry run from INITIAL', async () => {
+			// Arrange
+			givenWasher(READY_FOR_COURSE);
+
+			// Act
+			await cmdWasherControl(SESSION, baseOptions({ send: 'vt-power-off', course: undefined }), createMockLogger());
+
+			// Assert
+			const output = outputOf(logSpy);
+			expect(output).toContain('Guard: PASS');
+			expect(printedBodyOf(logSpy)).toStrictEqual(expectedVtBody(POWER_OFF_CELL));
+			expect(output).toContain('this powers the washer OFF');
+			expect(output).toContain('DRY RUN');
+			expect(client.sendCommandAndGetResponse).not.toHaveBeenCalled();
+		});
+
+		it('should print Guard WOULD REFUSE mentioning --allow-interrupt in a dry run from PAUSE without the flag', async () => {
+			// Arrange
+			givenWasher(READY_FOR_PAUSE);
+
+			// Act
+			await cmdWasherControl(SESSION, baseOptions({ send: 'vt-power-off', course: undefined }), createMockLogger());
+
+			// Assert
+			expect(outputOf(logSpy)).toContain('Guard: WOULD REFUSE');
+			expect(outputOf(logSpy)).toContain('--allow-interrupt');
+			expect(client.sendCommandAndGetResponse).not.toHaveBeenCalled();
+		});
+
+		it('should print Guard PASS in a dry run from PAUSE with allowInterrupt true', async () => {
+			// Arrange
+			givenWasher(READY_FOR_PAUSE);
+
+			// Act
+			await cmdWasherControl(
+				SESSION,
+				baseOptions({ send: 'vt-power-off', course: undefined, allowInterrupt: true }),
+				createMockLogger(),
+			);
+
+			// Assert
+			expect(outputOf(logSpy)).toContain('Guard: PASS');
+			expect(client.sendCommandAndGetResponse).not.toHaveBeenCalled();
+		});
+
+		it('should refuse with Refused, exit 1 and send nothing for --yes in RUNNING without the flag', async () => {
+			// Arrange
+			givenWasher({ ...READY_FOR_PAUSE, state: 'RUNNING' });
+
+			// Act
+			await cmdWasherControl(
+				SESSION,
+				baseOptions({ send: 'vt-power-off', course: undefined, yes: true }),
+				createMockLogger(),
+			);
+
+			// Assert
+			expect(outputOf(logSpy)).toContain('Refused:');
+			expect(outputOf(logSpy)).toContain('--allow-interrupt');
+			expect(client.sendCommandAndGetResponse).not.toHaveBeenCalled();
+			expect(process.exitCode).toBe(1);
+		});
+
+		it('should send exactly once and print a Verdict for --yes with allowInterrupt in RUNNING', async () => {
+			// Arrange
+			givenWasher({ ...READY_FOR_PAUSE, state: 'RUNNING' });
+
+			// Act
+			const run = cmdWasherControl(
+				SESSION,
+				baseOptions({ send: 'vt-power-off', course: undefined, yes: true, allowInterrupt: true }),
+				createMockLogger(),
+			);
+			await vi.runAllTimersAsync();
+			await run;
+
+			// Assert
+			expect(client.sendCommandAndGetResponse).toHaveBeenCalledTimes(1);
+			expect(printedBodyOf(logSpy)).toStrictEqual(expectedVtBody(POWER_OFF_CELL));
+			expect(outputOf(logSpy)).toContain('Verdict:');
+		});
+
+		it('should send exactly once without the flag when state is ERROR with child lock ON, because the guard does not check them', async () => {
+			// Arrange
+			givenWasher({ state: 'ERROR', childLock: 'CHILDLOCK_ON', error: 'ERROR_DE1' });
+
+			// Act
+			const run = cmdWasherControl(
+				SESSION,
+				baseOptions({ send: 'vt-power-off', course: undefined, yes: true }),
+				createMockLogger(),
+			);
+			await vi.runAllTimersAsync();
+			await run;
+
+			// Assert
+			expect(client.sendCommandAndGetResponse).toHaveBeenCalledTimes(1);
+			expect(outputOf(logSpy)).not.toContain('Refused:');
+		});
+
+		it('should refuse with already POWEROFF, exit 1 and send nothing for --yes --allow-interrupt in POWEROFF', async () => {
+			// Arrange
+			givenWasher({ state: 'POWEROFF' });
+
+			// Act
+			await cmdWasherControl(
+				SESSION,
+				baseOptions({ send: 'vt-power-off', course: undefined, yes: true, allowInterrupt: true }),
+				createMockLogger(),
+			);
+
+			// Assert
+			expect(outputOf(logSpy)).toContain('already POWEROFF');
+			expect(client.sendCommandAndGetResponse).not.toHaveBeenCalled();
+			expect(process.exitCode).toBe(1);
+		});
+
+		it('should send exactly once without --allow-start and never print the --allow-start requirement', async () => {
+			// Arrange
+			givenReadyForCourse();
+
+			// Act
+			const run = cmdWasherControl(
+				SESSION,
+				baseOptions({ send: 'vt-power-off', course: undefined, yes: true }),
+				createMockLogger(),
+			);
+			await vi.runAllTimersAsync();
+			await run;
+
+			// Assert
+			expect(client.sendCommandAndGetResponse).toHaveBeenCalledTimes(1);
+			expect(outputOf(logSpy)).not.toContain('--allow-start is required');
+		});
+
+		it('should never print the full device id for a vt-power-off send', async () => {
+			// Arrange
+			givenReadyForCourse();
+
+			// Act
+			const run = cmdWasherControl(
+				SESSION,
+				baseOptions({ send: 'vt-power-off', course: undefined, yes: true }),
+				createMockLogger(),
+			);
+			await vi.runAllTimersAsync();
+			await run;
+
+			// Assert
+			expect(outputOf(logSpy) + outputOf(errorSpy)).not.toContain(FULL_DEVICE_ID);
 		});
 	});
 
