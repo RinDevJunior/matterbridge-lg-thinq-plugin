@@ -3,7 +3,11 @@ import { describe, expect, it } from 'vitest';
 import {
 	BEDROOM_PROFILE,
 	BEDROOM_STATE,
+	ERROR_STATE,
+	FAHRENHEIT_PROFILE,
+	FAHRENHEIT_PROFILE_NO_CELSIUS_ENTRY,
 	STUDY_PROFILE,
+	STUDY_PROFILE_FULL,
 	STUDY_STATE,
 	STUDY_STATE_FAHRENHEIT,
 } from '../../tests/helpers/thinqConnectAirConditionerFixtures.js';
@@ -14,15 +18,23 @@ import {
 	buildAirConditionerPowerPayload,
 	buildAirConditionerSwingPayload,
 	buildAirConditionerTargetTemperaturePayload,
+	buildAirConditionerWindStepPayload,
 	buildAirConditionerWindStrengthPayload,
 	celsiusToFahrenheit,
 	evaluateAirConditionerEnumWrite,
 	evaluateAirConditionerRangeWrite,
+	evaluateAirConditionerWindStepWrite,
 	fahrenheitToCelsius,
 	filterRemainingPercent,
+	isAirConditionerFaultState,
+	percentToWindStep,
 	readAirConditionerProfile,
 	readAirConditionerState,
+	readWindStepScale,
+	resolveCelsiusTargetRange,
+	resolveTargetTemperatureUnit,
 	snapToRange,
+	windStepToPercent,
 } from './thinqConnectAirConditioner.js';
 import type { ThinqConnectPayload } from './thinqConnectApiClient.js';
 
@@ -465,6 +477,309 @@ describe('thinqConnectAirConditioner', () => {
 
 			// Assert
 			expect(payload).toEqual({ windDirection: { rotateUpDown: false, rotateLeftRight: true } });
+		});
+	});
+});
+
+/** Replaces the top-level temperature.unit read list; undefined removes the unit node. */
+function withTemperatureUnit(readValues: string[] | undefined): ThinqConnectPayload {
+	const clone = structuredClone(STUDY_PROFILE_FULL);
+	if (isRecord(clone) && isRecord(clone.property) && isRecord(clone.property.temperature)) {
+		clone.property.temperature.unit =
+			readValues === undefined ? {} : { type: 'enum', mode: ['r'], value: { r: readValues } };
+	}
+	return clone;
+}
+
+describe('thinqConnectAirConditioner Fahrenheit, ERROR and windStep helpers', () => {
+	describe('temperature unit and Celsius range', () => {
+		it.each([
+			{ label: 'only C', units: ['C'], expected: 'C' },
+			{ label: 'only F', units: ['F'], expected: 'F' },
+			{ label: 'both C and F', units: ['C', 'F'], expected: 'C' },
+			{ label: 'an empty list', units: [], expected: 'C' },
+			{ label: 'a missing unit node', units: undefined, expected: 'C' },
+		])('should resolve the temperature unit to $expected when the unit list has $label', ({ units, expected }) => {
+			// Arrange & Act
+			const profile = readAirConditionerProfile(withTemperatureUnit(units));
+
+			// Assert
+			expect(profile.temperatureUnit).toBe(expected);
+		});
+
+		it('should read the C target range from temperatureInUnits for the real study profile', () => {
+			// Arrange & Act
+			const profile = readAirConditionerProfile(STUDY_PROFILE_FULL);
+
+			// Assert
+			expect(profile.temperatureUnit).toBe('C');
+			expect(profile.celsiusTargetRange).toEqual({ writable: true, min: 16, max: 30, step: 0.5 });
+		});
+
+		it('should keep the existing profile fields identical to the existing study fixture', () => {
+			// Arrange
+			const full = readAirConditionerProfile(STUDY_PROFILE_FULL);
+			const base = readAirConditionerProfile(STUDY_PROFILE);
+
+			// Act & Assert
+			expect(full.targetTemperature).toEqual(base.targetTemperature);
+			expect(full.power?.writable).toBe(base.power?.writable);
+			expect(full.windStrength).toEqual(base.windStrength);
+			expect(full.rotateUpDown).toBe(base.rotateUpDown);
+			expect(full.hasFilterInfo).toBe(base.hasFilterInfo);
+		});
+
+		it('should leave the unit C and no Celsius range for the existing study and bedroom profiles', () => {
+			// Arrange & Act
+			const study = readAirConditionerProfile(STUDY_PROFILE);
+			const bedroom = readAirConditionerProfile(BEDROOM_PROFILE);
+
+			// Assert
+			expect(study.temperatureUnit).toBe('C');
+			expect(study.celsiusTargetRange).toBeUndefined();
+			expect(bedroom.temperatureUnit).toBe('C');
+			expect(bedroom.celsiusTargetRange).toBeUndefined();
+		});
+
+		it('should read unit F and the 60-86 F target range for the Fahrenheit profile', () => {
+			// Arrange & Act
+			const profile = readAirConditionerProfile(FAHRENHEIT_PROFILE);
+
+			// Assert
+			expect(profile.temperatureUnit).toBe('F');
+			expect(profile.targetTemperature).toEqual({ writable: true, min: 60, max: 86, step: 1 });
+			expect(profile.celsiusTargetRange).toEqual({ writable: true, min: 16, max: 30, step: 0.5 });
+		});
+
+		it('should default resolveTargetTemperatureUnit to C when the profile unit is undefined', () => {
+			// Arrange
+			const profile = { ...readAirConditionerProfile(undefined), temperatureUnit: undefined };
+
+			// Act & Assert
+			expect(resolveTargetTemperatureUnit(profile)).toBe('C');
+		});
+
+		it('should return the same target range object from resolveCelsiusTargetRange for a Celsius profile', () => {
+			// Arrange
+			const profile = readAirConditionerProfile(STUDY_PROFILE_FULL);
+
+			// Act & Assert
+			expect(resolveCelsiusTargetRange(profile)).toBe(profile.targetTemperature);
+		});
+
+		it('should return the Celsius entry range from resolveCelsiusTargetRange for a Fahrenheit profile with a Celsius entry', () => {
+			// Arrange
+			const profile = readAirConditionerProfile(FAHRENHEIT_PROFILE);
+
+			// Act & Assert
+			expect(resolveCelsiusTargetRange(profile)).toEqual({ writable: true, min: 16, max: 30, step: 0.5 });
+		});
+
+		it('should convert the Fahrenheit range in resolveCelsiusTargetRange when no Celsius entry exists', () => {
+			// Arrange
+			const profile = readAirConditionerProfile(FAHRENHEIT_PROFILE_NO_CELSIUS_ENTRY);
+
+			// Act
+			const range = resolveCelsiusTargetRange(profile);
+
+			// Assert
+			expect(range?.min).toBeCloseTo(15.56, 2);
+			expect(range?.max).toBeCloseTo(30, 10);
+			expect(range?.step).toBeCloseTo(5 / 9, 6);
+		});
+
+		it('should return undefined from resolveCelsiusTargetRange when a Fahrenheit profile has no target range', () => {
+			// Arrange
+			const profile = {
+				...readAirConditionerProfile(FAHRENHEIT_PROFILE_NO_CELSIUS_ENTRY),
+				targetTemperature: undefined,
+			};
+
+			// Act & Assert
+			expect(resolveCelsiusTargetRange(profile)).toBeUndefined();
+		});
+	});
+
+	describe('isAirConditionerFaultState and runState', () => {
+		it.each(['ERROR', 'error', 'FAULT', 'SENSOR_FAIL'])('should flag runState %s as a fault', (value) => {
+			// Act & Assert
+			expect(isAirConditionerFaultState(value)).toBe(true);
+		});
+
+		it.each(['NORMAL', 'INITIAL'])('should not flag runState %s as a fault', (value) => {
+			// Act & Assert
+			expect(isAirConditionerFaultState(value)).toBe(false);
+		});
+
+		it('should not flag an undefined runState as a fault', () => {
+			// Act & Assert
+			expect(isAirConditionerFaultState(undefined)).toBe(false);
+		});
+
+		it('should read runState ERROR from the fault fixture', () => {
+			// Arrange & Act
+			const state = readAirConditionerState(ERROR_STATE);
+
+			// Assert
+			expect(state.runState).toBe('ERROR');
+		});
+
+		it('should leave runState undefined when the state has no runState node', () => {
+			// Arrange & Act
+			const state = readAirConditionerState({ operation: { airConOperationMode: 'POWER_ON' } });
+
+			// Assert
+			expect(state.runState).toBeUndefined();
+		});
+	});
+
+	describe('windStep profile, scale and mapping', () => {
+		const SCALE = { min: 1, max: 5, step: 1, count: 5 };
+
+		it('should read the writable 1-5 windStep range from the real study profile', () => {
+			// Arrange & Act
+			const profile = readAirConditionerProfile(STUDY_PROFILE_FULL);
+
+			// Assert
+			expect(profile.windStep).toEqual({ writable: true, min: 1, max: 5, step: 1 });
+			expect(readAirConditionerProfile(STUDY_PROFILE).windStep).toBeUndefined();
+		});
+
+		it('should build the 5-step scale from the real study profile', () => {
+			// Arrange & Act
+			const scale = readWindStepScale(readAirConditionerProfile(STUDY_PROFILE_FULL));
+
+			// Assert
+			expect(scale).toEqual(SCALE);
+		});
+
+		it('should return undefined from readWindStepScale when windStep is not writable', () => {
+			// Arrange
+			const profile = {
+				...readAirConditionerProfile(STUDY_PROFILE_FULL),
+				windStep: { writable: false, min: 1, max: 5, step: 1 },
+			};
+
+			// Act & Assert
+			expect(readWindStepScale(profile)).toBeUndefined();
+		});
+
+		it('should return undefined from readWindStepScale when the profile has no windStep', () => {
+			// Arrange & Act & Assert
+			expect(readWindStepScale(readAirConditionerProfile(STUDY_PROFILE))).toBeUndefined();
+		});
+
+		it.each([
+			{ label: 'one step', max: 1 },
+			{ label: 'eleven steps', max: 11 },
+		])('should return undefined from readWindStepScale for $label', ({ max }) => {
+			// Arrange
+			const profile = {
+				...readAirConditionerProfile(STUDY_PROFILE_FULL),
+				windStep: { writable: true, min: 1, max, step: 1 },
+			};
+
+			// Act & Assert
+			expect(readWindStepScale(profile)).toBeUndefined();
+		});
+
+		it('should return undefined from readWindStepScale when the step is not an integer', () => {
+			// Arrange
+			const profile = {
+				...readAirConditionerProfile(STUDY_PROFILE_FULL),
+				windStep: { writable: true, min: 1, max: 5, step: 0.5 },
+			};
+
+			// Act & Assert
+			expect(readWindStepScale(profile)).toBeUndefined();
+		});
+
+		it.each([
+			[1, 20],
+			[2, 40],
+			[3, 60],
+			[4, 80],
+			[5, 100],
+			[0, 20],
+			[9, 100],
+		])('should map wind step %i to %i percent with clamping', (step, percent) => {
+			// Act & Assert
+			expect(windStepToPercent(SCALE, step)).toBe(percent);
+		});
+
+		it.each<[number, number | undefined]>([
+			[0, undefined],
+			[1, 1],
+			[20, 1],
+			[21, 2],
+			[40, 2],
+			[41, 3],
+			[50, 3],
+			[60, 3],
+			[61, 4],
+			[80, 4],
+			[81, 5],
+			[100, 5],
+		])('should map %i percent to wind step %s', (percent, step) => {
+			// Act & Assert
+			expect(percentToWindStep(SCALE, percent)).toBe(step);
+		});
+
+		it('should accept an aligned in-range step in evaluateAirConditionerWindStepWrite', () => {
+			// Arrange
+			const profile = readAirConditionerProfile(STUDY_PROFILE_FULL);
+
+			// Act & Assert
+			expect(evaluateAirConditionerWindStepWrite(profile, 3)).toBeUndefined();
+		});
+
+		it.each([0, 6, 2.5])('should refuse wind step %s outside the profile range', (step) => {
+			// Arrange
+			const profile = readAirConditionerProfile(STUDY_PROFILE_FULL);
+
+			// Act
+			const reason = evaluateAirConditionerWindStepWrite(profile, step);
+
+			// Assert
+			expect(reason).toContain('outside the profile range 1-5');
+		});
+
+		it('should refuse a step not aligned to the profile step', () => {
+			// Arrange
+			const profile = {
+				...readAirConditionerProfile(STUDY_PROFILE_FULL),
+				windStep: { writable: true, min: 1, max: 5, step: 2 },
+			};
+
+			// Act & Assert
+			expect(evaluateAirConditionerWindStepWrite(profile, 2)).toContain('not aligned to the profile step 2');
+		});
+
+		it('should refuse a windStep write when the profile has no windStep', () => {
+			// Arrange & Act
+			const reason = evaluateAirConditionerWindStepWrite(readAirConditionerProfile(STUDY_PROFILE), 3);
+
+			// Assert
+			expect(reason).toContain('no airFlow.windStep');
+		});
+
+		it('should refuse a windStep write when windStep is not writable', () => {
+			// Arrange
+			const profile = {
+				...readAirConditionerProfile(STUDY_PROFILE_FULL),
+				windStep: { writable: false, min: 1, max: 5, step: 1 },
+			};
+
+			// Act & Assert
+			expect(evaluateAirConditionerWindStepWrite(profile, 3)).toContain('not writable');
+		});
+
+		it('should build the airFlow.windStep payload for step 3', () => {
+			// Arrange & Act
+			const payload = buildAirConditionerWindStepPayload(3);
+
+			// Assert
+			expect(payload).toEqual({ airFlow: { windStep: 3 } });
 		});
 	});
 });

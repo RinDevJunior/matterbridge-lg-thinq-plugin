@@ -4,10 +4,12 @@ import type { AnsiLogger } from 'matterbridge/logger';
 import { OnOff, OperationalState } from 'matterbridge/matter/clusters';
 
 import { PAUSED_STATES, RUNNING_STATES, STOPPED_STATES } from '../services/thinqConnect/thinqConnectWasher.js';
+import { deferThinqConnectApply } from './thinqConnectDeferredApply.js';
 import type { ThinqConnectMatterIdentityOverride } from './thinqConnectMatterIdentity.js';
 import type {
 	ThinqConnectWasher,
 	ThinqConnectWasherCommandOutcome,
+	ThinqConnectWasherPowerOutcome,
 	ThinqConnectWasherService,
 	ThinqConnectWasherState,
 } from './thinqConnectWasherService.js';
@@ -32,9 +34,9 @@ export function mapThinqConnectWasherState(currentState: string | undefined): Op
 }
 
 /**
- * Builds the Matter `LaundryWasher` endpoint for a ThinQ Connect washer. `on`/`off` run the guarded
- * power command first and write the final OnOff value afterwards, because matterbridge does not await
- * the handler and mutates the attribute right after dispatch.
+ * Builds the Matter `LaundryWasher` endpoint for a ThinQ Connect washer. matterbridge awaits these handlers
+ * and then sets OnOff/Running/Stopped itself, so `on`/`off` and start/stop write nothing on success;
+ * any write needed afterwards is deferred until the invoke has committed.
  */
 export function buildThinqConnectWasherEndpoint(
 	washer: ThinqConnectWasher,
@@ -42,10 +44,11 @@ export function buildThinqConnectWasherEndpoint(
 	logger: AnsiLogger,
 	identity: ThinqConnectMatterIdentityOverride = {},
 ): MatterbridgeEndpoint {
-	const endpoint = new LaundryWasher(washer.name, washer.deviceId);
+	const matterId = identity.legacyId ?? washer.deviceId;
+	const endpoint = new LaundryWasher(washer.name, matterId);
 	endpoint.createDefaultBasicInformationClusterServer(
 		washer.name,
-		washer.deviceId,
+		matterId,
 		identity.vendorId ?? 0xfff1,
 		identity.vendorName ?? 'Matterbridge',
 		identity.productId ?? 0x8001,
@@ -55,16 +58,35 @@ export function buildThinqConnectWasherEndpoint(
 	endpoint.mode = 'server';
 
 	const handlePower = async (on: boolean): Promise<void> => {
+		let outcome: ThinqConnectWasherPowerOutcome;
 		try {
-			const outcome = await service.setPower(washer, on);
-			logger.debug(`ThinQ Connect ${washer.deviceId} power ${on ? 'on' : 'off'} -> ${outcome.status}`);
-			const powerOn = outcome.state.powerOn ?? (outcome.status === 'sent' ? on : !on);
-			await applyThinqConnectWasherState(endpoint, { powerOn }, logger);
+			outcome = await service.setPower(washer, on);
 		} catch (error) {
 			logger.error(
 				`ThinQ Connect ${washer.deviceId} power handler failed: ${error instanceof Error ? error.message : String(error)}`,
 			);
+			throw error;
 		}
+		logger.debug(`ThinQ Connect ${washer.deviceId} power ${on ? 'on' : 'off'} -> ${outcome.status}`);
+		if (outcome.status === 'sent') {
+			return;
+		}
+		if (outcome.status === 'noop') {
+			const powerOn = outcome.state.powerOn ?? on;
+			deferThinqConnectApply(
+				`ThinQ Connect ${washer.deviceId} state apply`,
+				() => applyThinqConnectWasherState(endpoint, { powerOn }, logger),
+				logger,
+			);
+			return;
+		}
+		const powerOn = outcome.state.powerOn ?? !on;
+		deferThinqConnectApply(
+			`ThinQ Connect ${washer.deviceId} corrective state apply`,
+			() => applyThinqConnectWasherState(endpoint, { powerOn }, logger),
+			logger,
+		);
+		throw new Error(outcome.status === 'refused' ? outcome.reason : outcome.error);
 	};
 
 	endpoint.addCommandHandler('on', async () => handlePower(true));
@@ -107,17 +129,29 @@ export function buildThinqConnectWasherEndpoint(
 			return;
 		}
 		if (outcome.status === 'noop') {
-			await applyThinqConnectWasherState(endpoint, outcome.state, logger);
+			deferThinqConnectApply(
+				`ThinQ Connect ${washer.deviceId} state apply`,
+				() => applyThinqConnectWasherState(endpoint, outcome.state, logger),
+				logger,
+			);
 			return;
 		}
-		await revertOperationalState(outcome.state, previous);
+		deferThinqConnectApply(
+			`ThinQ Connect ${washer.deviceId} operational state revert`,
+			() => revertOperationalState(outcome.state, previous),
+			logger,
+		);
 		throw new Error(outcome.status === 'refused' ? outcome.reason : outcome.hint);
 	};
 
 	const rejectPauseResume = async (): Promise<void> => {
 		const previous = endpoint.getAttribute(OperationalState.id, 'operationalState') as number | undefined;
 		logger.warn(`ThinQ Connect washer ${washer.deviceId} pause/resume is not supported by the ThinQ Connect API`);
-		await revertOperationalState({}, previous);
+		deferThinqConnectApply(
+			`ThinQ Connect ${washer.deviceId} operational state revert`,
+			() => revertOperationalState({}, previous),
+			logger,
+		);
 		throw new Error('Pause and resume are not supported by the ThinQ Connect API.');
 	};
 

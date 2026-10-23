@@ -24,6 +24,7 @@ export interface ThinqWasherControlConfig {
 	availableCourseIds?: string[];
 	courses?: ThinqWasherCourseConfig[];
 	selectedCourse?: string;
+	allowCancelCycle?: boolean;
 }
 
 export interface ThinqAcFilterControlConfig {

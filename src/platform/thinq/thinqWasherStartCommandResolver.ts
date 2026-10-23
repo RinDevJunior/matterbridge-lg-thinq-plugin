@@ -9,39 +9,27 @@ export interface WasherStartCommandPayload {
 	readonly resolvedCourseId?: string;
 }
 
+export interface WasherResolvedCourseData {
+	readonly courseType: string;
+	readonly smartCourseType: string;
+	readonly resolvedCourseId: string;
+	readonly selectedCourseEntry: Record<string, unknown>;
+	readonly courseDefaults: Record<string, unknown>;
+	readonly coercedOverrides: Record<string, unknown>;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null;
 }
 
 /**
- * Extracts a real `WMStart` command payload from a device's own downloaded model JSON
- * (`ControlWifi`/`Config`/`Course` slices). Coerces raw string parameter overrides using the
- * device's own freshly-resolved course-default types (no persisted `valueType`, no extra fetch).
- * Drops unknown/stale override names, never injecting raw, uncoerced strings into the payload.
- * Pure, no I/O — returns `undefined` on any missing/malformed shape instead of throwing, so
- * callers can treat "no usable command" as a normal (fail-closed) outcome. Always uses the
- * model-declared default course (`Config.defaultCourse`) and its own `function[]` defaults — no
- * per-device course selection.
+ * Reads the first `dev` block of a `ControlWifi` entry's `data` template. Pure, no I/O — returns
+ * `undefined` on any missing/malformed shape.
  */
-export function extractWasherStartCommand(
-	deviceModel: Record<string, unknown>,
-	courseSelection?: WasherCourseSelection,
-): WasherStartCommandPayload | undefined {
-	if (!isRecord(deviceModel)) {
-		return undefined;
-	}
-
-	const controlWifi = deviceModel.ControlWifi;
-	if (!isRecord(controlWifi)) {
-		return undefined;
-	}
-
-	const startEntry = controlWifi.WMStart;
-	if (!isRecord(startEntry)) {
-		return undefined;
-	}
-
-	const templateData = startEntry.data;
+export function readWasherControlTemplate(
+	entry: Record<string, unknown>,
+): { dev: string; inner: Record<string, unknown> } | undefined {
+	const templateData = entry.data;
 	if (!isRecord(templateData)) {
 		return undefined;
 	}
@@ -54,6 +42,22 @@ export function extractWasherStartCommand(
 	const dev = devKeys[0];
 	const templateInner = templateData[dev];
 	if (!isRecord(templateInner)) {
+		return undefined;
+	}
+
+	return { dev, inner: templateInner };
+}
+
+/**
+ * Resolves the course id, its `function[]` defaults and the coerced parameter overrides from a device's
+ * own model JSON (`Config`/`Course`). Unknown override names are dropped (fail closed). Pure, no I/O —
+ * returns `undefined` on any missing/malformed shape.
+ */
+export function resolveWasherCourseData(
+	deviceModel: Record<string, unknown>,
+	courseSelection?: WasherCourseSelection,
+): WasherResolvedCourseData | undefined {
+	if (!isRecord(deviceModel)) {
 		return undefined;
 	}
 
@@ -117,17 +121,65 @@ export function extractWasherStartCommand(
 		}
 	}
 
+	return {
+		courseType,
+		smartCourseType,
+		resolvedCourseId,
+		selectedCourseEntry,
+		courseDefaults,
+		coercedOverrides,
+	};
+}
+
+/**
+ * Extracts a real `WMStart` command payload from a device's own downloaded model JSON
+ * (`ControlWifi`/`Config`/`Course` slices). Coerces raw string parameter overrides using the
+ * device's own freshly-resolved course-default types (no persisted `valueType`, no extra fetch).
+ * Drops unknown/stale override names, never injecting raw, uncoerced strings into the payload.
+ * Pure, no I/O — returns `undefined` on any missing/malformed shape instead of throwing, so
+ * callers can treat "no usable command" as a normal (fail-closed) outcome. Always uses the
+ * model-declared default course (`Config.defaultCourse`) and its own `function[]` defaults — no
+ * per-device course selection.
+ */
+export function extractWasherStartCommand(
+	deviceModel: Record<string, unknown>,
+	courseSelection?: WasherCourseSelection,
+): WasherStartCommandPayload | undefined {
+	if (!isRecord(deviceModel)) {
+		return undefined;
+	}
+
+	const controlWifi = deviceModel.ControlWifi;
+	if (!isRecord(controlWifi)) {
+		return undefined;
+	}
+
+	const startEntry = controlWifi.WMStart;
+	if (!isRecord(startEntry)) {
+		return undefined;
+	}
+
+	const template = readWasherControlTemplate(startEntry);
+	if (!template) {
+		return undefined;
+	}
+
+	const courseData = resolveWasherCourseData(deviceModel, courseSelection);
+	if (!courseData) {
+		return undefined;
+	}
+
 	const mergedInner: Record<string, unknown> = {
-		...templateInner,
-		...courseDefaults,
-		...coercedOverrides,
-		[courseType]: resolvedCourseId,
-		[smartCourseType]: 'NOT_SELECTED',
+		...template.inner,
+		...courseData.courseDefaults,
+		...courseData.coercedOverrides,
+		[courseData.courseType]: courseData.resolvedCourseId,
+		[courseData.smartCourseType]: 'NOT_SELECTED',
 	};
 
 	return {
 		command: typeof startEntry.command === 'string' ? startEntry.command : undefined,
-		dataSetList: { [dev]: mergedInner },
-		resolvedCourseId,
+		dataSetList: { [template.dev]: mergedInner },
+		resolvedCourseId: courseData.resolvedCourseId,
 	};
 }

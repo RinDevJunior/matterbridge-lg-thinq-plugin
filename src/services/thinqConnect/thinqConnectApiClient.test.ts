@@ -1131,4 +1131,327 @@ describe('ThinqConnectApiClient', () => {
 			expect(JSON.stringify(collectLogCallArgs(mockLogger))).not.toContain(FAKE_PAT);
 		});
 	});
+	describe('push client methods (route, client, certificate, event subscriptions)', () => {
+		const ROUTE_URL = 'https://api-aic.lgthinq.com/route';
+		const CLIENT_URL = 'https://api-aic.lgthinq.com/client';
+		const CERT_URL = 'https://api-aic.lgthinq.com/client/certificate';
+		const EVENT_BASE = 'https://api-aic.lgthinq.com/event/dev-1';
+		const CLIENT_ID = 'thinq-open-11111111-2222-3333-4444-555555555555';
+		const CSR_BODY = 'CSRBODY';
+		const CERT_PEM = '-----BEGIN CERTIFICATE-----\nCERTDATA\n-----END CERTIFICATE-----';
+
+		describe('getClientId', () => {
+			it('should return the client id passed to the constructor when one is given', () => {
+				// Arrange
+				const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger, CLIENT_ID);
+
+				// Act
+				const result = client.getClientId();
+
+				// Assert
+				expect(result).toBe(CLIENT_ID);
+			});
+
+			it('should return a thinq-open prefixed id when no client id is given', () => {
+				// Arrange
+				const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger);
+
+				// Act
+				const result = client.getClientId();
+
+				// Assert
+				expect(result).toMatch(/^thinq-open-[0-9a-f-]{36}$/);
+			});
+		});
+
+		describe('getRoute', () => {
+			it('should return the mqttServer when the route response has one', async () => {
+				// Arrange
+				const server = 'mqtts://a3x-ats.iot.us-west-2.amazonaws.com:8883';
+				mockAxios.onGet(ROUTE_URL).reply(200, { response: { mqttServer: server } });
+				const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger, CLIENT_ID);
+
+				// Act
+				const result = await client.getRoute();
+
+				// Assert
+				expect(result).toEqual({ mqttServer: server });
+				expect(mockAxios.history.get[0]?.url).toBe(ROUTE_URL);
+			});
+
+			it('should send the standard headers including the client id when requesting the route', async () => {
+				// Arrange
+				mockAxios.onGet(ROUTE_URL).reply(200, { response: { mqttServer: 'mqtts://h:8883' } });
+				const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger, CLIENT_ID);
+
+				// Act
+				await client.getRoute();
+
+				// Assert
+				const headers = mockAxios.history.get[0]?.headers;
+				expect(headers?.['Authorization']).toBe(`Bearer ${FAKE_PAT}`);
+				expect(headers?.['x-client-id']).toBe(CLIENT_ID);
+				expect(headers?.['x-country']).toBe('US');
+				expect(headers?.['x-api-key']).toEqual(expect.any(String));
+			});
+
+			it.each([
+				['response is missing', {}],
+				['response is an array', { response: [] }],
+				['response is null', { response: null }],
+				['mqttServer is missing', { response: {} }],
+				['mqttServer is a number', { response: { mqttServer: 42 } }],
+				['mqttServer is empty', { response: { mqttServer: '' } }],
+			])('should throw ThinqConnectApiError when %s', async (_label, body) => {
+				// Arrange
+				mockAxios.onGet(ROUTE_URL).reply(200, body);
+				const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger, CLIENT_ID);
+
+				// Act
+				const error = await captureAsyncError(() => client.getRoute());
+
+				// Assert
+				expect(error).toBeInstanceOf(ThinqConnectApiError);
+				expect((error as ThinqConnectApiError).message).toBe('ThinQ Connect route response has no mqttServer');
+			});
+		});
+
+		describe('registerClient', () => {
+			it('should POST the flat client body to /client when registering', async () => {
+				// Arrange
+				mockAxios.onPost(CLIENT_URL).reply(200, {});
+				const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger, CLIENT_ID);
+
+				// Act
+				await client.registerClient();
+
+				// Assert
+				expect(mockAxios.history.post).toHaveLength(1);
+				expect(mockAxios.history.post[0]?.url).toBe(CLIENT_URL);
+				expect(JSON.parse(mockAxios.history.post[0]?.data)).toEqual({
+					type: 'MQTT',
+					'service-code': 'SVC202',
+					'device-type': '607',
+					allowExist: true,
+				});
+			});
+
+			it('should send the stable client id header when registering', async () => {
+				// Arrange
+				mockAxios.onPost(CLIENT_URL).reply(200, {});
+				const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger, CLIENT_ID);
+
+				// Act
+				await client.registerClient();
+
+				// Assert
+				expect(mockAxios.history.post[0]?.headers?.['x-client-id']).toBe(CLIENT_ID);
+			});
+		});
+
+		describe('requestClientCertificate', () => {
+			it('should POST the csr and return the certificate and subscriptions when the response is valid', async () => {
+				// Arrange
+				mockAxios.onPost(CERT_URL).reply(200, {
+					response: { result: { certificatePem: CERT_PEM, subscriptions: ['app/clients/x/push'] } },
+				});
+				const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger, CLIENT_ID);
+
+				// Act
+				const result = await client.requestClientCertificate(CSR_BODY);
+
+				// Assert
+				expect(result).toEqual({ certificatePem: CERT_PEM, subscriptions: ['app/clients/x/push'] });
+				expect(mockAxios.history.post[0]?.url).toBe(CERT_URL);
+				expect(JSON.parse(mockAxios.history.post[0]?.data)).toEqual({ 'service-code': 'SVC202', csr: CSR_BODY });
+			});
+
+			it('should keep only non-empty string subscription entries when some are not strings', async () => {
+				// Arrange
+				mockAxios.onPost(CERT_URL).reply(200, {
+					response: { result: { certificatePem: CERT_PEM, subscriptions: [42, 'app/clients/x/push', ''] } },
+				});
+				const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger, CLIENT_ID);
+
+				// Act
+				const result = await client.requestClientCertificate(CSR_BODY);
+
+				// Assert
+				expect(result.subscriptions).toEqual(['app/clients/x/push']);
+			});
+
+			it.each([
+				['certificatePem is missing', { result: { subscriptions: ['t'] } }],
+				['certificatePem is empty', { result: { certificatePem: '', subscriptions: ['t'] } }],
+				['subscriptions is missing', { result: { certificatePem: CERT_PEM } }],
+				['subscriptions is empty', { result: { certificatePem: CERT_PEM, subscriptions: [] } }],
+				['every subscription is non-string', { result: { certificatePem: CERT_PEM, subscriptions: [123, null] } }],
+			])('should throw ThinqConnectApiError when %s', async (_label, body) => {
+				// Arrange
+				mockAxios.onPost(CERT_URL).reply(200, { response: body });
+				const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger, CLIENT_ID);
+
+				// Act
+				const error = await captureAsyncError(() => client.requestClientCertificate(CSR_BODY));
+
+				// Assert
+				expect(error).toBeInstanceOf(ThinqConnectApiError);
+			});
+
+			it.each([
+				['result is missing', {}],
+				['result is not an object', { result: 'text' }],
+				['response is null', { response: null }],
+			])('should throw ThinqConnectApiError when %s', async (_label, body) => {
+				// Arrange
+				mockAxios.onPost(CERT_URL).reply(200, body);
+				const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger, CLIENT_ID);
+
+				// Act
+				const error = await captureAsyncError(() => client.requestClientCertificate(CSR_BODY));
+
+				// Assert
+				expect(error).toBeInstanceOf(ThinqConnectApiError);
+				expect((error as ThinqConnectApiError).message).toBe('ThinQ Connect certificate response has no result');
+			});
+
+			it.each(['', '   '])('should throw without sending a request when csr is blank (%j)', async (csr) => {
+				// Arrange
+				const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger, CLIENT_ID);
+
+				// Act
+				const error = await captureAsyncError(() => client.requestClientCertificate(csr));
+
+				// Assert
+				expect(error).toBeInstanceOf(ThinqConnectApiError);
+				expect(mockAxios.history.post).toHaveLength(0);
+			});
+
+			it('should not log the PAT, CSR or certificate when requesting a certificate', async () => {
+				// Arrange
+				mockAxios.onPost(CERT_URL).reply(200, {
+					response: { result: { certificatePem: CERT_PEM, subscriptions: ['app/clients/x/push'] } },
+				});
+				const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger, CLIENT_ID);
+
+				// Act
+				await client.requestClientCertificate(CSR_BODY);
+
+				// Assert
+				const logged = JSON.stringify(collectLogCallArgs(mockLogger));
+				expect(logged).not.toContain(FAKE_PAT);
+				expect(logged).not.toContain(CSR_BODY);
+				expect(logged).not.toContain('CERTDATA');
+			});
+		});
+
+		describe('subscribeDeviceEvents', () => {
+			it.each([
+				[undefined, 24],
+				[1, 1],
+				[12, 12],
+				[24, 24],
+			])('should POST the expire body to /event/{id}/subscribe when hours is %s', async (hours, expected) => {
+				// Arrange
+				mockAxios.onPost(`${EVENT_BASE}/subscribe`).reply(200, {});
+				const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger, CLIENT_ID);
+
+				// Act
+				await client.subscribeDeviceEvents('dev-1', hours);
+
+				// Assert
+				expect(mockAxios.history.post[0]?.url).toBe(`${EVENT_BASE}/subscribe`);
+				expect(JSON.parse(mockAxios.history.post[0]?.data)).toEqual({ expire: { unit: 'HOUR', timer: expected } });
+			});
+
+			it.each([0, 25, 1.5, -1, Number.NaN])(
+				'should throw without sending a request when expiry is %s hours',
+				async (hours) => {
+					// Arrange
+					const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger, CLIENT_ID);
+
+					// Act
+					const error = await captureAsyncError(() => client.subscribeDeviceEvents('dev-1', hours));
+
+					// Assert
+					expect(error).toBeInstanceOf(ThinqConnectApiError);
+					expect(mockAxios.history.post).toHaveLength(0);
+				},
+			);
+
+			it.each(['', 'bad id!', 'dev/1', 'a'.repeat(129)])(
+				'should throw without sending a request when device id is %j',
+				async (deviceId) => {
+					// Arrange
+					const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger, CLIENT_ID);
+
+					// Act
+					const error = await captureAsyncError(() => client.subscribeDeviceEvents(deviceId));
+
+					// Assert
+					expect(error).toBeInstanceOf(ThinqConnectApiError);
+					expect(mockAxios.history.post).toHaveLength(0);
+				},
+			);
+
+			it('should throw with the subscription-limit message when the API returns 1312', async () => {
+				// Arrange
+				mockAxios.onPost(`${EVENT_BASE}/subscribe`).reply(400, { error: { code: '1312', message: 'x' } });
+				const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger, CLIENT_ID);
+
+				// Act
+				const error = await captureAsyncError(() => client.subscribeDeviceEvents('dev-1'));
+
+				// Assert
+				expect(error).toBeInstanceOf(ThinqConnectApiError);
+				expect((error as ThinqConnectApiError).message).toBe(
+					'Too many device event subscriptions for this account. (code 1312)',
+				);
+				expect((error as ThinqConnectApiError).metadata).toEqual({ resultCode: '1312' });
+			});
+		});
+
+		describe('unsubscribeDeviceEvents', () => {
+			it('should send DELETE to /event/{id}/unsubscribe when called', async () => {
+				// Arrange
+				mockAxios.onDelete(`${EVENT_BASE}/unsubscribe`).reply(200, {});
+				const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger, CLIENT_ID);
+
+				// Act
+				await client.unsubscribeDeviceEvents('dev-1');
+
+				// Assert
+				expect(mockAxios.history.delete).toHaveLength(1);
+				expect(mockAxios.history.delete[0]?.method).toBe('delete');
+				expect(mockAxios.history.delete[0]?.url).toBe(`${EVENT_BASE}/unsubscribe`);
+				expect(mockAxios.history.post).toHaveLength(0);
+			});
+
+			it('should throw with the mapped message when the API returns 1204', async () => {
+				// Arrange
+				mockAxios.onDelete(`${EVENT_BASE}/unsubscribe`).reply(400, { error: { code: '1204', message: 'x' } });
+				const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger, CLIENT_ID);
+
+				// Act
+				const error = await captureAsyncError(() => client.unsubscribeDeviceEvents('dev-1'));
+
+				// Assert
+				expect(error).toBeInstanceOf(ThinqConnectApiError);
+				expect((error as ThinqConnectApiError).message).toBe('Device is not subscribed to events. (code 1204)');
+				expect((error as ThinqConnectApiError).metadata).toEqual({ resultCode: '1204' });
+			});
+
+			it.each(['', 'bad id!'])('should throw without sending a request when device id is %j', async (deviceId) => {
+				// Arrange
+				const client = new ThinqConnectApiClient(FAKE_PAT, 'US', mockLogger, CLIENT_ID);
+
+				// Act
+				const error = await captureAsyncError(() => client.unsubscribeDeviceEvents(deviceId));
+
+				// Assert
+				expect(error).toBeInstanceOf(ThinqConnectApiError);
+				expect(mockAxios.history.delete).toHaveLength(0);
+			});
+		});
+	});
 });

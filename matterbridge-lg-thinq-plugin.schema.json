@@ -209,6 +209,12 @@
 																		"description": "The wash course used when Start is triggered. Auto-filled with the washer's own default course on first discovery. Type one of the exact Course IDs listed in \"Available Wash Course IDs\" above to change it \u2014 this field is plain text and does not validate against the list.",
 																		"type": "string"
 																	},
+																	"allowCancelCycle": {
+																		"title": "Allow cancelling a running wash",
+																		"description": "Off by default. When on, Stop and Off from Home during a wash first pause the washer and then power it off, which abandons the cycle (water may stay in the drum and the door may stay locked). When off, Stop and Off are refused during a wash.",
+																		"type": "boolean",
+																		"default": false
+																	},
 																	"courses": {
 																		"title": "Selected Course Parameters (auto-populated)",
 																		"description": "Auto-populated with ONLY the currently selected course's own parameters (temperature, spin, rinse, etc.) \u2014 not every course, to keep this settings page short. Each parameter appears as its own field, labeled with the parameter's name \u2014 edit its text box to override what Start sends. If you change \"Selected Wash Course\" above to a different course, this list is replaced with that new course's own defaults on the next plugin restart. Values are stored as text; number/boolean parameters are converted back automatically when Start is sent.",
@@ -426,6 +432,12 @@
 																			"title": "Selected Wash Course",
 																			"description": "The wash course used when Start is triggered. Auto-filled with the washer's own default course on first discovery. Type one of the exact Course IDs listed in \"Available Wash Course IDs\" above to change it \u2014 this field is plain text and does not validate against the list.",
 																			"type": "string"
+																		},
+																		"allowCancelCycle": {
+																			"title": "Allow cancelling a running wash",
+																			"description": "Off by default. When on, Stop and Off from Home during a wash first pause the washer and then power it off, which abandons the cycle (water may stay in the drum and the door may stay locked). When off, Stop and Off are refused during a wash.",
+																			"type": "boolean",
+																			"default": false
 																		},
 																		"courses": {
 																			"title": "Selected Course Parameters (auto-populated)",

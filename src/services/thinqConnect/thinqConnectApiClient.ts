@@ -14,6 +14,9 @@ const REQUEST_TIMEOUT_MS = 15000;
 const PAT_PATTERN = /^[A-Za-z0-9._~+/=-]+$/;
 const PAT_MIN_LENGTH = 20;
 const PAT_MAX_LENGTH = 512;
+const PUSH_SERVICE_CODE = 'SVC202';
+const PUSH_DEVICE_TYPE = '607';
+const EVENT_MAX_EXPIRE_HOURS = 24;
 const DEVICE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 export interface ThinqConnectDevice {
@@ -200,6 +203,68 @@ export class ThinqConnectApiClient {
 		return this.getEnergyResource(`/devices/energy/${encodeURIComponent(deviceId)}/usage?${params.toString()}`);
 	}
 
+	public getClientId(): string {
+		return this.clientId;
+	}
+
+	public async getRoute(): Promise<{ mqttServer: string }> {
+		const data = await this.get<ThinqConnectResourceResponse>('/route');
+		const mqttServer = isPlainResource(data?.response) ? data.response['mqttServer'] : undefined;
+		if (typeof mqttServer !== 'string' || !mqttServer) {
+			throw new ThinqConnectApiError('ThinQ Connect route response has no mqttServer');
+		}
+		return { mqttServer };
+	}
+
+	public async registerClient(): Promise<void> {
+		await this.post<unknown>('/client', {
+			type: 'MQTT',
+			'service-code': PUSH_SERVICE_CODE,
+			'device-type': PUSH_DEVICE_TYPE,
+			allowExist: true,
+		});
+	}
+
+	public async requestClientCertificate(csrBody: string): Promise<{ certificatePem: string; subscriptions: string[] }> {
+		if (typeof csrBody !== 'string' || !csrBody.trim()) {
+			throw new ThinqConnectApiError('ThinQ Connect certificate request needs a CSR');
+		}
+		const data = await this.post<ThinqConnectResourceResponse>('/client/certificate', {
+			'service-code': PUSH_SERVICE_CODE,
+			csr: csrBody,
+		});
+		const result = isPlainResource(data?.response) ? data.response['result'] : undefined;
+		if (!isPlainResource(result)) {
+			throw new ThinqConnectApiError('ThinQ Connect certificate response has no result');
+		}
+		const certificatePem = result['certificatePem'];
+		if (typeof certificatePem !== 'string' || !certificatePem) {
+			throw new ThinqConnectApiError('ThinQ Connect certificate response has no certificate');
+		}
+		const subscriptions = Array.isArray(result['subscriptions'])
+			? result['subscriptions'].filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
+			: [];
+		if (subscriptions.length === 0) {
+			throw new ThinqConnectApiError('ThinQ Connect certificate response has no subscription');
+		}
+		return { certificatePem, subscriptions };
+	}
+
+	public async subscribeDeviceEvents(deviceId: string, expireHours = EVENT_MAX_EXPIRE_HOURS): Promise<void> {
+		assertValidDeviceId(deviceId);
+		if (!Number.isInteger(expireHours) || expireHours < 1 || expireHours > EVENT_MAX_EXPIRE_HOURS) {
+			throw new ThinqConnectApiError(
+				`ThinQ Connect event expiry must be an integer from 1 to ${EVENT_MAX_EXPIRE_HOURS} hours`,
+			);
+		}
+		await this.post<unknown>(this.eventPath(deviceId, 'subscribe'), { expire: { unit: 'HOUR', timer: expireHours } });
+	}
+
+	public async unsubscribeDeviceEvents(deviceId: string): Promise<void> {
+		assertValidDeviceId(deviceId);
+		await this.delete<unknown>(this.eventPath(deviceId, 'unsubscribe'));
+	}
+
 	public async validateToken(): Promise<ThinqConnectValidationResult> {
 		const devices = await this.getDevices();
 		return { deviceCount: devices.length, devices };
@@ -251,6 +316,24 @@ export class ThinqConnectApiClient {
 		} catch (error) {
 			throw this.toApiError(error);
 		}
+	}
+
+	private async delete<T>(path: string): Promise<T> {
+		const url = `${this.baseUrl}${path}`;
+		this.logger.debug(`ThinQ Connect request -> DELETE ${url}`);
+		try {
+			const { data } = await axios.delete<T>(url, {
+				headers: this.buildHeaders(),
+				timeout: REQUEST_TIMEOUT_MS,
+			});
+			return data;
+		} catch (error) {
+			throw this.toApiError(error);
+		}
+	}
+
+	private eventPath(deviceId: string, action: 'subscribe' | 'unsubscribe'): string {
+		return `/event/${encodeURIComponent(deviceId)}/${action}`;
 	}
 
 	private buildHeaders(): Record<string, string> {

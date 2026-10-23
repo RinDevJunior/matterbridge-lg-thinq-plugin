@@ -20,6 +20,9 @@ export interface AirConditionerProfile {
 	jobMode?: AirConditionerEnumProfile;
 	windStrength?: AirConditionerEnumProfile;
 	targetTemperature?: AirConditionerRangeProfile;
+	temperatureUnit?: AirConditionerTemperatureUnit;
+	celsiusTargetRange?: AirConditionerRangeProfile;
+	windStep?: AirConditionerRangeProfile;
 	rotateUpDown: boolean;
 	rotateLeftRight: boolean;
 	hasHumidity: boolean;
@@ -34,6 +37,8 @@ export interface AirConditionerRawState {
 	currentTemperature?: number;
 	targetTemperature?: number;
 	windStrength?: string;
+	windStep?: number;
+	runState?: string;
 	rotateUpDown?: boolean;
 	rotateLeftRight?: boolean;
 	humidityPercent?: number;
@@ -111,12 +116,40 @@ function readRangeProfile(node: Record<string, unknown> | undefined): AirConditi
 	};
 }
 
+function readTemperatureUnit(profile: ThinqConnectPayload | undefined): AirConditionerTemperatureUnit {
+	const value = readEnumProfile(profileProperty(profile, 'temperature', 'unit'))?.readValues ?? [];
+	return value.includes('F') && !value.includes('C') ? 'F' : 'C';
+}
+
+function readCelsiusTargetRange(profile: ThinqConnectPayload | undefined): AirConditionerRangeProfile | undefined {
+	const properties = firstObject(firstObject(profile)?.property);
+	const entries = properties?.temperatureInUnits;
+	if (!Array.isArray(entries)) {
+		return undefined;
+	}
+	const celsius = entries.find((entry) => isPlainObject(entry) && entry.unit === 'C');
+	if (!isPlainObject(celsius)) {
+		return undefined;
+	}
+	for (const key of ['coolTargetTemperature', 'autoTargetTemperature', 'targetTemperature']) {
+		const node = celsius[key];
+		const range = readRangeProfile(isPlainObject(node) ? node : undefined);
+		if (range) {
+			return range;
+		}
+	}
+	return undefined;
+}
+
 export function readAirConditionerProfile(profile: ThinqConnectPayload | undefined): AirConditionerProfile {
 	return {
 		power: readEnumProfile(profileProperty(profile, 'operation', 'airConOperationMode')),
 		jobMode: readEnumProfile(profileProperty(profile, 'airConJobMode', 'currentJobMode')),
 		windStrength: readEnumProfile(profileProperty(profile, 'airFlow', 'windStrength')),
 		targetTemperature: readRangeProfile(profileProperty(profile, 'temperature', 'targetTemperature')),
+		temperatureUnit: readTemperatureUnit(profile),
+		celsiusTargetRange: readCelsiusTargetRange(profile),
+		windStep: readRangeProfile(profileProperty(profile, 'airFlow', 'windStep')),
 		rotateUpDown: stringItems(profileProperty(profile, 'windDirection', 'rotateUpDown')?.mode).includes('w'),
 		rotateLeftRight: stringItems(profileProperty(profile, 'windDirection', 'rotateLeftRight')?.mode).includes('w'),
 		hasHumidity: profileProperty(profile, 'airQualitySensor', 'humidity') !== undefined,
@@ -149,6 +182,8 @@ export function readAirConditionerState(state: ThinqConnectPayload | undefined):
 		currentTemperature: asNumber(temperature?.currentTemperature),
 		targetTemperature: asNumber(temperature?.targetTemperature),
 		windStrength: asString(airFlow?.windStrength),
+		windStep: asNumber(airFlow?.windStep),
+		runState: asString(firstObject(root.runState)?.currentState),
 		rotateUpDown: asBoolean(windDirection?.rotateUpDown),
 		rotateLeftRight: asBoolean(windDirection?.rotateLeftRight),
 		humidityPercent: asNumber(airQualitySensor?.humidity),
@@ -163,6 +198,86 @@ export function fahrenheitToCelsius(value: number): number {
 
 export function celsiusToFahrenheit(value: number): number {
 	return (value * 9) / 5 + 32;
+}
+
+export function resolveTargetTemperatureUnit(profile: AirConditionerProfile): AirConditionerTemperatureUnit {
+	return profile.temperatureUnit ?? 'C';
+}
+
+export function resolveCelsiusTargetRange(profile: AirConditionerProfile): AirConditionerRangeProfile | undefined {
+	if (resolveTargetTemperatureUnit(profile) === 'C') {
+		return profile.targetTemperature;
+	}
+	const range = profile.targetTemperature;
+	return (
+		profile.celsiusTargetRange ??
+		(range && {
+			...range,
+			min: fahrenheitToCelsius(range.min),
+			max: fahrenheitToCelsius(range.max),
+			step: (range.step * 5) / 9,
+		})
+	);
+}
+
+export function isAirConditionerFaultState(value: string | undefined): boolean {
+	return value !== undefined && /ERROR|FAULT|FAIL/i.test(value);
+}
+
+export interface AirConditionerWindStepScale {
+	min: number;
+	max: number;
+	step: number;
+	count: number;
+}
+
+const WIND_STEP_MIN_COUNT = 2;
+const WIND_STEP_MAX_COUNT = 10;
+
+export function readWindStepScale(profile: AirConditionerProfile): AirConditionerWindStepScale | undefined {
+	const range = profile.windStep;
+	if (!range?.writable) {
+		return undefined;
+	}
+	const { min, max, step } = range;
+	if (!Number.isInteger(min) || !Number.isInteger(max) || !Number.isInteger(step) || step < 1) {
+		return undefined;
+	}
+	const count = Math.floor((max - min) / step) + 1;
+	if (count < WIND_STEP_MIN_COUNT || count > WIND_STEP_MAX_COUNT) {
+		return undefined;
+	}
+	return { min, max, step, count };
+}
+
+export function windStepToPercent(scale: AirConditionerWindStepScale, step: number): number {
+	const index = Math.min(scale.count, Math.max(1, Math.round((step - scale.min) / scale.step) + 1));
+	return Math.round((index * 100) / scale.count);
+}
+
+export function percentToWindStep(scale: AirConditionerWindStepScale, percent: number): number | undefined {
+	if (percent <= 0) {
+		return undefined;
+	}
+	const index = Math.min(scale.count, Math.max(1, Math.ceil((percent * scale.count) / 100)));
+	return scale.min + (index - 1) * scale.step;
+}
+
+export function evaluateAirConditionerWindStepWrite(profile: AirConditionerProfile, step: number): string | undefined {
+	const range = profile.windStep;
+	if (!range) {
+		return 'Profile has no airFlow.windStep.';
+	}
+	if (!range.writable) {
+		return 'airFlow.windStep is not writable for this device.';
+	}
+	if (!Number.isInteger(step) || step < range.min || step > range.max) {
+		return `Wind step ${step} is outside the profile range ${range.min}-${range.max}.`;
+	}
+	if (range.step > 0 && (step - range.min) % range.step !== 0) {
+		return `Wind step ${step} is not aligned to the profile step ${range.step}.`;
+	}
+	return undefined;
 }
 
 export function filterRemainingPercent(state: AirConditionerRawState): number | undefined {
@@ -228,6 +343,10 @@ export function buildAirConditionerTargetTemperaturePayload(
 
 export function buildAirConditionerWindStrengthPayload(strength: string): ThinqConnectResource {
 	return { airFlow: { windStrength: strength } };
+}
+
+export function buildAirConditionerWindStepPayload(step: number): ThinqConnectResource {
+	return { airFlow: { windStep: step } };
 }
 
 export function buildAirConditionerSwingPayload(axes: {

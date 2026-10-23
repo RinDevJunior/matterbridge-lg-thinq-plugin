@@ -1,7 +1,7 @@
 <!--
 Pull request template. Fill every section; delete a section only if it truly does not apply.
 Keep it short and in simple English. Do NOT add a "Generated with" line.
-Trailer: end the PR description with the attribution line given by the session (the claude.ai/code/session link) when present; never hard-code it here.
+No trailer: do NOT end the PR description with a claude.ai/code/session link or any other attribution line, even when the session offers one.
 Title: conventional-commit style, general, no tool or source names
 (example: `feat: report washer state in Matterbridge when ThinQ goes offline`).
 -->

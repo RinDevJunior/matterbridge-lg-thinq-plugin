@@ -7,6 +7,8 @@ import { cmdConnectSettings } from './commands/connectSettings.js';
 import { cmdDevices } from './commands/devices.js';
 import { cmdEnergy, parseEnergyOptions } from './commands/energy.js';
 import { type CliLoginType, cmdLogin } from './commands/login.js';
+import { cmdWasherControl, parseWasherControlOptions } from './commands/washerControl.js';
+import { cmdWasherStatus, parseWasherStatusOptions } from './commands/washerStatus.js';
 import { HELP_TEXT } from './help.js';
 import { type OutputCapture, startOutputCapture } from './outputCapture.js';
 import { loadPatSession, loadSession } from './session.js';
@@ -139,6 +141,32 @@ export async function main(): Promise<void> {
 				{ deviceId: args['device-id'], send: args['send'], yes: args['yes'] === 'true', waitSeconds },
 				logger,
 			);
+			return;
+		}
+
+		if (command === 'washer-status') {
+			const statusOptions = parseWasherStatusOptions(args);
+			const session = loadSession();
+			if (!session) {
+				console.error('No session found. Run `--command login` first.');
+				process.exitCode = 1;
+				return;
+			}
+
+			await cmdWasherStatus(session, statusOptions, logger);
+			return;
+		}
+
+		if (command === 'washer-control') {
+			const controlOptions = parseWasherControlOptions(args);
+			const session = loadSession();
+			if (!session) {
+				console.error('No session found. Run `--command login` first.');
+				process.exitCode = 1;
+				return;
+			}
+
+			await cmdWasherControl(session, controlOptions, logger);
 			return;
 		}
 

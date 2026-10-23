@@ -8,7 +8,7 @@ import {
 	TemperatureMeasurement,
 	Thermostat,
 } from 'matterbridge/matter/clusters';
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import {
 	fahrenheitToCelsius,
@@ -25,12 +25,20 @@ import {
 } from '../../thinqConnect/thinqConnectAirConditionerEndpoint.js';
 import type {
 	ThinqConnectAirConditioner,
+	ThinqConnectAirConditionerOutcome,
 	ThinqConnectAirConditionerService,
 	ThinqConnectAirConditionerState,
 } from '../../thinqConnect/thinqConnectAirConditionerService.js';
+import { THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS } from '../../thinqConnect/thinqConnectDeferredApply.js';
 import type { ThinqConnectMatterIdentityOverride } from '../../thinqConnect/thinqConnectMatterIdentity.js';
 import { createMockLogger } from '../helpers/testUtils.js';
-import { BEDROOM_PROFILE, STUDY_PROFILE } from '../helpers/thinqConnectAirConditionerFixtures.js';
+import {
+	BEDROOM_PROFILE,
+	FAHRENHEIT_PROFILE,
+	FAHRENHEIT_PROFILE_NO_CELSIUS_ENTRY,
+	STUDY_PROFILE,
+	STUDY_PROFILE_FULL,
+} from '../helpers/thinqConnectAirConditionerFixtures.js';
 
 const mocks = vi.hoisted(() => {
 	const child = { updateAttribute: vi.fn().mockResolvedValue(undefined) };
@@ -377,11 +385,23 @@ describe('thinqConnectAirConditionerEndpoint', () => {
 	});
 
 	describe('on and off command handlers', () => {
+		const outcomeOf = (promise: Promise<void>): Promise<string> =>
+			promise.then(
+				() => 'resolved',
+				(error: unknown) => `rejected: ${error instanceof Error ? error.message : String(error)}`,
+			);
+
 		beforeEach(() => {
+			vi.useFakeTimers();
 			buildThinqConnectAirConditionerEndpoint(buildStudyAc(), service, logger);
 		});
 
-		it('should call setPower with true and write OnOff only after the service resolved', async () => {
+		afterEach(() => {
+			vi.clearAllTimers();
+			vi.useRealTimers();
+		});
+
+		it('should call setPower with true and not write OnOff in the handler when the command was sent', async () => {
 			// Arrange
 			service.setPower.mockResolvedValue({ status: 'sent', state: { powerOn: true } });
 
@@ -390,53 +410,140 @@ describe('thinqConnectAirConditionerEndpoint', () => {
 
 			// Assert
 			expect(service.setPower).toHaveBeenCalledWith(expect.objectContaining({ deviceId: 'study-ac' }), true);
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
+		});
+
+		it('should write OnOff and systemMode after the deferred delay when the command was sent', async () => {
+			// Arrange
+			service.setPower.mockResolvedValue({ status: 'sent', state: { powerOn: true } });
+
+			// Act
+			await getCommandHandler('on')();
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', true, logger);
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				Thermostat.id,
+				'systemMode',
+				Thermostat.SystemMode.Cool,
+				logger,
+			);
 			expect(mocks.endpoint.updateAttribute.mock.invocationCallOrder[0]).toBeGreaterThan(
 				service.setPower.mock.invocationCallOrder[0] ?? 0,
 			);
+		});
+
+		it('should write the requested power state after the deferred delay when the noop state is empty', async () => {
+			// Arrange
+			service.setPower.mockResolvedValue({ status: 'noop', state: {} });
+
+			// Act
+			await getCommandHandler('on')();
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
+
+			// Assert
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', true, logger);
 		});
 
-		it('should write the real power state back after a refused outcome', async () => {
+		it('should reject with the reason and write the real power state later when the outcome is refused', async () => {
 			// Arrange
 			service.setPower.mockResolvedValue({ status: 'refused', reason: 'guard', state: { powerOn: false } });
 
 			// Act
-			await getCommandHandler('on')();
+			const rejection = getCommandHandler('on')();
+
+			// Assert
+			await expect(rejection).rejects.toThrow('guard');
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
+
+			// Act
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
 
 			// Assert
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', false, logger);
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				Thermostat.id,
+				'systemMode',
+				Thermostat.SystemMode.Off,
+				logger,
+			);
 		});
 
-		it('should write the requested inverse after a failed outcome with empty state', async () => {
+		it('should reject with the error and write the requested inverse later when the outcome is failed with empty state', async () => {
 			// Arrange
 			service.setPower.mockResolvedValue({ status: 'failed', error: 'boom', state: {} });
 
 			// Act
-			await getCommandHandler('off')();
+			const rejection = getCommandHandler('off')();
 
 			// Assert
+			await expect(rejection).rejects.toThrow('boom');
 			expect(service.setPower).toHaveBeenCalledWith(expect.anything(), false);
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
+
+			// Act
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
+
+			// Assert
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', true, logger);
 		});
 
-		it('should resolve and log the error when setPower rejects', async () => {
+		it('should reject with the same error and never write when setPower rejects', async () => {
 			// Arrange
 			service.setPower.mockRejectedValue(new Error('service exploded'));
 
-			// Act & Assert
-			await expect(getCommandHandler('on')()).resolves.toBeUndefined();
+			// Act
+			const rejection = getCommandHandler('on')();
+
+			// Assert
+			await expect(rejection).rejects.toThrow('service exploded');
 			expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('service exploded'));
+
+			// Act
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
 		});
 
-		it('should resolve and log the error when updateAttribute rejects', async () => {
+		it('should resolve and log the error from the deferred write when updateAttribute rejects', async () => {
 			// Arrange
 			service.setPower.mockResolvedValue({ status: 'sent', state: { powerOn: true } });
 			mocks.endpoint.updateAttribute.mockRejectedValue(new Error('write failed'));
 
-			// Act & Assert
+			// Act
 			await expect(getCommandHandler('on')()).resolves.toBeUndefined();
+			await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
+
+			// Assert
 			expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('write failed'));
 		});
+
+		it.each<[string, string, ThinqConnectAirConditionerOutcome, string]>([
+			['on', 'sent', { status: 'sent', state: { powerOn: true } }, 'resolved'],
+			['on', 'noop', { status: 'noop', state: { powerOn: true } }, 'resolved'],
+			['on', 'refused', { status: 'refused', reason: 'guard', state: { powerOn: false } }, 'rejected: guard'],
+			['on', 'failed', { status: 'failed', error: 'boom', state: {} }, 'rejected: boom'],
+			['off', 'sent', { status: 'sent', state: { powerOn: false } }, 'resolved'],
+			['off', 'noop', { status: 'noop', state: { powerOn: false } }, 'resolved'],
+			['off', 'refused', { status: 'refused', reason: 'guard', state: { powerOn: true } }, 'rejected: guard'],
+			['off', 'failed', { status: 'failed', error: 'boom', state: {} }, 'rejected: boom'],
+		])(
+			'should settle the %s handler for a %s outcome while the OnOff write never resolves',
+			async (command, _status, outcome, expected) => {
+				// Arrange
+				mocks.endpoint.updateAttribute.mockImplementation(() => new Promise<void>(() => {}));
+				service.setPower.mockResolvedValue(outcome);
+
+				// Act
+				const settled = outcomeOf(getCommandHandler(command)());
+				await vi.advanceTimersByTimeAsync(THINQ_CONNECT_DEFERRED_APPLY_DELAY_MS);
+
+				// Assert
+				await expect(settled).resolves.toBe(expected);
+			},
+		);
 	});
 
 	describe('occupiedCoolingSetpoint subscription', () => {
@@ -1240,6 +1347,379 @@ describe('thinqConnectAirConditionerEndpoint', () => {
 				[roomAirConditioner, powerSource],
 				expect.objectContaining({ id: 'StudyRoomAC-study-ac' }),
 			);
+		});
+
+		describe('legacyId (account-login id) identity', () => {
+			const LEGACY_AC_ID = '1071d158-7a31-4e89-a230-7c013e1ff938';
+
+			it('should use the legacy id in the endpoint id and as serial when legacyId is set', () => {
+				// Arrange
+				const identity: ThinqConnectMatterIdentityOverride = { legacyId: LEGACY_AC_ID };
+
+				// Act
+				buildThinqConnectAirConditionerEndpoint(buildStudyAc(), service, logger, identity);
+
+				// Assert
+				expect(MatterbridgeEndpoint).toHaveBeenCalledWith(
+					[roomAirConditioner, powerSource],
+					expect.objectContaining({ id: `StudyRoomAC-${LEGACY_AC_ID}` }),
+				);
+				expect(mocks.endpoint.createDefaultBasicInformationClusterServer).toHaveBeenCalledWith(
+					'Study Room AC',
+					LEGACY_AC_ID,
+					0xfff1,
+					'Matterbridge',
+					0x8000,
+					'LG Air Conditioner',
+				);
+				expect(mocks.endpoint.mode).toBe('server');
+			});
+
+			it('should keep the existing study-ac id and serial when legacyId is undefined', () => {
+				// Arrange
+				const identity: ThinqConnectMatterIdentityOverride = { legacyId: undefined };
+
+				// Act
+				buildThinqConnectAirConditionerEndpoint(buildStudyAc(), service, logger, identity);
+
+				// Assert
+				expect(MatterbridgeEndpoint).toHaveBeenCalledWith(
+					[roomAirConditioner, powerSource],
+					expect.objectContaining({ id: 'StudyRoomAC-study-ac' }),
+				);
+				expect(mocks.endpoint.createDefaultBasicInformationClusterServer).toHaveBeenCalledWith(
+					'Study Room AC',
+					'study-ac',
+					0xfff1,
+					'Matterbridge',
+					0x8000,
+					'LG Air Conditioner',
+				);
+			});
+
+			it('should remove spaces from both the name and the legacy id in the endpoint id', () => {
+				// Arrange
+				const identity: ThinqConnectMatterIdentityOverride = { legacyId: 'legacy id 1' };
+
+				// Act
+				buildThinqConnectAirConditionerEndpoint(buildStudyAc(), service, logger, identity);
+
+				// Assert
+				expect(MatterbridgeEndpoint).toHaveBeenCalledWith(
+					[roomAirConditioner, powerSource],
+					expect.objectContaining({ id: 'StudyRoomAC-legacyid1' }),
+				);
+				expect(mocks.endpoint.createDefaultBasicInformationClusterServer).toHaveBeenCalledWith(
+					'Study Room AC',
+					'legacy id 1',
+					expect.anything(),
+					expect.anything(),
+					expect.anything(),
+					expect.anything(),
+				);
+			});
+
+			it('should send the power command with the original air conditioner when legacyId is set', async () => {
+				// Arrange
+				const ac = buildStudyAc();
+				service.setPower.mockResolvedValue({ status: 'sent', state: { powerOn: true } });
+				buildThinqConnectAirConditionerEndpoint(ac, service, logger, { legacyId: LEGACY_AC_ID });
+
+				// Act
+				await getCommandHandler('on')();
+
+				// Assert
+				expect(service.setPower).toHaveBeenCalledWith(ac, true);
+				expect(service.setPower.mock.calls[0]?.[0].deviceId).toBe('study-ac');
+			});
+		});
+	});
+});
+
+describe('thinqConnectAirConditionerEndpoint Fahrenheit and windStep', () => {
+	type WindStepMockService = MockService & { setWindStep: Mock<ThinqConnectAirConditionerService['setWindStep']> };
+
+	let logger: ReturnType<typeof createMockLogger>;
+	let service: WindStepMockService;
+
+	function buildWindStepService(): WindStepMockService {
+		return { ...createMockService(), setWindStep: vi.fn<ThinqConnectAirConditionerService['setWindStep']>() };
+	}
+
+	function buildFullStudyAc(): ThinqConnectAirConditioner {
+		return { deviceId: 'study-ac', name: 'Study Room AC', profile: readAirConditionerProfile(STUDY_PROFILE_FULL) };
+	}
+
+	function buildFahrenheitAc(): ThinqConnectAirConditioner {
+		return { deviceId: 'study-ac', name: 'Study Room AC', profile: readAirConditionerProfile(FAHRENHEIT_PROFILE) };
+	}
+
+	function buildFahrenheitNoCelsiusAc(): ThinqConnectAirConditioner {
+		return {
+			deviceId: 'study-ac',
+			name: 'Study Room AC',
+			profile: readAirConditionerProfile(FAHRENHEIT_PROFILE_NO_CELSIUS_ENTRY),
+		};
+	}
+
+	const build = (ac: ThinqConnectAirConditioner) => buildThinqConnectAirConditionerEndpoint(ac, service, logger);
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		logger = createMockLogger();
+		service = buildWindStepService();
+		mocks.endpoint.getChildEndpointById.mockReturnValue(mocks.child);
+		mocks.endpoint.getAttribute.mockReturnValue(undefined);
+		mocks.endpoint.updateAttribute.mockResolvedValue(undefined);
+		mocks.endpoint.mode = undefined;
+	});
+
+	describe('thermostat limits in Celsius', () => {
+		it('should pass the 16-30 C limits for a Fahrenheit profile that has a Celsius entry', () => {
+			// Arrange & Act
+			build(buildFahrenheitAc());
+
+			// Assert
+			expect(mocks.endpoint.createDefaultCoolingThermostatClusterServer).toHaveBeenCalledWith(23, 23, 16, 30);
+		});
+
+		it('should convert the Fahrenheit range to 16-30 C when the profile has no Celsius entry', () => {
+			// Arrange & Act
+			build(buildFahrenheitNoCelsiusAc());
+
+			// Assert
+			expect(mocks.endpoint.createDefaultCoolingThermostatClusterServer).toHaveBeenCalledWith(23, 23, 16, 30);
+		});
+
+		it('should keep the 16-30 C limits for the Celsius profile (regression)', () => {
+			// Arrange & Act
+			build(buildFullStudyAc());
+
+			// Assert
+			expect(mocks.endpoint.createDefaultCoolingThermostatClusterServer).toHaveBeenCalledWith(23, 23, 16, 30);
+		});
+	});
+
+	describe('setpoint on a Fahrenheit profile', () => {
+		it('should pass the Celsius setpoint to setTargetTemperature when the Matter setpoint changes', async () => {
+			// Arrange
+			service.setTargetTemperature.mockResolvedValue({ status: 'noop', state: {} });
+			build(buildFahrenheitAc());
+
+			// Act
+			getSubscriber(Thermostat.id, 'occupiedCoolingSetpoint')(2200, 2300, LIVE);
+
+			// Assert
+			await vi.waitFor(() => {
+				expect(service.setTargetTemperature).toHaveBeenCalledWith(
+					expect.objectContaining({ deviceId: 'study-ac' }),
+					22,
+				);
+			});
+		});
+	});
+
+	describe('fan percent with a writable windStep scale', () => {
+		it('should call setWindStep with the mapped step and not setWindStrength for percent 40 from a fabric write', async () => {
+			// Arrange
+			service.setWindStep.mockResolvedValue({ status: 'sent', state: { windStep: 2 } });
+			build(buildFullStudyAc());
+
+			// Act
+			getSubscriber(FanControl.id, 'percentSetting')(40, 20, LIVE);
+
+			// Assert
+			await vi.waitFor(() => {
+				expect(service.setWindStep).toHaveBeenCalledWith(expect.objectContaining({ deviceId: 'study-ac' }), 2);
+			});
+			await vi.waitFor(() => {
+				expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(FanControl.id, 'percentCurrent', 40, logger);
+			});
+			expect(service.setWindStrength).not.toHaveBeenCalled();
+		});
+
+		it('should revert percent 0 to the old value without calling any service', async () => {
+			// Arrange
+			build(buildFullStudyAc());
+
+			// Act
+			getSubscriber(FanControl.id, 'percentSetting')(0, 40, LIVE);
+
+			// Assert
+			await vi.waitFor(() => {
+				expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(FanControl.id, 'percentSetting', 40, logger);
+			});
+			expect(service.setWindStep).not.toHaveBeenCalled();
+		});
+
+		it('should ignore a percent write that is not from a fabric', () => {
+			// Arrange
+			build(buildFullStudyAc());
+
+			// Act
+			getSubscriber(FanControl.id, 'percentSetting')(40, 20, IGNORED);
+
+			// Assert
+			expect(service.setWindStep).not.toHaveBeenCalled();
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalled();
+		});
+
+		it('should restore the percent from the state when setWindStep is refused', async () => {
+			// Arrange
+			service.setWindStep.mockResolvedValue({
+				status: 'refused',
+				reason: 'Air conditioner is off; refusing to change settings.',
+				state: { powerOn: false, windStep: 5, windStrength: 'HIGH' },
+			});
+			build(buildFullStudyAc());
+
+			// Act
+			getSubscriber(FanControl.id, 'percentSetting')(40, 20, LIVE);
+
+			// Assert
+			await vi.waitFor(() => {
+				expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(FanControl.id, 'percentSetting', 100, logger);
+			});
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalledWith(FanControl.id, 'percentSetting', 20, logger);
+		});
+
+		it('should revert the percent to the old value when setWindStep fails and the state has no windStep', async () => {
+			// Arrange
+			service.setWindStep.mockResolvedValue({ status: 'failed', error: 'control rejected', state: {} });
+			build(buildFullStudyAc());
+
+			// Act
+			getSubscriber(FanControl.id, 'percentSetting')(40, 20, LIVE);
+
+			// Assert
+			await vi.waitFor(() => {
+				expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(FanControl.id, 'percentSetting', 20, logger);
+			});
+		});
+
+		it('should send MID through setWindStrength for percent 66 when the service has no setWindStep', async () => {
+			// Arrange
+			const legacy = createMockService();
+			legacy.setWindStrength.mockResolvedValue({ status: 'noop', state: {} });
+			buildThinqConnectAirConditionerEndpoint(buildFullStudyAc(), legacy, logger);
+
+			// Act
+			getSubscriber(FanControl.id, 'percentSetting')(66, 20, LIVE);
+
+			// Assert
+			await vi.waitFor(() => {
+				expect(legacy.setWindStrength).toHaveBeenCalledWith(expect.objectContaining({ deviceId: 'study-ac' }), 'MID');
+			});
+		});
+
+		it('should send MID through setWindStrength for percent 66 when the profile has no windStep', async () => {
+			// Arrange
+			service.setWindStrength.mockResolvedValue({ status: 'noop', state: {} });
+			build(buildStudyAc());
+
+			// Act
+			getSubscriber(FanControl.id, 'percentSetting')(66, 20, LIVE);
+
+			// Assert
+			await vi.waitFor(() => {
+				expect(service.setWindStrength).toHaveBeenCalledWith(expect.objectContaining({ deviceId: 'study-ac' }), 'MID');
+			});
+			expect(service.setWindStep).not.toHaveBeenCalled();
+		});
+
+		it('should route a fanMode High write through setWindStrength even with a windStep profile', async () => {
+			// Arrange
+			service.setWindStrength.mockResolvedValue({ status: 'noop', state: {} });
+			build(buildFullStudyAc());
+
+			// Act
+			getSubscriber(FanControl.id, 'fanMode')(FanControl.FanMode.High, FanControl.FanMode.Low, LIVE);
+
+			// Assert
+			await vi.waitFor(() => {
+				expect(service.setWindStrength).toHaveBeenCalledWith(expect.objectContaining({ deviceId: 'study-ac' }), 'HIGH');
+			});
+			expect(service.setWindStep).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('applyThinqConnectAirConditionerState with a windStep profile', () => {
+		it('should write percent 100 and fanMode High for HIGH at wind step 5', async () => {
+			// Arrange
+			const ac = buildFullStudyAc();
+			const endpoint = build(ac);
+
+			// Act
+			await applyThinqConnectAirConditionerState(endpoint, ac, { windStrength: 'HIGH', windStep: 5 }, logger);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(FanControl.id, 'percentCurrent', 100, logger);
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(FanControl.id, 'percentSetting', 100, logger);
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				FanControl.id,
+				'fanMode',
+				FanControl.FanMode.High,
+				logger,
+			);
+		});
+
+		it('should write fanMode Auto and no percent for AUTO wind strength', async () => {
+			// Arrange
+			const ac = buildFullStudyAc();
+			const endpoint = build(ac);
+
+			// Act
+			await applyThinqConnectAirConditionerState(endpoint, ac, { windStrength: 'AUTO', windStep: 3 }, logger);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				FanControl.id,
+				'fanMode',
+				FanControl.FanMode.Auto,
+				logger,
+			);
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalledWith(
+				FanControl.id,
+				'percentCurrent',
+				expect.anything(),
+				logger,
+			);
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalledWith(
+				FanControl.id,
+				'percentSetting',
+				expect.anything(),
+				logger,
+			);
+		});
+
+		it('should write percent 40 and no fanMode when only windStep is known', async () => {
+			// Arrange
+			const ac = buildFullStudyAc();
+			const endpoint = build(ac);
+
+			// Act
+			await applyThinqConnectAirConditionerState(endpoint, ac, { windStep: 2 }, logger);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(FanControl.id, 'percentSetting', 40, logger);
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalledWith(
+				FanControl.id,
+				'fanMode',
+				expect.anything(),
+				logger,
+			);
+		});
+
+		it('should write percent 90 from the old map when the profile has no windStep', async () => {
+			// Arrange
+			const ac = buildStudyAc();
+			const endpoint = build(ac);
+
+			// Act
+			await applyThinqConnectAirConditionerState(endpoint, ac, { windStrength: 'HIGH' }, logger);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(FanControl.id, 'percentCurrent', 90, logger);
 		});
 	});
 });

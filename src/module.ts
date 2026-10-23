@@ -25,8 +25,19 @@ import { PLUGIN_NAME } from './settings.js';
 import { applyThinqConnectAirConditionerState } from './thinqConnect/thinqConnectAirConditionerEndpoint.js';
 import { registerThinqConnectAirConditioners } from './thinqConnect/thinqConnectAirConditionerRegistration.js';
 import type { ThinqConnectAirConditioner } from './thinqConnect/thinqConnectAirConditionerService.js';
+import { loadOrCreateThinqConnectClientId } from './thinqConnect/thinqConnectClientId.js';
 import { syncThinqConnectDeviceConfigEntries } from './thinqConnect/thinqConnectDeviceConfigReconciler.js';
-import type { ThinqConnectMatterIdentityOverride } from './thinqConnect/thinqConnectMatterIdentity.js';
+import {
+	createThinqConnectIdentityMapping,
+	ensureIdentityMappingFile,
+	IDENTITY_MAPPING_FILE_NAME,
+	loadIdentityMapping,
+	type ThinqConnectIdentityMapping,
+} from './thinqConnect/thinqConnectIdentityMapping.js';
+import {
+	resolveThinqConnectMatterIdentity as buildThinqConnectMatterIdentity,
+	type ThinqConnectMatterIdentityOverride,
+} from './thinqConnect/thinqConnectMatterIdentity.js';
 import { ThinqConnectServiceContainer } from './thinqConnect/thinqConnectServiceContainer.js';
 import { applyThinqConnectWasherState } from './thinqConnect/thinqConnectWasherEndpoint.js';
 import { registerThinqConnectWashers } from './thinqConnect/thinqConnectWasherRegistration.js';
@@ -63,6 +74,7 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 	private thinqPollingIntervalMs: number | undefined;
 	private readonly thinqDeviceKindById = new Map<string, 'AC' | 'WASHER'>();
 	private readonly filterMonitoringDeviceIds: string[] = [];
+	private identityMapping: ThinqConnectIdentityMapping | undefined;
 
 	constructor(
 		matterbridge: PlatformMatterbridge,
@@ -94,8 +106,53 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 						personalAccessToken: this.configManager.thinqPersonalAccessToken ?? '',
 						country: this.configManager.country,
 						pollIntervalSeconds: this.configManager.thinqRefreshIntervalSeconds,
+						clientId: this.loadThinqConnectClientId(),
 					})
 				: undefined;
+		this.ensureIdentityMappingFile();
+	}
+
+	private identityMappingPath(): string {
+		return Path.join(this.matterbridge.matterbridgePluginDirectory, PLUGIN_NAME, IDENTITY_MAPPING_FILE_NAME);
+	}
+
+	private ensureIdentityMappingFile(): void {
+		const filePath = this.identityMappingPath();
+		try {
+			if (ensureIdentityMappingFile(filePath) === 'created') {
+				this.log.info(`Created ${IDENTITY_MAPPING_FILE_NAME} template at ${filePath}`);
+			}
+		} catch (error) {
+			this.log.warn(
+				`could not create ${IDENTITY_MAPPING_FILE_NAME}: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+	}
+
+	private loadIdentityMapping(): ThinqConnectIdentityMapping {
+		const parsed = loadIdentityMapping(this.identityMappingPath());
+		for (const warning of parsed.warnings) {
+			this.log.warn(`ThinQ Connect: ${warning}`);
+		}
+		if (parsed.entries.size > 0) {
+			this.log.info(
+				`ThinQ Connect: loaded ${parsed.entries.size} device mapping(s) from ${IDENTITY_MAPPING_FILE_NAME}.`,
+			);
+		}
+		return createThinqConnectIdentityMapping(parsed.entries);
+	}
+
+	private loadThinqConnectClientId(): string | undefined {
+		try {
+			return loadOrCreateThinqConnectClientId(
+				Path.join(this.matterbridge.matterbridgePluginDirectory, PLUGIN_NAME, 'thinq-connect-client-id.json'),
+			);
+		} catch (error) {
+			this.log.warn(
+				`ThinQ Connect: could not store the client id, using a temporary one: ${error instanceof Error ? error.message : String(error)}`,
+			);
+			return undefined;
+		}
 	}
 
 	// #region Lifecycle
@@ -236,6 +293,7 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 		this.log.notice('onShutdown called with reason:', reason ?? 'none');
 
 		if (this.thinqConnectServices) {
+			await this.thinqConnectServices.stopPush();
 			this.thinqConnectServices.shutdown();
 		} else {
 			this.thinqServices.getDeviceService().stopPolling();
@@ -257,6 +315,7 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 	 * (LaundryWasher / room air conditioner).
 	 */
 	private async startThinqConnectDevices(): Promise<void> {
+		this.identityMapping = this.loadIdentityMapping();
 		const container = this.thinqConnectServices;
 		if (!container) {
 			throw new Error('ThinQ Connect services not initialized');
@@ -281,6 +340,7 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 
 		this.log.notice(`ThinQ Connect (PAT): registered ${this.thinqConnectWashers.length} washer(s).`);
 
+		let airConditionerDiscoveryFailed = false;
 		try {
 			this.thinqConnectAirConditioners = await registerThinqConnectAirConditioners({
 				service: container.getAirConditionerService(),
@@ -292,11 +352,19 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 				remember: (id, endpoint) => this.registry.register(id, endpoint),
 			});
 		} catch (error) {
+			airConditionerDiscoveryFailed = true;
 			this.log.error(
 				`ThinQ Connect (PAT): air conditioner discovery failed: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		}
 		this.log.notice(`ThinQ Connect (PAT): registered ${this.thinqConnectAirConditioners.length} air conditioner(s).`);
+		if (!airConditionerDiscoveryFailed) {
+			for (const id of this.identityMapping?.unmatchedConnectIds() ?? []) {
+				this.log.warn(
+					`ThinQ Connect: ${IDENTITY_MAPPING_FILE_NAME} entry ${id} matches no supported washer or air conditioner.`,
+				);
+			}
+		}
 
 		if (this.thinqConnectWashers.length === 0 && this.thinqConnectAirConditioners.length === 0) {
 			this.log.notice(
@@ -306,19 +374,17 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 	}
 
 	/**
-	 * Resolves the same per-device Matter overrides V1 applies (`overrideMatterConfiguration` gated),
+	 * Resolves the per-device Matter identity (V1-equivalent overrides plus any `serial-number-mapping` legacy id)
 	 * as plain data. Undefined fields fall back to the ThinQ Connect builder defaults.
 	 */
 	private resolveThinqConnectMatterIdentity(deviceId: string): ThinqConnectMatterIdentityOverride {
-		const vendor = this.configManager.overrideMatterConfiguration
-			? this.configManager.matterOverrideSettings
-			: undefined;
-		return {
-			vendorId: vendor?.matterVendorId,
-			vendorName: vendor?.matterVendorName,
-			productId: this.configManager.getProductIdForDevice(deviceId),
-			productName: this.configManager.getProductNameForDevice(deviceId),
-		};
+		return buildThinqConnectMatterIdentity(deviceId, {
+			overrideMatterConfiguration: this.configManager.overrideMatterConfiguration,
+			vendor: this.configManager.matterOverrideSettings,
+			getProductId: (id) => this.configManager.getProductIdForDevice(id),
+			getProductName: (id) => this.configManager.getProductNameForDevice(id),
+			legacyIdFor: (id) => this.identityMapping?.legacyIdFor(id),
+		});
 	}
 
 	private startThinqConnectPolling(): void {
@@ -356,6 +422,7 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 				});
 			});
 		this.log.debug(`ThinQ Connect polling started at ${container.pollIntervalMs}ms interval`);
+		container.startPush({ washers: this.thinqConnectWashers, airConditioners: this.thinqConnectAirConditioners });
 	}
 
 	/**

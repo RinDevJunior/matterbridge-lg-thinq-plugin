@@ -6,6 +6,8 @@
 
 ### Added
 
+- **V1 washer control through the LG app's vtCtrl command (models with uniProtocol)** — with account or token login, supported washers can be turned on and off, started, paused, resumed and stopped from Home. Start takes two taps: the first selects the `Selected Wash Course` and asks you to press Remote Control on the washer, the second starts the wash. Every command re-reads the washer first and refuses when the state does not fit. Power on has not been tested on a real washer yet.
+- **`allowCancelCycle` setting (washer)** — `Allow cancelling a running wash` (off by default). Stop and Off are refused during a wash unless it is on; then the washer is paused and powered off.
 - **Personal Access Token (PAT) login type** — a new `pat` login type for the official ThinQ Connect API, in the plugin config and the CLI (`login --type pat`).
 - **Air conditioners with PAT login** — ThinQ Connect air conditioners are registered with power, target temperature (Celsius), fan speed, swing, room temperature, humidity (where reported) and read-only filter life. Home shows Cool and Off.
 - **ThinQ Connect container with Google Home washer on/off** — with PAT login, the washer on/off can be controlled from Google Home; state is polled every `refreshIntervalSeconds` (minimum 15 s).
@@ -19,9 +21,16 @@
 - **`connect-probe --energy`** — a read-only call to the Energy API.
 - **`connect-settings` CLI command** — a read-only list of every ThinQ Connect profile property with its current value and allowed values.
 - **Global `--out <file>` option** — saves the output of any command except `login` to a private file.
+- **Push updates (ThinQ Connect)** — PAT login now receives device events over MQTT and re-reads the state on each event. Polling stays as a fallback and slows to a 5 minute safety net while push is healthy; there is no new setting. Not yet tested against the real LG service.
+- **Finer air conditioner fan steps (ThinQ Connect)** — the fan slider uses the unit's `windStep` levels (20/40/60/80/100 %) when it reports them.
+- **Air conditioner error warning (ThinQ Connect)** — an air conditioner that reports ERROR logs one warning per change, and one message when it recovers.
+- **Keep your Matter pairing when switching to PAT login** — an optional `serial-number-mapping` file in the plugin storage folder maps a ThinQ Connect device id to its old account-login device id so the PAT device keeps the same Matter identity. Not yet tested on hardware.
+- **`washer-status` and `washer-control` CLI commands (legacy V1 login)** — `washer-status` is a read-only view of the washer snapshot and model controls; `washer-control` sends one guarded command (wake, osp-wake, download-off, download-on) and is a dry run unless `--yes` is given. Used to test whether the legacy API can send a course to the washer. Not used by the plugin runtime; no behavior change.
+- **`washer-control` vtCtrl sends (legacy V1 login)** — new `--send vt-course`, `vt-start`, `vt-pause`, `vt-power-on`, `vt-resume` and `vt-power-off` use the LG app's own `vtCtrl` command, with `--rinse`, `--soil`, `--variant` and `--allow-interrupt` (vt-power-off only) options. Same safety rules as before: dry run unless `--yes`, state guards, and `vt-start` and `vt-resume` also need `--allow-start`. After a send it polls the status like the app and prints a verdict. Used to test whether the legacy API can send a course to the washer; not used by the plugin runtime; no behavior change.
 
 ### Changed
 
+- **Washers that support vtCtrl no longer use the older WMStart/WMControl commands** — other V1 washer models and ThinQ Connect washers are unchanged.
 - **PAT devices run in server mode** — with PAT login, washers and air conditioners are now standalone Matter nodes, each paired on its own, like the account login. They get new device IDs: remove the old PAT devices from your controller and pair them again.
 - **Real LG serial number for V1 devices** — V1 (account and token login) washers and air conditioners now use the real LG serial number (`manufacture.serialNo`) as the Matter serial, falling back to the device id. Devices already paired keep their stored serial.
 - **ThinQ Connect log messages renamed** — the internal "V2" naming is now "ThinQ Connect" in log output (`ThinQ V2` is now `ThinQ Connect`); no behavior change.
@@ -30,6 +39,8 @@
 ### Fixed
 
 - **Washer state read as empty** — the ThinQ Connect state response is an array; it is now read correctly instead of being treated as empty.
+- **Fahrenheit air conditioners (ThinQ Connect)** — units that report Fahrenheit now get correct limits, rounding and unit on temperature writes. Not tested on hardware.
+- **Air conditioner and washer on/off stuck (ThinQ Connect)** — turning a PAT air conditioner or washer on or off from Matter could hang, so Apple Home showed OFF a few seconds after turning it on and later taps did nothing. The on/off and Start/Stop commands no longer wait on their own state update. Not yet tested on a real Apple Home.
 
 <a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
 

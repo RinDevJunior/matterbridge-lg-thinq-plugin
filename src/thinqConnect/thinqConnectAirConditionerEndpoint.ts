@@ -8,15 +8,24 @@ import {
 	ResourceMonitoring,
 	TemperatureMeasurement,
 	Thermostat,
+	ThermostatUserInterfaceConfiguration,
 } from 'matterbridge/matter/clusters';
 
-import type { AirConditionerProfile } from '../services/thinqConnect/thinqConnectAirConditioner.js';
+import {
+	type AirConditionerProfile,
+	percentToWindStep,
+	readWindStepScale,
+	resolveCelsiusTargetRange,
+	resolveTargetTemperatureUnit,
+	windStepToPercent,
+} from '../services/thinqConnect/thinqConnectAirConditioner.js';
 import type {
 	ThinqConnectAirConditioner,
 	ThinqConnectAirConditionerOutcome,
 	ThinqConnectAirConditionerService,
 	ThinqConnectAirConditionerState,
 } from './thinqConnectAirConditionerService.js';
+import { deferThinqConnectApply } from './thinqConnectDeferredApply.js';
 import type { ThinqConnectMatterIdentityOverride } from './thinqConnectMatterIdentity.js';
 
 type FanTier = 'complete' | 'default' | 'onOff';
@@ -90,8 +99,15 @@ export function describeFanTier(profile: AirConditionerProfile): FanTier {
 	return profile.rotateUpDown || profile.rotateLeftRight ? 'complete' : 'default';
 }
 
+/** Home-only display setting: ThinQ has no writable display unit, so this only mirrors the unit the AC reports. */
+function toTemperatureDisplayMode(unit: 'C' | 'F'): ThermostatUserInterfaceConfiguration.TemperatureDisplayMode {
+	return unit === 'F'
+		? ThermostatUserInterfaceConfiguration.TemperatureDisplayMode.Fahrenheit
+		: ThermostatUserInterfaceConfiguration.TemperatureDisplayMode.Celsius;
+}
+
 function thermostatLimitsCelsius(ac: ThinqConnectAirConditioner): { min: number; max: number } {
-	const range = ac.profile.targetTemperature;
+	const range = resolveCelsiusTargetRange(ac.profile);
 	if (!range) {
 		return { min: DEFAULT_MIN_CELSIUS, max: DEFAULT_MAX_CELSIUS };
 	}
@@ -108,7 +124,8 @@ export function buildThinqConnectAirConditionerEndpoint(
 	service: Pick<
 		ThinqConnectAirConditionerService,
 		'setPower' | 'setCoolMode' | 'setTargetTemperature' | 'setWindStrength' | 'setSwing'
-	>,
+	> &
+		Partial<Pick<ThinqConnectAirConditionerService, 'setWindStep'>>,
 	logger: AnsiLogger,
 	identity: ThinqConnectMatterIdentityOverride = {},
 ): MatterbridgeEndpoint {
@@ -119,14 +136,17 @@ export function buildThinqConnectAirConditionerEndpoint(
 	const initialLocal = clampCelsius(ac.initialState?.currentTemperatureC ?? midpoint);
 	const initialTarget = clampCelsius(ac.initialState?.targetTemperatureC ?? midpoint);
 	const fanTier = describeFanTier(profile);
+	const windStepScale = readWindStepScale(profile);
+	const setWindStep = service.setWindStep?.bind(service);
+	const matterId = identity.legacyId ?? ac.deviceId;
 
 	const endpoint = new MatterbridgeEndpoint([roomAirConditioner, powerSource], {
-		id: `${ac.name.replaceAll(' ', '')}-${ac.deviceId.replaceAll(' ', '')}`,
+		id: `${ac.name.replaceAll(' ', '')}-${matterId.replaceAll(' ', '')}`,
 	})
 		.createDefaultIdentifyClusterServer()
 		.createDefaultBasicInformationClusterServer(
 			ac.name,
-			ac.deviceId,
+			matterId,
 			identity.vendorId ?? 0xfff1,
 			identity.vendorName ?? 'Matterbridge',
 			identity.productId ?? 0x8000,
@@ -135,7 +155,9 @@ export function buildThinqConnectAirConditionerEndpoint(
 		.createDefaultPowerSourceWiredClusterServer()
 		.createDeadFrontOnOffClusterServer(ac.initialState?.powerOn ?? false)
 		.createDefaultCoolingThermostatClusterServer(initialLocal, initialTarget, limits.min, limits.max)
-		.createDefaultThermostatUserInterfaceConfigurationClusterServer();
+		.createDefaultThermostatUserInterfaceConfigurationClusterServer(
+			toTemperatureDisplayMode(ac.initialState?.temperatureUnit ?? resolveTargetTemperatureUnit(profile)),
+		);
 
 	// Standalone Matter node (own pairing code), matching the account-login air conditioner.
 	endpoint.mode = 'server';
@@ -207,14 +229,29 @@ export function buildThinqConnectAirConditionerEndpoint(
 	};
 
 	const handlePower = async (on: boolean): Promise<void> => {
+		let outcome: ThinqConnectAirConditionerOutcome;
 		try {
-			const outcome = await service.setPower(ac, on);
-			logger.debug(`ThinQ Connect ${ac.deviceId} power ${on ? 'on' : 'off'} -> ${outcome.status}`);
-			const powerOn = outcome.state.powerOn ?? (outcome.status === 'sent' ? on : !on);
-			await applyThinqConnectAirConditionerState(endpoint, ac, { ...outcome.state, powerOn }, logger);
+			outcome = await service.setPower(ac, on);
 		} catch (error) {
 			logger.error(`ThinQ Connect ${ac.deviceId} power handler failed: ${errorMessage(error)}`);
+			throw error;
 		}
+		logger.debug(`ThinQ Connect ${ac.deviceId} power ${on ? 'on' : 'off'} -> ${outcome.status}`);
+		if (outcome.status === 'refused' || outcome.status === 'failed') {
+			const powerOn = outcome.state.powerOn ?? !on;
+			deferThinqConnectApply(
+				`ThinQ Connect ${ac.deviceId} corrective state apply`,
+				() => applyThinqConnectAirConditionerState(endpoint, ac, { ...outcome.state, powerOn }, logger),
+				logger,
+			);
+			throw new Error(outcome.status === 'refused' ? outcome.reason : outcome.error);
+		}
+		const powerOn = outcome.state.powerOn ?? on;
+		deferThinqConnectApply(
+			`ThinQ Connect ${ac.deviceId} state apply`,
+			() => applyThinqConnectAirConditionerState(endpoint, ac, { ...outcome.state, powerOn }, logger),
+			logger,
+		);
 	};
 
 	endpoint.addCommandHandler('on', async () => handlePower(true));
@@ -313,6 +350,26 @@ export function buildThinqConnectAirConditionerEndpoint(
 		'percentSetting',
 		(newValue: number | null, oldValue: number | null, context) => {
 			if (context.fabric === undefined) {
+				return;
+			}
+			if (windStepScale && setWindStep) {
+				const step = newValue === null ? undefined : percentToWindStep(windStepScale, newValue);
+				if (step === undefined) {
+					logger.debug(`ThinQ Connect ${ac.deviceId}: ignoring fan percent ${newValue}, reverting.`);
+					void endpoint.updateAttribute(FanControl.id, 'percentSetting', oldValue, logger).catch((error: unknown) => {
+						logger.error(`ThinQ Connect ${ac.deviceId} fan percent revert failed: ${errorMessage(error)}`);
+					});
+					return;
+				}
+				void settle(
+					'fan percent',
+					() => setWindStep(ac, step),
+					async (state) => {
+						if (state.windStep === undefined) {
+							await endpoint.updateAttribute(FanControl.id, 'percentSetting', oldValue, logger);
+						}
+					},
+				);
 				return;
 			}
 			const strength = newValue === null ? undefined : mapPercentToWindStrength(newValue);
@@ -424,13 +481,26 @@ export async function applyThinqConnectAirConditionerState(
 		await endpoint.updateAttribute(Thermostat.id, 'occupiedCoolingSetpoint', Math.round(clamped * 100), logger);
 	}
 
+	if (state.temperatureUnit !== undefined) {
+		await endpoint.updateAttribute(
+			ThermostatUserInterfaceConfiguration.id,
+			'temperatureDisplayMode',
+			toTemperatureDisplayMode(state.temperatureUnit),
+			logger,
+		);
+	}
+
 	const fanTier = describeFanTier(profile);
 	if (fanTier !== 'onOff') {
 		const fanMode = mapWindStrengthToFanMode(state.windStrength);
 		if (fanMode !== undefined) {
 			await endpoint.updateAttribute(FanControl.id, 'fanMode', fanMode, logger);
 		}
-		const percent = mapWindStrengthToPercent(state.windStrength);
+		const scale = readWindStepScale(profile);
+		const percent =
+			scale !== undefined && state.windStep !== undefined && state.windStrength !== 'AUTO'
+				? windStepToPercent(scale, state.windStep)
+				: mapWindStrengthToPercent(state.windStrength);
 		if (percent !== undefined) {
 			await endpoint.updateAttribute(FanControl.id, 'percentCurrent', percent, logger);
 			await endpoint.updateAttribute(FanControl.id, 'percentSetting', percent, logger);

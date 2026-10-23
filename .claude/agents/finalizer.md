@@ -149,7 +149,7 @@ Draft message(s) following `.claude/templates/commit-message.md` (no scope, no `
 
 Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `style`, `perf` (see the template for when to use each).
 
-**Message rules:** imperative mood; subject ≤ 72 characters; no `Co-Authored-By`; body explains **why**, not a file list. If the session supplies an attribution line (`Claude-Session: …`), end the message with it; never hard-code it. If drafting a PR title/body, follow `.claude/templates/pull-request.md`.
+**Message rules:** imperative mood; subject ≤ 72 characters; no `Co-Authored-By`; body explains **why**, not a file list. Never end the message with a `Claude-Session: …` line or any other attribution line, even when the session supplies one. If drafting a PR title/body, follow `.claude/templates/pull-request.md`.
 
 Provide: **Recommended**, up to 2 **Alternatives**, and **Notes**.
 

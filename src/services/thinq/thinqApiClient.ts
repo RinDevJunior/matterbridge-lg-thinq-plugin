@@ -53,6 +53,8 @@ export interface ThinqDeviceData {
 	online?: boolean;
 }
 
+export type ThinqControlEndpoint = 'control' | 'control-sync';
+
 export interface ThinqCommandPayload {
 	dataKey?: string | null;
 	dataValue?: unknown;
@@ -172,14 +174,18 @@ export class ThinqApiClient {
 	 * Same wire shape as `sendCommand`, but returns the raw response body instead of discarding it. Used both
 	 * for diagnostic probes (e.g. `--probe-filter`) and real production polling (e.g. `getFilterState`) that
 	 * need to inspect what the cloud actually returns for a given `Get` command, rather than fire-and-forget
-	 * `Set` commands.
+	 * `Set` commands. The endpoint defaults to `control-sync`; `control` is used only by the CLI `washer-control --endpoint`.
 	 */
-	public async sendCommandAndGetResponse<T = unknown>(deviceId: string, payload: ThinqCommandPayload): Promise<T> {
+	public async sendCommandAndGetResponse<T = unknown>(
+		deviceId: string,
+		payload: ThinqCommandPayload,
+		endpoint: ThinqControlEndpoint = 'control-sync',
+	): Promise<T> {
 		if (!deviceId.trim()) {
 			throw new Error('Invalid deviceId: must be a non-empty string.');
 		}
 
-		return this.request<T>('post', `service/devices/${deviceId}/control-sync`, {
+		return this.request<T>('post', `service/devices/${deviceId}/${endpoint}`, {
 			ctrlKey: 'basicCtrl',
 			command: 'Set',
 			...payload,

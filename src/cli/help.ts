@@ -56,6 +56,24 @@ ${b}Connect-control options:${r}
   ${y}--yes${r}          Really send the command (default is a dry run)
   ${y}--wait${r}         Seconds before the after-state read (default: 3)
 
+${b}Washer-status options:${r}
+  ${y}--device${r}       Device id (default: first washer)
+  ${y}--model${r}        Also print the model's control templates and course options
+
+${b}Washer-control options:${r}
+  ${y}--device${r}       Device id (default: first washer)
+  ${y}--send${r}         wake|osp-wake|download-off|download-on|vt-course|vt-start|vt-pause|vt-power-on|vt-resume|vt-power-off (dry run unless --yes)
+  ${y}--yes${r}          Really send (refused unless the washer state allows it)
+  ${y}--allow-start${r}  Also required for download-on, vt-start and vt-resume (they may start a cycle)
+  ${y}--allow-interrupt${r} Required for vt-power-off unless the washer is INITIAL, END or ERROR (abandons a cycle)
+  ${y}--wait${r}         Extra seconds when nothing changed after polling (default: 3, 0 skips)
+  ${y}--course${r}       Course id from the model (default: model's default course)
+  ${y}--spin${r} / ${y}--temp${r} Value or shorthand (800, COLD); must be listed by the course
+  ${y}--rinse${r} / ${y}--soil${r} Value or shorthand; vt-course only
+  ${y}--variant${r}      A|B body shape for the vt-* sends (default: A)
+  ${y}--signature${r}    ioBroker-style WMDownload body (download-* only)
+  ${y}--endpoint${r}     control|control-sync (default: control-sync)
+
 ${b}Commands:${r}
 ${row('login', '', 'Authenticate with LG ThinQ (pat = ThinQ Connect Personal Access Token, validated read-only, saved to .cli-pat-session.json)')}
 ${row('devices', '', 'List all discovered ThinQ devices (requires a prior login)')}
@@ -63,6 +81,8 @@ ${row('energy', '[energy options]', 'Print raw AC power/energy snapshot fields (
 ${row('connect-probe', '[connect-probe options]', 'Read-only ThinQ Connect API probe: device profile + state summary (requires a prior PAT login)')}
 ${row('connect-settings', '[connect-settings options]', 'Read-only ThinQ Connect settings: every profile property with current value, access, allowed values (requires a prior PAT login)')}
 ${row('connect-control', '[connect-control options]', 'Send ONE guarded control command (POWER_ON|POWER_OFF|START) via ThinQ Connect; dry run unless --yes (requires a prior PAT login)')}
+${row('washer-status', '[washer-status options]', 'Read-only washer snapshot fields; --model adds control templates and course options (requires a prior login)')}
+${row('washer-control', '[washer-control options]', 'Send ONE guarded washer command (wake|osp-wake|download-off|download-on|vt-course|vt-start|vt-pause|vt-power-on|vt-resume|vt-power-off) via the legacy API; dry run unless --yes (requires a prior login)')}
 ${row('help', '', 'Show this help message')}
 
 ${b}Examples:${r}
@@ -90,4 +110,14 @@ ${b}Examples:${r}
   npm run cli -- --command ${g}connect-control${r} --device-id <deviceId> --send START --yes
   npm run cli -- --command ${g}connect-control${r} --device-id <deviceId> --send POWER_OFF
   npm run cli -- --command ${g}connect-probe${r} --device-id <deviceId> --raw --out workspace/out/probe.txt
+  npm run cli -- --command ${g}washer-status${r}
+  npm run cli -- --command ${g}washer-status${r} --model
+  npm run cli -- --command ${g}washer-control${r} --send wake
+  npm run cli -- --command ${g}washer-control${r} --send download-off --signature
+  npm run cli -- --command ${g}washer-control${r} --send download-off --signature --spin 1200 --temp COLD --yes
+  npm run cli -- --command ${g}washer-control${r} --send vt-course --course NORMAL
+  npm run cli -- --command ${g}washer-control${r} --send vt-course --course NORMAL --yes
+  npm run cli -- --command ${g}washer-control${r} --send vt-start --allow-start
+  npm run cli -- --command ${g}washer-control${r} --send vt-resume --allow-start
+  npm run cli -- --command ${g}washer-control${r} --send vt-power-off --allow-interrupt
 `;
