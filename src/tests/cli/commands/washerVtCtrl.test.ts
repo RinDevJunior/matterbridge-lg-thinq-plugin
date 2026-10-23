@@ -504,6 +504,52 @@ describe('washerVtCtrl', () => {
 				expect(reason).toContain('door is not closed');
 			});
 
+			it('should pass when doorLock is ON even though doorClose is OFF', () => {
+				// Arrange
+				const fields = fieldsOf({ ...READY_FOR_START, doorClose: 'DOORCLOSE_OFF', doorLock: 'DOORLOCK_ON' });
+
+				// Act
+				const reason = evaluateWasherVtGuard('vt-start', fields, true);
+
+				// Assert
+				expect(reason).toBeUndefined();
+			});
+
+			it('should pass when doorClose is ON even though doorLock is OFF', () => {
+				// Arrange
+				const fields = fieldsOf({ ...READY_FOR_START, doorClose: 'DOORCLOSE_ON', doorLock: 'DOORLOCK_OFF' });
+
+				// Act
+				const reason = evaluateWasherVtGuard('vt-start', fields, true);
+
+				// Assert
+				expect(reason).toBeUndefined();
+			});
+
+			it('should refuse and show both values when doorClose and doorLock are both OFF', () => {
+				// Arrange
+				const fields = fieldsOf({ ...READY_FOR_START, doorClose: 'DOORCLOSE_OFF', doorLock: 'DOORLOCK_OFF' });
+
+				// Act
+				const reason = evaluateWasherVtGuard('vt-start', fields, true);
+
+				// Assert
+				expect(reason).toBe(
+					'door is not closed (saw doorClose="DOORCLOSE_OFF", doorLock="DOORLOCK_OFF"); close the door.',
+				);
+			});
+
+			it('should show doorLock as missing when doorClose is OFF and doorLock is absent', () => {
+				// Arrange
+				const fields = fieldsOf({ ...READY_FOR_START, doorClose: 'DOORCLOSE_OFF' });
+
+				// Act
+				const reason = evaluateWasherVtGuard('vt-start', fields, true);
+
+				// Assert
+				expect(reason).toBe('door is not closed (saw doorClose="DOORCLOSE_OFF", doorLock=missing); close the door.');
+			});
+
 			it('should refuse when the door state is missing', () => {
 				// Arrange
 				const { doorClose: _omitted, ...rest } = READY_FOR_START;
@@ -513,7 +559,7 @@ describe('washerVtCtrl', () => {
 				const reason = evaluateWasherVtGuard('vt-start', fields, true);
 
 				// Assert
-				expect(reason).toContain('door is not closed (saw missing)');
+				expect(reason).toBe('door is not closed (saw doorClose=missing, doorLock=missing); close the door.');
 			});
 
 			it('should refuse when Remote Control is OFF', () => {

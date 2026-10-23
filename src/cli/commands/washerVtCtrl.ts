@@ -159,8 +159,9 @@ export function evaluateWasherVtGuard(
 		return `washer state is ${state}; vt-start needs INITIAL.`;
 	}
 	const doorClose = parseWasherField(fields, 'doorClose');
-	if (doorClose !== 'DOORCLOSE_ON') {
-		return `door is not closed (saw ${sawValue(doorClose)}); close the door.`;
+	const doorLock = parseWasherField(fields, 'doorLock');
+	if (doorClose !== 'DOORCLOSE_ON' && doorLock !== 'DOORLOCK_ON') {
+		return `door is not closed (saw doorClose=${sawValue(doorClose)}, doorLock=${sawValue(doorLock)}); close the door.`;
 	}
 	if (remoteStart !== 'REMOTE_START_ON') {
 		return 'Remote Control is OFF on the washer; press the Remote Control button for 3 seconds first.';
