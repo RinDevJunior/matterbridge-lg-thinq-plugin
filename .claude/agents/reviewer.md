@@ -132,3 +132,5 @@ After approving, append any new decisions or pitfalls to `.claude/memory.md`. Ea
 - Do not approve if there are blocking issues
 - Do not request changes for style preferences — only standards violations or correctness bugs
 - Do not check `workspace/claude_history.md` — that is the documenter's responsibility
+
+Matterbridge / Matter code: follow the "Matterbridge / Matter API" rule in `.claude/CLAUDE.md` (Code Exploration Priority) — reference copy, not `node_modules`.
