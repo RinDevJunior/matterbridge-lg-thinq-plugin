@@ -42,7 +42,7 @@ The `login` command guides you through authentication and saves your credentials
 - `--type`: Authentication method (default: `account`)
   - `account`: Username/password authentication
   - `token`: Refresh token authentication
-  - `pat`: ThinQ Connect Personal Access Token (see [PAT Login](#pat-login))
+  - `pat`: ThinQ Connect Personal Access Token. Under development, not supported yet (see [PAT Login](#pat-login))
 - `--country`: Country code (default: `US`) — must match your LG ThinQ account region
 - `--language`: Language code (default: `en-US`)
 - `--debug`: Enable debug logging
@@ -132,6 +132,8 @@ Found 2 device(s):
 ```
 
 ## PAT Login
+
+> Under development: not supported yet. Do not use it for production.
 
 Create a Personal Access Token at https://connect-pat.lgthinq.com, then run:
 

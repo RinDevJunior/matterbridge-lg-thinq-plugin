@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- PAT login is marked under development and removed from the supported login types in the README; Matterbridge 3.11.0 is the expected version.
+
 ## [0.1.1-rc05] - 2026-10-23
 
 ### Fixed
