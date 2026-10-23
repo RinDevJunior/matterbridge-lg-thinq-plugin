@@ -47,6 +47,15 @@ const MSG_LOCKOUT =
 const MSG_BUSY = 'Another washer command is still running. Wait a few seconds.';
 const MSG_REMOTE_OFF = 'Press the Remote Control button on the washer for 3 seconds, then tap Start again.';
 
+/** The model's own ospWakeup body (what switches an off washer on). */
+const DEFAULT_WAKE_BODY: WasherVtBody = {
+	ctrlKey: 'ospWakeup',
+	command: 'Set',
+	dataSetList: { washerDryer: { ospWakeupType: 'WAKEUP_AND_PWR_ON', ospWakeUpData: 0 } },
+};
+const MSG_NO_WAKE =
+	'This washer model has no wake-up command, so Home cannot switch it on. Use the power button on the washer.';
+
 interface Harness {
 	readonly controller: WasherVtController;
 	readonly logger: AnsiLogger;
@@ -63,6 +72,8 @@ interface HarnessOptions {
 	readonly stagePlan?: WasherVtStagePlan;
 	readonly now?: () => number;
 	readonly label?: string;
+	/** `null` simulates a model without ControlWifi.ospWakeup. */
+	readonly wakeBody?: WasherVtBody | null;
 }
 
 /** Fake ports: reads follow `steps` (last one repeats), sends resolve with a `0000` reply unless a test overrides them. */
@@ -95,6 +106,7 @@ function createHarness(steps: readonly ReadStep[], options: HarnessOptions = {})
 	const logger = createMockLogger();
 	const controller = new WasherVtController(options.label ?? 'ab12', ports, logger, {
 		allowCancelCycle: options.allowCancelCycle ?? false,
+		wakeBody: options.wakeBody === null ? undefined : (options.wakeBody ?? DEFAULT_WAKE_BODY),
 		stagePlan: options.stagePlan,
 	});
 
@@ -129,7 +141,7 @@ describe('WasherVtController', () => {
 	});
 
 	describe('power-on', () => {
-		it('should send one power=POWER_ON and report done when the washer leaves POWEROFF', async () => {
+		it('should send the model ospWakeup body once and report done when the washer leaves POWEROFF', async () => {
 			// Arrange
 			const harness = createHarness([washer({ state: 'POWEROFF' }), washer({ state: 'INITIAL' })]);
 			// Act
@@ -138,9 +150,7 @@ describe('WasherVtController', () => {
 			expect(outcome.status).toBe('done');
 			expect(outcome.snapshot).toBeDefined();
 			expect(harness.send).toHaveBeenCalledTimes(1);
-			expect(harness.send.mock.calls[0]?.[0]).toMatchObject({
-				dataSetList: { vtData: { UNDEFINE: [{ cmd: 'power', value: 'POWER_ON' }] } },
-			});
+			expect(harness.send.mock.calls[0]?.[0]).toEqual(DEFAULT_WAKE_BODY);
 		});
 
 		it('should report noop and send nothing when the washer is already on', async () => {
@@ -185,6 +195,135 @@ describe('WasherVtController', () => {
 				status: 'failed',
 				message: 'Cannot read the washer state from LG. Try again in a minute.',
 			});
+			expect(harness.send).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('power-on wake body', () => {
+		it('should send no vtCtrl power cell and no vtData in the wake body', async () => {
+			// Arrange
+			const harness = createHarness([washer({ state: 'POWEROFF' }), washer({ state: 'INITIAL' })]);
+			// Act
+			await harness.controller.run('power-on');
+			// Assert
+			expect(harness.send.mock.calls[0]?.[0]).toMatchObject({ ctrlKey: 'ospWakeup' });
+			expect(sentJson(harness.send)).not.toContain('POWER_ON');
+			expect(sentJson(harness.send)).not.toContain('vtData');
+		});
+
+		it('should poll until the state leaves POWEROFF', async () => {
+			// Arrange
+			const harness = createHarness([
+				washer({ state: 'POWEROFF' }),
+				washer({ state: 'POWEROFF' }),
+				washer({ state: 'INITIAL' }),
+			]);
+			// Act
+			const outcome = await harness.controller.run('power-on');
+			// Assert
+			expect(outcome.status).toBe('done');
+			expect(harness.read).toHaveBeenCalledTimes(3);
+		});
+
+		it('should not count an unreadable state after the wake send as success', async () => {
+			// Arrange
+			const harness = createHarness([washer({ state: 'POWEROFF' }), washer({ state: undefined })]);
+			// Act
+			const outcome = await harness.controller.run('power-on');
+			// Assert
+			expect(outcome.status).toBe('unconfirmed');
+			expect(harness.send).toHaveBeenCalledTimes(1);
+			expect(harness.read).toHaveBeenCalledTimes(17);
+		});
+
+		it('should still confirm when a later reading shows a real non-POWEROFF state after unreadable ones', async () => {
+			// Arrange
+			const harness = createHarness([
+				washer({ state: 'POWEROFF' }),
+				washer({ state: undefined }),
+				washer({ state: 'INITIAL' }),
+			]);
+			// Act
+			const outcome = await harness.controller.run('power-on');
+			// Assert
+			expect(outcome.status).toBe('done');
+			expect(harness.send).toHaveBeenCalledTimes(1);
+		});
+
+		it('should verify a 0111 reply by the state and report done when the washer woke', async () => {
+			// Arrange
+			const harness = createHarness([washer({ state: 'POWEROFF' }), washer({ state: 'INITIAL' })]);
+			harness.send.mockResolvedValueOnce(washerVtReply('0111'));
+			// Act
+			const outcome = await harness.controller.run('power-on');
+			// Assert
+			expect(outcome.status).toBe('done');
+		});
+
+		it('should report unconfirmed and not retry when the state never leaves POWEROFF', async () => {
+			// Arrange
+			const harness = createHarness([washer({ state: 'POWEROFF' })]);
+			// Act
+			const outcome = await harness.controller.run('power-on');
+			// Assert
+			expect(outcome.status).toBe('unconfirmed');
+			expect(harness.send).toHaveBeenCalledTimes(1);
+			expect(harness.read).toHaveBeenCalledTimes(17);
+		});
+
+		it('should time out a silent send, poll, and report unconfirmed', async () => {
+			// Arrange
+			vi.useFakeTimers();
+			const harness = createHarness([washer({ state: 'POWEROFF' })]);
+			harness.send.mockImplementationOnce(() => new Promise<unknown>(() => undefined));
+			// Act
+			const pending = harness.controller.run('power-on');
+			await vi.advanceTimersByTimeAsync(0);
+			await vi.advanceTimersByTimeAsync(WASHER_VT_SEND_TIMEOUT_MS);
+			const outcome = await pending;
+			// Assert
+			expect(outcome.status).toBe('unconfirmed');
+			expect(outcome.message).toContain('no answer from LG within 10 s');
+			expect(harness.send).toHaveBeenCalledTimes(1);
+		});
+
+		it('should release the in-flight lock so a later On proceeds', async () => {
+			// Arrange
+			const harness = createHarness([
+				washer({ state: 'POWEROFF' }),
+				washer({ state: 'INITIAL' }),
+				washer({ state: 'POWEROFF' }),
+				washer({ state: 'INITIAL' }),
+			]);
+			// Act
+			const first = await harness.controller.run('power-on');
+			const second = await harness.controller.run('power-on');
+			// Assert
+			expect(first.status).toBe('done');
+			expect(second.status).toBe('done');
+			expect(harness.send).toHaveBeenCalledTimes(2);
+		});
+
+		it.each(['INITIAL', 'RUNNING', 'END'])(
+			'should send nothing and report noop when the state is %s',
+			async (state) => {
+				// Arrange
+				const harness = createHarness([washer({ state })]);
+				// Act
+				const outcome = await harness.controller.run('power-on');
+				// Assert
+				expect(outcome.status).toBe('noop');
+				expect(harness.send).not.toHaveBeenCalled();
+			},
+		);
+
+		it('should refuse with the wake-up text and send nothing when the model has no ospWakeup', async () => {
+			// Arrange
+			const harness = createHarness([washer({ state: 'POWEROFF' })], { wakeBody: null });
+			// Act
+			const outcome = await harness.controller.run('power-on');
+			// Assert
+			expect(outcome).toMatchObject({ status: 'refused', message: MSG_NO_WAKE });
 			expect(harness.send).not.toHaveBeenCalled();
 		});
 	});

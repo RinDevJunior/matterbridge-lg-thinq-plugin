@@ -1278,6 +1278,52 @@ describe('registerWasher vtCtrl routing', () => {
 		});
 	});
 
+	it('should pass the model ospWakeup body as wakeBody to the controller for a vt model', async () => {
+		// Arrange
+		const vtModelWithWake = {
+			...createFakeWasherModel(),
+			ControlWifi: {
+				vtCtrl: { command: 'Set', data: {} },
+				ospWakeup: {
+					command: 'Set',
+					data: { washerDryer: { ospWakeupType: 'WAKEUP_AND_PWR_ON', ospWakeUpData: 0 } },
+				},
+			},
+		};
+		const configurator = createConfiguratorWithDeviceModel(
+			mockLogger,
+			mockConfigManager,
+			vi.fn().mockResolvedValue(vtModelWithWake),
+		);
+
+		// Act
+		await configurator.registerWasher(createMockWasherDevice());
+
+		// Assert
+		expect(vi.mocked(WasherVtController).mock.calls[0]?.[3]).toMatchObject({
+			wakeBody: {
+				ctrlKey: 'ospWakeup',
+				command: 'Set',
+				dataSetList: { washerDryer: { ospWakeupType: 'WAKEUP_AND_PWR_ON', ospWakeUpData: 0 } },
+			},
+		});
+	});
+
+	it('should pass wakeBody undefined to the controller when the vt model has no ospWakeup', async () => {
+		// Arrange
+		const configurator = createConfiguratorWithDeviceModel(
+			mockLogger,
+			mockConfigManager,
+			vi.fn().mockResolvedValue(createFakeWasherModel()),
+		);
+
+		// Act
+		await configurator.registerWasher(createMockWasherDevice());
+
+		// Assert
+		expect(vi.mocked(WasherVtController).mock.calls[0]?.[3]?.wakeBody).toBeUndefined();
+	});
+
 	it('should pass an undefined stage plan and warn about Remote Control when the selected course is invalid', async () => {
 		// Arrange
 		vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue({ selectedCourse: 'NOPE' });

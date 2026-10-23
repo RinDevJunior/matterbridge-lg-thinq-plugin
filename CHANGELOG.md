@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.1.1-rc05] - 2026-10-23
+
+### Fixed
+
+- **V1 washer wake-up from Off** — Matter On on a powered-off washer (uniProtocol + vtCtrl) now sends the model's own `ospWakeup` command (WAKEUP_AND_PWR_ON) instead of the vtCtrl power-on, which the washer answered with HTTP 400 (0111); if the model has no wake command, Home refuses with a clear message and sends nothing. The CLI `vt-power-on` stays but does not wake a washer that is off; use `osp-wake`.
+
+<a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
+
+---
+
 ## [0.1.1-rc04] - 2026-10-21
 
 ### Added
