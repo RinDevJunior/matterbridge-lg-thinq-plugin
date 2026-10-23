@@ -56,6 +56,8 @@ export interface WasherVtPorts {
 export interface WasherVtControllerOptions {
 	readonly allowCancelCycle: boolean;
 	readonly stagePlan: WasherVtStagePlan | undefined;
+	/** The model's own `ospWakeup` body; `vtCtrl POWER_ON` does not wake a washer in POWEROFF (LG answers 0111). */
+	readonly wakeBody?: WasherVtBody | undefined;
 	readonly sendTimeoutMs?: number;
 	readonly pollAttempts?: number;
 	readonly powerPollAttempts?: number;
@@ -73,6 +75,8 @@ const MSG_NOT_FOUND = 'The washer was not found in the LG account.';
 const MSG_UNREADABLE = 'Cannot read the washer state from LG. Try again in a minute.';
 const MSG_LOCKOUT =
 	'A Start was sent a moment ago and the washer has not confirmed it. Check the washer before trying again.';
+const MSG_NO_WAKE =
+	'This washer model has no wake-up command, so Home cannot switch it on. Use the power button on the washer.';
 const MSG_REMOTE_OFF = 'Press the Remote Control button on the washer for 3 seconds, then tap Start again.';
 
 const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -176,7 +180,23 @@ export class WasherVtController {
 		if (refusal) {
 			return this.refuse(refusal, reading);
 		}
-		return (await this.sendAndConfirm('vt-power-on', reading, this.powerPollAttempts)).outcome;
+		const { wakeBody } = this.options;
+		if (wakeBody === undefined) {
+			this.logger.warn(`ThinQ Washer ${this.label}: refused, the model has no ControlWifi.ospWakeup`);
+			return { status: 'refused', message: MSG_NO_WAKE, snapshot: reading.snapshot };
+		}
+		return (
+			await this.sendAndConfirm(
+				'osp-wake',
+				reading,
+				this.powerPollAttempts,
+				(fields) => {
+					const polled = stateOf(fields);
+					return polled !== undefined && polled !== 'POWEROFF';
+				},
+				wakeBody,
+			)
+		).outcome;
 	}
 
 	private async powerOff(reading: WasherVtReading, state: string | undefined): Promise<WasherVtOutcome> {
@@ -341,16 +361,22 @@ export class WasherVtController {
 
 	/** Sends once (never retried), then polls like the LG app. Success is decided by the washer state, never by the reply alone. */
 	private async sendAndConfirm(
-		name: WasherVtSendName,
+		name: WasherVtSendName | 'osp-wake',
 		before: WasherVtReading,
 		attempts: number,
-		confirm: (fields: WasherFields) => boolean = (fields) => isWasherVtExpectedState(name, fields),
+		confirm?: (fields: WasherFields) => boolean,
+		bodyOverride?: WasherVtBody,
 	): Promise<SendResult> {
 		const stage = name === 'vt-course' ? this.options.stagePlan : undefined;
-		const body = buildWasherVtBody(name, stage?.courseId, stage?.options ?? {});
-		const cells = buildWasherVtCells(name, stage?.courseId, stage?.options ?? {})
-			.map((cell) => `${cell.cmd}=${cell.value}`)
-			.join(', ');
+		const body = bodyOverride ?? buildWasherVtBody(name as WasherVtSendName, stage?.courseId, stage?.options ?? {});
+		const cells =
+			bodyOverride === undefined
+				? buildWasherVtCells(name as WasherVtSendName, stage?.courseId, stage?.options ?? {})
+						.map((cell) => `${cell.cmd}=${cell.value}`)
+						.join(', ')
+				: `${body.ctrlKey} ${JSON.stringify(body.dataSetList ?? body.dataValue ?? null)}`;
+		const isConfirmed = (fields: WasherFields): boolean =>
+			confirm === undefined ? isWasherVtExpectedState(name as WasherVtSendName, fields) : confirm(fields);
 		this.logger.info(
 			`ThinQ Washer ${this.label}: sending ${name} (${cells}), state before=${stateOf(before.fields) ?? 'unknown'}`,
 		);
@@ -384,7 +410,7 @@ export class WasherVtController {
 
 		const poll = await pollWasherUntil<WasherVtReading | undefined>(
 			() => this.ports.readReading(),
-			(reading) => reading !== undefined && confirm(reading.fields),
+			(reading) => reading !== undefined && isConfirmed(reading.fields),
 			(ms) => this.ports.sleep(ms),
 			attempts,
 			this.pollIntervalMs,

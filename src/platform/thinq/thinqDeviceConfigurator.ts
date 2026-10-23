@@ -29,6 +29,7 @@ import {
 } from './thinqWasherStopCommandResolver.js';
 import { createWasherVtPorts, registerWasherVtCommandHandlers } from './thinqWasherVtCommandHandlers.js';
 import { WasherVtController } from './thinqWasherVtController.js';
+import { buildWasherOspWakeBody } from './thinqWasherVtCtrl.js';
 import { isWasherVtSupported, resolveWasherVtStagePlan } from './thinqWasherVtStagePlan.js';
 
 const DEFAULT_TEMPERATURE_CELSIUS = 20;
@@ -230,6 +231,7 @@ export class ThinqDeviceConfigurator {
 		const controller = new WasherVtController(maskedId, createWasherVtPorts(device, this.apiClient), this.logger, {
 			allowCancelCycle: washerControl.allowCancelCycle === true,
 			stagePlan,
+			wakeBody: buildWasherOspWakeBody(vtModel),
 		});
 		registerWasherVtCommandHandlers(washer, device, controller, this.logger);
 	}

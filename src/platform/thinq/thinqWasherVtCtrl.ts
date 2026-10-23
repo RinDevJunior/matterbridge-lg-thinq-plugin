@@ -1,5 +1,6 @@
 import type { ThinqCommandPayload } from '../../services/thinq/thinqApiClient.js';
 import { changedWasherFieldKeys, isRecord, parseWasherField, type WasherFields } from './thinqWasherFields.js';
+import { extractWasherOspWakeupCommand } from './thinqWasherStopCommandResolver.js';
 
 export const WASHER_VT_SEND_NAMES = [
 	'vt-course',
@@ -143,6 +144,21 @@ export function buildWasherVtBody(
 		ctrlKey: 'vtCtrl',
 		command: 'Set',
 		dataSetList: buildVtDataSetList(buildWasherVtCells(name, courseId, options)),
+	};
+}
+
+/** The model's own `ControlWifi.ospWakeup` as a request body (what switches an off washer on); `undefined` when the model has none. */
+export function buildWasherOspWakeBody(model: Record<string, unknown>): WasherVtBody | undefined {
+	const part = extractWasherOspWakeupCommand(model);
+	if (part === undefined) {
+		return undefined;
+	}
+	return {
+		ctrlKey: 'ospWakeup',
+		...(part.command === undefined ? {} : { command: part.command }),
+		...(part.dataKey === undefined ? {} : { dataKey: part.dataKey }),
+		...('dataValue' in part ? { dataValue: part.dataValue } : {}),
+		...(part.dataSetList === undefined ? {} : { dataSetList: part.dataSetList }),
 	};
 }
 

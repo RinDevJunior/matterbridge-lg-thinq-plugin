@@ -63,6 +63,7 @@ ${b}Washer-status options:${r}
 ${b}Washer-control options:${r}
   ${y}--device${r}       Device id (default: first washer)
   ${y}--send${r}         wake|osp-wake|download-off|download-on|vt-course|vt-start|vt-pause|vt-power-on|vt-resume|vt-power-off (dry run unless --yes)
+                   Note: vt-power-on does not wake a washer in POWEROFF (LG answers 0111); use osp-wake to switch an off washer on
   ${y}--yes${r}          Really send (refused unless the washer state allows it)
   ${y}--allow-start${r}  Also required for download-on, vt-start and vt-resume (they may start a cycle)
   ${y}--allow-interrupt${r} Required for vt-power-off unless the washer is INITIAL, END or ERROR (abandons a cycle)

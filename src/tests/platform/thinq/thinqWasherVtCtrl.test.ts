@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+	buildWasherOspWakeBody,
 	buildWasherVtBody,
 	buildWasherVtCells,
 	buildWasherVtRequest,
@@ -186,6 +187,48 @@ afterEach(() => {
 });
 
 describe('thinqWasherVtCtrl', () => {
+	describe('buildWasherOspWakeBody', () => {
+		const WAKE_PART = {
+			command: 'Set',
+			data: { washerDryer: { ospWakeupType: 'WAKEUP_AND_PWR_ON', ospWakeUpData: 0 } },
+		};
+
+		it('should copy the command and data of ControlWifi.ospWakeup into an ospWakeup body', () => {
+			// Arrange
+			const model = { ControlWifi: { ospWakeup: WAKE_PART } };
+			// Act
+			const body = buildWasherOspWakeBody(model);
+			// Assert
+			expect(body).toEqual({
+				ctrlKey: 'ospWakeup',
+				command: 'Set',
+				dataSetList: { washerDryer: { ospWakeupType: 'WAKEUP_AND_PWR_ON', ospWakeUpData: 0 } },
+			});
+		});
+
+		it('should return undefined when the model has no ospWakeup entry', () => {
+			// Arrange
+			const model = { ControlWifi: { vtCtrl: { command: 'Set', data: {} } } };
+			// Act / Assert
+			expect(buildWasherOspWakeBody(model)).toBeUndefined();
+		});
+
+		it('should return undefined when the model has no ControlWifi block', () => {
+			// Arrange / Act / Assert
+			expect(buildWasherOspWakeBody({})).toBeUndefined();
+		});
+
+		it('should contain no vtCtrl cell', () => {
+			// Arrange
+			const model = { ControlWifi: { ospWakeup: WAKE_PART } };
+			// Act
+			const body = buildWasherOspWakeBody(model);
+			// Assert
+			expect(JSON.stringify(body)).not.toContain('vtData');
+			expect(JSON.stringify(body)).not.toContain('POWER_ON');
+		});
+	});
+
 	describe('buildWasherVtBody', () => {
 		it.each(['vt-course', 'vt-start', 'vt-pause', 'vt-power-on', 'vt-resume', 'vt-power-off'] as const)(
 			'should build a variant A vtCtrl body for %s',

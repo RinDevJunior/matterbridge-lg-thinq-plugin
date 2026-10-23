@@ -6,7 +6,7 @@
 
 ### Added
 
-- **V1 washer control through the LG app's vtCtrl command (models with uniProtocol)** — with account or token login, supported washers can be turned on and off, started, paused, resumed and stopped from Home. Start takes two taps: the first selects the `Selected Wash Course` and asks you to press Remote Control on the washer, the second starts the wash. Every command re-reads the washer first and refuses when the state does not fit. Power on has not been tested on a real washer yet.
+- **V1 washer control through the LG app's vtCtrl command (models with uniProtocol)** — with account or token login, supported washers can be turned on and off, started, paused, resumed and stopped from Home. Start takes two taps: the first selects the `Selected Wash Course` and asks you to press Remote Control on the washer, the second starts the wash. Every command re-reads the washer first and refuses when the state does not fit. Power on uses the washer's own wake-up command from its model data, because the vtCtrl power-on is answered with 0111 and does nothing on a washer that is off; it is refused when the model has none.
 - **`allowCancelCycle` setting (washer)** — `Allow cancelling a running wash` (off by default). Stop and Off are refused during a wash unless it is on; then the washer is paused and powered off.
 - **Personal Access Token (PAT) login type** — a new `pat` login type for the official ThinQ Connect API, in the plugin config and the CLI (`login --type pat`).
 - **Air conditioners with PAT login** — ThinQ Connect air conditioners are registered with power, target temperature (Celsius), fan speed, swing, room temperature, humidity (where reported) and read-only filter life. Home shows Cool and Off.
