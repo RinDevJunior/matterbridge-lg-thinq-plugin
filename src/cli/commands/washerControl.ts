@@ -9,6 +9,7 @@ import {
 	type WasherDownloadOverrides,
 	type WasherDownloadRemoteStart,
 } from '../../platform/thinq/thinqWasherDownloadCommandResolver.js';
+import { parseResultCode } from '../../platform/thinq/thinqWasherFields.js';
 import {
 	extractWasherOspWakeupCommand,
 	extractWasherWakeupCommand,
@@ -94,6 +95,8 @@ interface WasherCommandPart {
 	readonly dataValue?: unknown;
 	readonly dataSetList?: Record<string, unknown>;
 }
+
+export { parseResultCode };
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -329,16 +332,6 @@ export function evaluateWasherGuard(
 	return remoteStart === 'REMOTE_START_ON'
 		? undefined
 		: 'Remote Control is OFF on the washer; turn it on on the washer first.';
-}
-
-export function parseResultCode(reply: unknown): string | undefined {
-	if (!isRecord(reply)) {
-		return undefined;
-	}
-	if (typeof reply.resultCode === 'string') {
-		return reply.resultCode;
-	}
-	return isRecord(reply.result) && typeof reply.result.resultCode === 'string' ? reply.result.resultCode : undefined;
 }
 
 function describeReply(reply: unknown): string {

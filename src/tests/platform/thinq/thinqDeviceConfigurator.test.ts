@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ThinqAirConditionerDevice, ThinqWasherDevice } from '../../../core/domain/entities/ThinqDevice.js';
@@ -11,8 +13,11 @@ import { ThinqDeviceConfigurator } from '../../../platform/thinq/thinqDeviceConf
 import { registerWasherCommandHandlers } from '../../../platform/thinq/thinqWasherCommandHandlers.js';
 import { buildWasherEndpoint } from '../../../platform/thinq/thinqWasherEndpointFactory.js';
 import { extractWasherStartCommand } from '../../../platform/thinq/thinqWasherStartCommandResolver.js';
+import { registerWasherVtCommandHandlers } from '../../../platform/thinq/thinqWasherVtCommandHandlers.js';
+import { WasherVtController } from '../../../platform/thinq/thinqWasherVtController.js';
 import type { ThinqApiClient } from '../../../services/thinq/thinqApiClient.js';
 import { asPartial, createMockLogger } from '../../helpers/testUtils.js';
+import { createFakeWasherModel } from '../../helpers/washerFixtures.js';
 
 vi.mock('../../../platform/thinq/thinqAirConditionerCommandHandlers.js');
 vi.mock('../../../platform/thinq/thinqAirConditionerAuxiliaryToggles.js', () => ({
@@ -33,11 +38,19 @@ vi.mock('../../../platform/thinq/thinqWasherEndpointFactory.js', () => ({
 vi.mock('../../../platform/thinq/thinqWasherCommandHandlers.js', () => ({
 	registerWasherCommandHandlers: vi.fn(),
 }));
-vi.mock('../../../platform/thinq/thinqWasherStartCommandResolver.js', () => ({
+vi.mock('../../../platform/thinq/thinqWasherStartCommandResolver.js', async (importOriginal) => ({
+	...(await importOriginal<Record<string, unknown>>()),
 	extractWasherStartCommand: vi.fn(),
 }));
 vi.mock('../../../platform/thinq/thinqAirConditionerFilterResetCommandHandler.js', () => ({
 	registerFilterResetCommandHandler: vi.fn(),
+}));
+vi.mock('../../../platform/thinq/thinqWasherVtCommandHandlers.js', () => ({
+	createWasherVtPorts: vi.fn(() => ({})),
+	registerWasherVtCommandHandlers: vi.fn(),
+}));
+vi.mock('../../../platform/thinq/thinqWasherVtController.js', () => ({
+	WasherVtController: vi.fn(),
 }));
 
 /** LG `ControlWifi.WMStop` entry: the PAUSE control (matches the LG sample washer model shape). */
@@ -1165,5 +1178,191 @@ describe('ThinqDeviceConfigurator', () => {
 				}),
 			);
 		});
+	});
+});
+
+describe('registerWasher vtCtrl routing', () => {
+	let mockLogger: ReturnType<typeof createMockLogger>;
+	let mockConfigManager: PlatformConfigManager;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockLogger = createMockLogger();
+		mockConfigManager = asPartial<PlatformConfigManager>({
+			...createMockConfigManager(),
+			ensureWasherControlEntry: vi.fn().mockReturnValue({}),
+		});
+	});
+
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('should route a vt model to the vt handlers and skip the legacy registration', async () => {
+		// Arrange
+		const device = createMockWasherDevice();
+		const getDeviceModel = vi.fn().mockResolvedValue(createFakeWasherModel());
+		const configurator = createConfiguratorWithDeviceModel(mockLogger, mockConfigManager, getDeviceModel);
+
+		// Act
+		await configurator.registerWasher(device);
+
+		// Assert
+		expect(registerWasherVtCommandHandlers).toHaveBeenCalledTimes(1);
+		expect(registerWasherCommandHandlers).not.toHaveBeenCalled();
+		expect(extractWasherStartCommand).not.toHaveBeenCalled();
+		expect(getDeviceModel).toHaveBeenCalledTimes(2);
+		expect(vi.mocked(mockLogger.warn).mock.calls.flat().join(' ')).not.toContain('WMStop');
+	});
+
+	it('should pass the device and the API-backed ports to the vt registration', async () => {
+		// Arrange
+		const device = createMockWasherDevice();
+		const configurator = createConfiguratorWithDeviceModel(
+			mockLogger,
+			mockConfigManager,
+			vi.fn().mockResolvedValue(createFakeWasherModel()),
+		);
+
+		// Act
+		await configurator.registerWasher(device);
+
+		// Assert
+		expect(registerWasherVtCommandHandlers).toHaveBeenCalledWith(
+			expect.anything(),
+			device,
+			expect.anything(),
+			mockLogger,
+		);
+	});
+
+	it.each([
+		[{ allowCancelCycle: true }, true],
+		[{ allowCancelCycle: false }, false],
+		[{}, false],
+	])('should construct the controller with allowCancelCycle for config %j as %s', async (washerControl, expected) => {
+		// Arrange
+		vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue(washerControl);
+		const configurator = createConfiguratorWithDeviceModel(
+			mockLogger,
+			mockConfigManager,
+			vi.fn().mockResolvedValue(createFakeWasherModel()),
+		);
+
+		// Act
+		await configurator.registerWasher(createMockWasherDevice());
+
+		// Assert
+		expect(WasherVtController).toHaveBeenCalledTimes(1);
+		expect(vi.mocked(WasherVtController).mock.calls[0]?.[3]).toMatchObject({ allowCancelCycle: expected });
+	});
+
+	it('should pass a resolved stage plan to the controller when the selected course is valid', async () => {
+		// Arrange
+		vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue({
+			selectedCourse: 'NORMAL',
+			courses: [{ id: 'NORMAL', parameters: { spin: 'SPIN_1000' } }],
+		});
+		const configurator = createConfiguratorWithDeviceModel(
+			mockLogger,
+			mockConfigManager,
+			vi.fn().mockResolvedValue(createFakeWasherModel()),
+		);
+
+		// Act
+		await configurator.registerWasher(createMockWasherDevice());
+
+		// Assert
+		expect(vi.mocked(WasherVtController).mock.calls[0]?.[3]).toMatchObject({
+			stagePlan: { courseId: 'NORMAL', options: { spin: 'SPIN_1000' } },
+		});
+	});
+
+	it('should pass an undefined stage plan and warn about Remote Control when the selected course is invalid', async () => {
+		// Arrange
+		vi.mocked(mockConfigManager.getWasherControlConfig).mockReturnValue({ selectedCourse: 'NOPE' });
+		const configurator = createConfiguratorWithDeviceModel(
+			mockLogger,
+			mockConfigManager,
+			vi.fn().mockResolvedValue(createFakeWasherModel()),
+		);
+
+		// Act
+		await configurator.registerWasher(createMockWasherDevice());
+
+		// Assert
+		expect(vi.mocked(WasherVtController).mock.calls[0]?.[3]).toMatchObject({ stagePlan: undefined });
+		expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('Remote Control'));
+	});
+
+	it('should fall back to the legacy registration without throwing when the model fetch rejects', async () => {
+		// Arrange
+		const device = createMockWasherDevice();
+		const configurator = createConfiguratorWithDeviceModel(
+			mockLogger,
+			mockConfigManager,
+			vi.fn().mockRejectedValue(new Error('Model unavailable')),
+		);
+
+		// Act / Assert
+		await expect(configurator.registerWasher(device)).resolves.toBeDefined();
+		expect(registerWasherVtCommandHandlers).not.toHaveBeenCalled();
+		expect(registerWasherCommandHandlers).toHaveBeenCalledTimes(1);
+		const payloads = vi.mocked(registerWasherCommandHandlers).mock.calls[0]?.[4];
+		expect(payloads?.pause).toBeUndefined();
+		expect(payloads?.stop).toBeUndefined();
+	});
+
+	it('should keep the legacy path with three model fetches and the pause/stop/start payloads for a non-vt model', async () => {
+		// Arrange
+		const device = createMockWasherDevice();
+		const getDeviceModel = vi.fn().mockResolvedValue({ ControlWifi: { WMStop: { command: 'Set', data: {} } } });
+		const configurator = createConfiguratorWithDeviceModel(mockLogger, mockConfigManager, getDeviceModel);
+
+		// Act
+		await configurator.registerWasher(device);
+
+		// Assert
+		expect(registerWasherVtCommandHandlers).not.toHaveBeenCalled();
+		expect(registerWasherCommandHandlers).toHaveBeenCalledTimes(1);
+		expect(Object.keys(vi.mocked(registerWasherCommandHandlers).mock.calls[0]?.[4] ?? {})).toEqual(
+			expect.arrayContaining(['pause', 'stop', 'start']),
+		);
+		expect(getDeviceModel).toHaveBeenCalledTimes(3);
+	});
+});
+
+describe('washerControl schema', () => {
+	/** Collects every value stored under a `washerControl` key anywhere in the JSON tree. */
+	function findWasherControlBlocks(node: unknown, found: unknown[] = []): unknown[] {
+		if (Array.isArray(node)) {
+			for (const item of node) {
+				findWasherControlBlocks(item, found);
+			}
+		} else if (typeof node === 'object' && node !== null) {
+			for (const [key, value] of Object.entries(node)) {
+				if (key === 'washerControl') {
+					found.push(value);
+				}
+				findWasherControlBlocks(value, found);
+			}
+		}
+		return found;
+	}
+
+	it('should default allowCancelCycle to false in both washerControl blocks', () => {
+		// Arrange
+		const schema: unknown = JSON.parse(
+			readFileSync(new URL('../../../../matterbridge-lg-thinq-plugin.schema.json', import.meta.url), 'utf-8'),
+		);
+		// Act
+		const blocks = findWasherControlBlocks(schema);
+		// Assert
+		expect(blocks).toHaveLength(2);
+		for (const block of blocks) {
+			expect(block).toMatchObject({
+				properties: { allowCancelCycle: { type: 'boolean', default: false } },
+			});
+		}
 	});
 });

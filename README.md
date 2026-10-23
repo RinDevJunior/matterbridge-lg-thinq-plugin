@@ -67,7 +67,15 @@ Requires matterbridge@3.10.10
 - Live energy/power consumption monitoring
 - Filter life monitoring, plus an opt-in filter-reset command
 
-**Washer** — read-only status, plus real Start, Pause and Stop from the washer's own controls in Google Home / Apple Home (resolved from the device's own model data and your selected wash course). Stop turns the washer off; Resume is not supported by LG.
+**Washer** — read-only status, plus real Start, Pause and Stop from the washer's own controls in Google Home / Apple Home (resolved from the device's own model data and your selected wash course). On models without the LG app's `vtCtrl` command, Stop turns the washer off and Resume is not supported by LG.
+
+**Washer (account or token login, models with `uniProtocol` and `vtCtrl`)** — controlled through the LG app's own `vtCtrl` command: On, Off, Start, Pause, Resume and Stop. Other washer models keep the older behaviour described above.
+
+- The wash course comes from `Selected Wash Course` in the plugin settings (restart the plugin after changing it). Home cannot pick a program.
+- Start takes two taps. With the washer on and loaded and its door closed, the first tap selects your course and Home shows a message (the tap is reported as failed on purpose) asking you to hold the Remote Control button on the washer for 3 seconds. After that, tap Start again to begin the wash. If Remote Control is already on, the washer runs the course shown on its panel.
+- Pause and Resume work any time during a wash. Start while paused resumes.
+- Stop and Off are refused during a wash unless `Allow cancelling a running wash` is on. When it is on, the washer is paused first and then powered off, which abandons the cycle (water may stay in the drum and the door may stay locked). Stop or Off while a wash is running (with `Allow cancelling a running wash` on) pauses, confirms, then powers off, which can take 30 seconds or more, so a Home app may show "no response" although the washer did what was asked; Start and the course tap take up to about 15 seconds.
+- Every command re-reads the washer first and is checked against its real state. If the washer does not confirm a Start or Resume, further Start and Resume taps are refused for 2 minutes; check the washer first. On has not been tested on a real washer yet. The lock-out is kept in memory and is cleared by a plugin restart; a timed-out send may still complete later, and the lock-out covers Start and Resume only.
 
 ---
 

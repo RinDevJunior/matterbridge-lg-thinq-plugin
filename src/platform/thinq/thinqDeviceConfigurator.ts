@@ -5,6 +5,7 @@ import { FanControl } from 'matterbridge/matter/clusters';
 import type { ThinqAirConditionerDevice, ThinqWasherDevice } from '../../core/domain/entities/ThinqDevice.js';
 import type { ThinqWasherControlConfig } from '../../model/LgThinqPluginPlatformConfig.js';
 import type { ThinqApiClient } from '../../services/thinq/thinqApiClient.js';
+import { maskSecret } from '../../utils/mask.js';
 import { PlatformConfigManager } from '../platformConfigManager.js';
 import {
 	registerAirConditionerCommandHandlers,
@@ -26,6 +27,9 @@ import {
 	type WasherPauseCommandPayload,
 	type WasherStopCommandPayload,
 } from './thinqWasherStopCommandResolver.js';
+import { createWasherVtPorts, registerWasherVtCommandHandlers } from './thinqWasherVtCommandHandlers.js';
+import { WasherVtController } from './thinqWasherVtController.js';
+import { isWasherVtSupported, resolveWasherVtStagePlan } from './thinqWasherVtStagePlan.js';
 
 const DEFAULT_TEMPERATURE_CELSIUS = 20;
 const MAX_HEAT_SETPOINT_LIMIT_CELSIUS = 30;
@@ -165,8 +169,11 @@ export class ThinqDeviceConfigurator {
 		// Hardcoded: the washer is always exposed as its own standalone Matter node (server mode), matching the AC.
 		washer.mode = 'server';
 
-		const { pause: pauseCommandPayload, stop: stopCommandPayload } =
-			await this.resolveWasherPauseAndStopCommandPayloads(device);
+		const {
+			pause: pauseCommandPayload,
+			stop: stopCommandPayload,
+			vtModel,
+		} = await this.resolveWasherPauseAndStopCommandPayloads(device);
 
 		const courseCatalog = await this.resolveWasherCourseCatalog(device);
 		if (courseCatalog) {
@@ -174,6 +181,12 @@ export class ThinqDeviceConfigurator {
 			if (reconcileWasherCourseConfig(liveWasherControlEntry, courseCatalog)) {
 				this.courseConfigChanged = true;
 			}
+		}
+
+		if (vtModel) {
+			this.registerWasherVtControl(washer, device, vtModel);
+			this.logger.debug(`registerWasher: completed for deviceId=${device.id}`);
+			return washer;
 		}
 
 		const startCommandPayload = await this.resolveWasherStartCommandPayload(
@@ -190,6 +203,37 @@ export class ThinqDeviceConfigurator {
 		return washer;
 	}
 
+	private registerWasherVtControl(
+		washer: MatterbridgeEndpoint,
+		device: ThinqWasherDevice,
+		vtModel: Record<string, unknown>,
+	): void {
+		const washerControl = this.configManager.getWasherControlConfig(device.id);
+		const stagePlan = resolveWasherVtStagePlan(vtModel, washerControl);
+		const maskedId = maskSecret(device.id, 4);
+		this.logger.info(`ThinQ Washer ${maskedId}: uses the LG app's vtCtrl commands`);
+		if (stagePlan) {
+			this.logger.info(
+				`ThinQ Washer ${maskedId}: Start stages course ${stagePlan.courseId}${Object.keys(stagePlan.options).length > 0 ? ` with ${JSON.stringify(stagePlan.options)}` : ''}`,
+			);
+			if (stagePlan.ignoredOptions.length > 0) {
+				this.logger.warn(
+					`ThinQ Washer ${maskedId}: ignored course settings (default or not allowed for this course): ${stagePlan.ignoredOptions.join(', ')}`,
+				);
+			}
+		} else {
+			this.logger.warn(
+				`ThinQ Washer ${maskedId}: no valid Selected Wash Course; Start will only work after you press Remote Control, with the course shown on the washer`,
+			);
+		}
+
+		const controller = new WasherVtController(maskedId, createWasherVtPorts(device, this.apiClient), this.logger, {
+			allowCancelCycle: washerControl.allowCancelCycle === true,
+			stagePlan,
+		});
+		registerWasherVtCommandHandlers(washer, device, controller, this.logger);
+	}
+
 	/**
 	 * Resolves the real pause (`WMStop`, LG PAUSE) and stop (`WMOff`, LG POWEROFF) command payloads from
 	 * the device's own downloaded model JSON, with one model fetch. Runs unconditionally at registration
@@ -200,13 +244,17 @@ export class ThinqDeviceConfigurator {
 	private async resolveWasherPauseAndStopCommandPayloads(device: ThinqWasherDevice): Promise<{
 		pause: WasherPauseCommandPayload | undefined;
 		stop: WasherStopCommandPayload | undefined;
+		vtModel: Record<string, unknown> | undefined;
 	}> {
 		if (!device.modelJsonUri) {
-			return { pause: undefined, stop: undefined };
+			return { pause: undefined, stop: undefined, vtModel: undefined };
 		}
 
 		try {
 			const model = await this.apiClient.getDeviceModel(device.modelJsonUri);
+			if (isWasherVtSupported(model)) {
+				return { pause: undefined, stop: undefined, vtModel: model };
+			}
 			const pause = extractWasherPauseCommand(model);
 			const stop = extractWasherStopCommand(model);
 
@@ -230,12 +278,12 @@ export class ThinqDeviceConfigurator {
 				);
 			}
 
-			return { pause, stop };
+			return { pause, stop, vtModel: undefined };
 		} catch (error) {
 			this.logger.debug(
 				`ThinQ Washer ${device.id}: failed to resolve pause/stop-command payloads from device model: ${error instanceof Error ? error.message : String(error)}`,
 			);
-			return { pause: undefined, stop: undefined };
+			return { pause: undefined, stop: undefined, vtModel: undefined };
 		}
 	}
 

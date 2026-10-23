@@ -6,6 +6,8 @@
 
 ### Added
 
+- **V1 washer control through the LG app's vtCtrl command (models with uniProtocol)** — with account or token login, supported washers can be turned on and off, started, paused, resumed and stopped from Home. Start takes two taps: the first selects the `Selected Wash Course` and asks you to press Remote Control on the washer, the second starts the wash. Every command re-reads the washer first and refuses when the state does not fit. Power on has not been tested on a real washer yet.
+- **`allowCancelCycle` setting (washer)** — `Allow cancelling a running wash` (off by default). Stop and Off are refused during a wash unless it is on; then the washer is paused and powered off.
 - **Personal Access Token (PAT) login type** — a new `pat` login type for the official ThinQ Connect API, in the plugin config and the CLI (`login --type pat`).
 - **Air conditioners with PAT login** — ThinQ Connect air conditioners are registered with power, target temperature (Celsius), fan speed, swing, room temperature, humidity (where reported) and read-only filter life. Home shows Cool and Off.
 - **ThinQ Connect container with Google Home washer on/off** — with PAT login, the washer on/off can be controlled from Google Home; state is polled every `refreshIntervalSeconds` (minimum 15 s).
@@ -28,6 +30,7 @@
 
 ### Changed
 
+- **Washers that support vtCtrl no longer use the older WMStart/WMControl commands** — other V1 washer models and ThinQ Connect washers are unchanged.
 - **PAT devices run in server mode** — with PAT login, washers and air conditioners are now standalone Matter nodes, each paired on its own, like the account login. They get new device IDs: remove the old PAT devices from your controller and pair them again.
 - **Real LG serial number for V1 devices** — V1 (account and token login) washers and air conditioners now use the real LG serial number (`manufacture.serialNo`) as the Matter serial, falling back to the device id. Devices already paired keep their stored serial.
 - **ThinQ Connect log messages renamed** — the internal "V2" naming is now "ThinQ Connect" in log output (`ThinQ V2` is now `ThinQ Connect`); no behavior change.
