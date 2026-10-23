@@ -50,10 +50,10 @@
 
 ### ⚠️ Important Notes
 
-Requires matterbridge@3.10.10
+Requires matterbridge@3.11.0
 
 - Each device (air conditioner or washer) pairs to Apple Home as its **own standalone Matter node** (`server` mode) with its own pairing code — not bridged, not user-configurable.
-- Authenticate with your ThinQ account (username/password) or a pre-issued refresh token.
+- Authenticate with your ThinQ account (username/password) or a pre-issued refresh token. This is the supported login (reverse-engineered account API). The Personal Access Token (PAT) login is under development and not supported yet.
 - Per-device settings in the config UI are automatically scoped to that device's actual type (AC vs. washer) — the plugin detects and writes this in for you at startup.
 
 ---
@@ -79,9 +79,11 @@ Requires matterbridge@3.10.10
 
 ---
 
-### 🔑 Personal Access Token Login
+### 🚧 Personal Access Token Login (Under development)
 
-Besides username/password and refresh token, you can sign in with a Personal Access Token (PAT) for LG's official ThinQ Connect API. Username/password and token logins are unchanged.
+> **Under development: not supported yet. Do not use it for production.** Use the account login (username/password or refresh token) instead. Everything below describes work in progress and may change or not work.
+
+A Personal Access Token (PAT) login for LG's official ThinQ Connect API is being built. Username/password and token logins are unchanged.
 
 1. Create a PAT at [https://connect-pat.lgthinq.com](https://connect-pat.lgthinq.com).
 2. In the plugin config, set **Login Type** to `pat`, paste the token into **Personal Access Token**, and set **Country** to your account country (e.g. `US`).
@@ -130,7 +132,7 @@ Limits:
 ### 🚧 Project Status
 
 - **Under active development**
-- Requires **`matterbridge@3.10.10`**
+- Requires **`matterbridge@3.11.0`**
 
 ---
 
