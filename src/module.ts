@@ -15,6 +15,7 @@ import { PlatformState } from './platform/platformState.js';
 import { applyThinqFilterStateToAirConditioner } from './platform/thinq/thinqAirConditionerFilterStateSync.js';
 import { applyThinqSnapshotToAirConditioner } from './platform/thinq/thinqAirConditionerStateSync.js';
 import { reconcileThinqDeviceConfigEntries } from './platform/thinq/thinqDeviceConfigReconciler.js';
+import { WasherCycleTracker } from './platform/thinq/thinqWasherCycleTracker.js';
 import { applyThinqSnapshotToWasher } from './platform/thinq/thinqWasherStateSync.js';
 import { resolveThinqGeneration } from './platform/thinqGeneration.js';
 import { ThinqServiceContainer } from './services/thinq/serviceContainer.js';
@@ -73,6 +74,7 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 
 	private thinqPollingIntervalMs: number | undefined;
 	private readonly thinqDeviceKindById = new Map<string, 'AC' | 'WASHER'>();
+	private readonly washerCycleTracker = new WasherCycleTracker();
 	private readonly filterMonitoringDeviceIds: string[] = [];
 	private identityMapping: ThinqConnectIdentityMapping | undefined;
 
@@ -233,11 +235,13 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 			}
 
 			if (this.thinqDeviceKindById.get(deviceId) === 'WASHER') {
-				void applyThinqSnapshotToWasher(endpoint, snapshot, this.log).catch((error: unknown) => {
-					this.log.error(
-						`Failed to apply ThinQ state update for ${deviceId}: ${error instanceof Error ? error.message : String(error)}`,
-					);
-				});
+				void applyThinqSnapshotToWasher(endpoint, snapshot, this.log, this.washerCycleTracker).catch(
+					(error: unknown) => {
+						this.log.error(
+							`Failed to apply ThinQ state update for ${deviceId}: ${error instanceof Error ? error.message : String(error)}`,
+						);
+					},
+				);
 				return;
 			}
 
