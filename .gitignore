@@ -33,3 +33,6 @@ type-check.log
 
 # Ephemeral per-task workspace
 workspace/*
+
+# Local-only reference paths (machine specific)
+wiki/reference-workspaces.md
