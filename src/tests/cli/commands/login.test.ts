@@ -31,6 +31,10 @@ vi.mock('../../../cli/session.js', () => ({
 	saveSession: vi.fn(),
 }));
 
+vi.mock('../../../cli/commands/loginPat.js', () => ({
+	cmdLoginPat: vi.fn(),
+}));
+
 vi.mock('../../../cli/utils.js', () => ({
 	maskSecret: vi.fn((secret: string) => '*'.repeat(secret?.length || 0)),
 	parseArgs: vi.fn(),
@@ -38,6 +42,7 @@ vi.mock('../../../cli/utils.js', () => ({
 }));
 
 import { cmdLogin } from '../../../cli/commands/login.js';
+import { cmdLoginPat } from '../../../cli/commands/loginPat.js';
 import { saveSession } from '../../../cli/session.js';
 import { maskSecret, prompt } from '../../../cli/utils.js';
 import { createMockLogger } from '../../helpers/testUtils.js';
@@ -236,5 +241,18 @@ describe('cmdLogin', () => {
 			country: 'KR',
 			language: 'ko-KR',
 		});
+	});
+
+	it('should delegate to cmdLoginPat without calling authenticate when type is "pat"', async () => {
+		// Arrange
+		vi.mocked(cmdLoginPat).mockResolvedValue(undefined);
+
+		// Act
+		await cmdLogin('pat', 'US', 'en-US', mockLogger);
+
+		// Assert
+		expect(cmdLoginPat).toHaveBeenCalledWith('US', mockLogger);
+		expect(mockCoordinator.authenticate).not.toHaveBeenCalled();
+		expect(saveSession).not.toHaveBeenCalled();
 	});
 });

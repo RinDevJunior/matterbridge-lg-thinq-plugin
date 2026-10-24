@@ -369,5 +369,20 @@ describe('thinqWasherStateSync', () => {
 			expect(entryLog).toBeDefined();
 			expect(entryLog?.at(0)).toContain('unknown');
 		});
+
+		it('should not look up any child endpoint while still updating onOff, operationalState and operationalError', async () => {
+			// Arrange
+			const snapshot = new ThinqSnapshot({
+				washerDryer: { state: 'RUNNING' },
+			});
+
+			// Act
+			await applyThinqSnapshotToWasher(mockWasher, snapshot, mockLogger);
+
+			// Assert
+			expect(mockWasher.getChildEndpointById).toBeUndefined();
+			const attributeNames = vi.mocked(mockWasher.updateAttribute).mock.calls.map((call: any[]) => call[1]);
+			expect(attributeNames).toEqual(expect.arrayContaining(['onOff', 'operationalState', 'operationalError']));
+		});
 	});
 });

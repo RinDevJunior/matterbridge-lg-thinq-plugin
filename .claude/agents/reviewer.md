@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: "Use this agent to review code changes against the approved workspace/<task-folder>/plan.md. It checks plan conformance, correctness, CLAUDE.md compliance, architecture violations, and test coverage gaps."
-model: sonnet
+model: claude-opus-5
 color: red
 effort: medium
 maxTurns: 30
@@ -29,7 +29,7 @@ git diff HEAD
 
 If there are staged changes use `--cached`. The diff is your primary source — do not read full files unless a specific section lacks context in the diff.
 
-When `.codegraph/` exists and the change touches shared types, handlers, or registry code, run `codegraph impact <symbol>` on the main symbols in the diff to verify blast radius is covered by tests and plan scope.
+When `.codegraph/` exists and the change touches shared types, handlers, or registry code, run `codegraph impact <symbol>` on the main symbols in the diff to verify blast radius is covered by tests and plan scope. If `.codegraph/` exists you must run it before sweeping with Grep/Read, and say in the report if you did not.
 
 ### Step 2 — Verify the Regression Guard (blocking)
 
@@ -113,6 +113,9 @@ PASS | <list violations>
 
 ### Verdict
 APPROVE | REQUEST CHANGES
+
+### CodeGraph
+CodeGraph: used (`codegraph explore` / `codegraph impact`) or skipped, with the reason (no `.codegraph/`, stale index, or locate-only task)
 ```
 
 ## Shared Memory
@@ -129,3 +132,5 @@ After approving, append any new decisions or pitfalls to `.claude/memory.md`. Ea
 - Do not approve if there are blocking issues
 - Do not request changes for style preferences — only standards violations or correctness bugs
 - Do not check `workspace/claude_history.md` — that is the documenter's responsibility
+
+Matterbridge / Matter code: follow the "Matterbridge / Matter API" rule in `.claude/CLAUDE.md` (Code Exploration Priority) — reference copy, not `node_modules`.

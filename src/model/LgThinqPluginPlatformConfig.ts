@@ -15,8 +15,16 @@ export interface MatterOverrideSettings {
 	matterVendorId: number;
 }
 
+export interface ThinqWasherCourseConfig {
+	id: string;
+	parameters: Record<string, string>;
+}
+
 export interface ThinqWasherControlConfig {
-	allowRemoteStop?: boolean;
+	availableCourseIds?: string[];
+	courses?: ThinqWasherCourseConfig[];
+	selectedCourse?: string;
+	allowCancelCycle?: boolean;
 }
 
 export interface ThinqAcFilterControlConfig {
@@ -26,6 +34,7 @@ export interface ThinqAcFilterControlConfig {
 export interface ThinqDeviceConfigEntry {
 	deviceId: string;
 	deviceType?: 'AC' | 'WASHER';
+	ignore?: boolean;
 	capabilities?: ThinqDeviceCapabilityConfig;
 	productName?: string;
 	productId?: number;
@@ -33,20 +42,19 @@ export interface ThinqDeviceConfigEntry {
 	acFilterControl?: ThinqAcFilterControlConfig;
 }
 
+export type ThinqLoginType = 'account' | 'token' | 'pat';
+
 export interface ThinqAuthConfig {
-	loginType: 'account' | 'token';
+	loginType: ThinqLoginType;
 	username?: string;
 	password?: string;
 	refreshToken?: string;
+	personalAccessToken?: string;
 	country: string;
 	language: string;
 	refreshIntervalSeconds?: number;
 	filterMonitoringIntervalSeconds?: number;
 	devices: ThinqDeviceConfigEntry[];
-}
-
-export interface WebosPluginConfig {
-	devices: unknown[];
 }
 
 export interface AdvancedFeatureSetting {
@@ -64,7 +72,6 @@ export interface AdvancedFeatureConfiguration {
 
 export interface LgThinqPluginPlatformConfig extends PlatformConfig {
 	thinq: ThinqAuthConfig;
-	webos: WebosPluginConfig;
 	advancedFeature: AdvancedFeatureConfiguration;
 }
 

@@ -2,8 +2,106 @@ import { describe, expect, it } from 'vitest';
 
 import type { ThinqAirConditionerDevice, ThinqWasherDevice } from '../../../core/domain/entities/ThinqDevice.js';
 import type { ThinqDeviceConfigEntry } from '../../../model/LgThinqPluginPlatformConfig.js';
-import { reconcileThinqDeviceConfigEntries } from '../../../platform/thinq/thinqDeviceConfigReconciler.js';
+import {
+	reconcileThinqDeviceConfigEntries,
+	removeLegacyWasherControlKeys,
+} from '../../../platform/thinq/thinqDeviceConfigReconciler.js';
 import { asPartial } from '../../helpers/testUtils.js';
+
+describe('removeLegacyWasherControlKeys', () => {
+	it('should delete both legacy keys, keep selectedCourse, and return true', () => {
+		// Arrange
+		const washerControl = { allowRemoteStart: true, allowRemoteStop: false, selectedCourse: 'X' };
+		const configDevices = [asPartial<ThinqDeviceConfigEntry>({ deviceId: 'washer-001', washerControl })];
+
+		// Act
+		const changed = removeLegacyWasherControlKeys(configDevices);
+
+		// Assert
+		expect(changed).toBe(true);
+		expect(washerControl).not.toHaveProperty('allowRemoteStart');
+		expect(washerControl).not.toHaveProperty('allowRemoteStop');
+		expect(washerControl.selectedCourse).toBe('X');
+	});
+
+	it('should delete a single legacy key and return true', () => {
+		// Arrange
+		const washerControl = { allowRemoteStop: true, selectedCourse: 'X' };
+		const configDevices = [asPartial<ThinqDeviceConfigEntry>({ deviceId: 'washer-001', washerControl })];
+
+		// Act
+		const changed = removeLegacyWasherControlKeys(configDevices);
+
+		// Assert
+		expect(changed).toBe(true);
+		expect(washerControl).toEqual({ selectedCourse: 'X' });
+	});
+
+	it('should return false and mutate nothing when washerControl has no legacy keys', () => {
+		// Arrange
+		const washerControl = { selectedCourse: 'X' };
+		const configDevices = [asPartial<ThinqDeviceConfigEntry>({ deviceId: 'washer-001', washerControl })];
+
+		// Act
+		const changed = removeLegacyWasherControlKeys(configDevices);
+
+		// Assert
+		expect(changed).toBe(false);
+		expect(washerControl).toEqual({ selectedCourse: 'X' });
+	});
+
+	it('should return false when entry has no washerControl', () => {
+		// Arrange
+		const configDevices = [asPartial<ThinqDeviceConfigEntry>({ deviceId: 'ac-001', deviceType: 'AC' })];
+
+		// Act
+		const changed = removeLegacyWasherControlKeys(configDevices);
+
+		// Assert
+		expect(changed).toBe(false);
+		expect(configDevices[0]).toEqual({ deviceId: 'ac-001', deviceType: 'AC' });
+	});
+
+	it('should return false for an empty array', () => {
+		// Arrange
+		const configDevices: ThinqDeviceConfigEntry[] = [];
+
+		// Act & Assert
+		expect(removeLegacyWasherControlKeys(configDevices)).toBe(false);
+	});
+
+	it('should return false on the second call after cleanup (idempotent)', () => {
+		// Arrange
+		const washerControl = { allowRemoteStart: true, selectedCourse: 'X' };
+		const configDevices = [asPartial<ThinqDeviceConfigEntry>({ deviceId: 'washer-001', washerControl })];
+		removeLegacyWasherControlKeys(configDevices);
+
+		// Act
+		const changedAgain = removeLegacyWasherControlKeys(configDevices);
+
+		// Assert
+		expect(changedAgain).toBe(false);
+		expect(washerControl).toEqual({ selectedCourse: 'X' });
+	});
+});
+
+describe('reconcileThinqDeviceConfigEntries legacy washer key stripping', () => {
+	it('should strip legacy keys and return true when no new device is discovered and deviceType is set', () => {
+		// Arrange
+		const washerControl = { allowRemoteStop: true, selectedCourse: 'X' };
+		const configDevices = [
+			asPartial<ThinqDeviceConfigEntry>({ deviceId: 'washer-001', deviceType: 'WASHER', washerControl }),
+		];
+
+		// Act
+		const changed = reconcileThinqDeviceConfigEntries(configDevices, []);
+
+		// Assert
+		expect(changed).toBe(true);
+		expect(washerControl).toEqual({ selectedCourse: 'X' });
+		expect(configDevices[0]?.deviceType).toBe('WASHER');
+	});
+});
 
 describe('reconcileThinqDeviceConfigEntries', () => {
 	describe('empty configDevices with discovered AC device', () => {

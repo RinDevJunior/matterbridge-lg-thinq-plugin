@@ -20,7 +20,7 @@ export function mapWasherStateToOperationalState(snapshot: ThinqSnapshot): Opera
 
 /**
  * Pushes a freshly polled ThinQ Washer snapshot onto the Matter `LaundryWasher` endpoint's attributes
- * (device → Apple Home). Read-only v1: no washer-specific commands are ever sent back.
+ * (device → Matter attribute sync).
  */
 export async function applyThinqSnapshotToWasher(
 	washer: MatterbridgeEndpoint,

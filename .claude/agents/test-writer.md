@@ -157,3 +157,5 @@ Per the task folder `test-plan.md` Cases to Cover, plus:
 - Do not glob the entire test directory to find patterns — the template above is the pattern
 - Do not chase 100% coverage at the expense of meaningful tests
 - **Verification gate:** `format:ci`, `lint:fix:ci`, `type-check:ci`, and `test:ci` must PASS before reporting — fix lint/type/test failures in test files you touched
+
+Matterbridge / Matter code: follow the "Matterbridge / Matter API" rule in `.claude/CLAUDE.md` (Code Exploration Priority) — reference copy, not `node_modules`.

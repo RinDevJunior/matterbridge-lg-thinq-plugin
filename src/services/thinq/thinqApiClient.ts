@@ -53,6 +53,8 @@ export interface ThinqDeviceData {
 	online?: boolean;
 }
 
+export type ThinqControlEndpoint = 'control' | 'control-sync';
+
 export interface ThinqCommandPayload {
 	dataKey?: string | null;
 	dataValue?: unknown;
@@ -172,14 +174,18 @@ export class ThinqApiClient {
 	 * Same wire shape as `sendCommand`, but returns the raw response body instead of discarding it. Used both
 	 * for diagnostic probes (e.g. `--probe-filter`) and real production polling (e.g. `getFilterState`) that
 	 * need to inspect what the cloud actually returns for a given `Get` command, rather than fire-and-forget
-	 * `Set` commands.
+	 * `Set` commands. The endpoint defaults to `control-sync`; `control` is used only by the CLI `washer-control --endpoint`.
 	 */
-	public async sendCommandAndGetResponse<T = unknown>(deviceId: string, payload: ThinqCommandPayload): Promise<T> {
+	public async sendCommandAndGetResponse<T = unknown>(
+		deviceId: string,
+		payload: ThinqCommandPayload,
+		endpoint: ThinqControlEndpoint = 'control-sync',
+	): Promise<T> {
 		if (!deviceId.trim()) {
 			throw new Error('Invalid deviceId: must be a non-empty string.');
 		}
 
-		return this.request<T>('post', `service/devices/${deviceId}/control-sync`, {
+		return this.request<T>('post', `service/devices/${deviceId}/${endpoint}`, {
 			ctrlKey: 'basicCtrl',
 			command: 'Set',
 			...payload,
@@ -220,12 +226,18 @@ export class ThinqApiClient {
 			throw new Error('Invalid deviceId: must be a non-empty string.');
 		}
 
-		await this.request('post', `service/devices/${deviceId}/control`, {
-			ctrlKey: 'allEventEnable',
-			command: 'Set',
-			dataKey: 'airState.mon.timeout',
-			dataValue: '70',
-		});
+		await this.request(
+			'post',
+			`service/devices/${deviceId}/control`,
+			{
+				ctrlKey: 'allEventEnable',
+				command: 'Set',
+				dataKey: 'airState.mon.timeout',
+				dataValue: '70',
+			},
+			false,
+			false,
+		);
 	}
 
 	/** Exchanges a refresh token for a new access token (`grant_type=refresh_token`), mutating and returning `session`. */
@@ -380,7 +392,13 @@ export class ThinqApiClient {
 		return typeof data?.resultCode === 'string' && data.resultCode === THINQ_TOKEN_EXPIRED_RESULT_CODE;
 	}
 
-	private async request<T>(method: 'get' | 'post', uri: string, data?: unknown, retry = false): Promise<T> {
+	private async request<T>(
+		method: 'get' | 'post',
+		uri: string,
+		data?: unknown,
+		retry = false,
+		logFailure = true,
+	): Promise<T> {
 		await this.getGateway();
 		const gateway = this.gateway;
 		if (!gateway) {
@@ -403,10 +421,10 @@ export class ThinqApiClient {
 				}
 
 				await this.refreshToken(this.session);
-				return this.request<T>(method, uri, data, true);
+				return this.request<T>(method, uri, data, true, logFailure);
 			}
 
-			if (axios.isAxiosError(error)) {
+			if (logFailure && axios.isAxiosError(error)) {
 				this.logger.debug(
 					`ThinQ request failed <- ${method.toUpperCase()} ${url} status=${error.response?.status} data=${JSON.stringify(error.response?.data)}`,
 				);

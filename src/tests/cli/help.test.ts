@@ -43,4 +43,58 @@ describe('HELP_TEXT', () => {
 		expect(HELP_TEXT).toContain('Authenticate with LG ThinQ');
 		expect(HELP_TEXT).toContain('List all discovered ThinQ devices');
 	});
+
+	it('should document the connect-probe command, its options and an example', () => {
+		// Assert
+		expect(HELP_TEXT).toContain('connect-probe');
+		expect(HELP_TEXT).toContain('--device-id');
+		expect(HELP_TEXT).toContain('--raw');
+		expect(HELP_TEXT).toContain('Connect-probe options:');
+		expect(HELP_TEXT).toMatch(/--command .*connect-probe/);
+	});
+
+	it('should document the connect-control command, its options and an example', () => {
+		// Assert
+		expect(HELP_TEXT).toContain('connect-control');
+		expect(HELP_TEXT).toContain('Connect-control options:');
+		expect(HELP_TEXT).toContain('--send');
+		expect(HELP_TEXT).toContain('--yes');
+		expect(HELP_TEXT).toContain('--wait');
+		expect(HELP_TEXT).toMatch(/--command .*connect-control/);
+	});
+
+	it('should list POWER_OFF, POWER_ON and START in the connect-control section', () => {
+		// Arrange
+		const start = HELP_TEXT.indexOf('Connect-control options:');
+		const end = HELP_TEXT.indexOf('Commands:');
+
+		// Act
+		const section = HELP_TEXT.slice(start, end);
+
+		// Assert
+		expect(start).toBeGreaterThanOrEqual(0);
+		expect(section).toContain('POWER_OFF');
+		expect(section).toContain('POWER_ON');
+		expect(section).toContain('START');
+	});
+
+	it('should document the --out option, its file-path requirement and an example path', () => {
+		// Assert
+		expect(HELP_TEXT).toContain('--out');
+		expect(HELP_TEXT).toContain('Needs a file path value');
+		expect(HELP_TEXT).toContain('workspace/out/probe.txt');
+	});
+
+	it('should document the connect-settings command, its --brief option and an example', () => {
+		// Assert
+		expect(HELP_TEXT).toContain('connect-settings');
+		expect(HELP_TEXT).toContain('Connect-settings options:');
+		expect(HELP_TEXT).toContain('--brief');
+		expect(HELP_TEXT).toMatch(/--command .*connect-settings/);
+	});
+
+	it('should document a POWER_OFF connect-control example', () => {
+		// Assert
+		expect(HELP_TEXT).toMatch(/--command .*connect-control.*--send POWER_OFF/);
+	});
 });

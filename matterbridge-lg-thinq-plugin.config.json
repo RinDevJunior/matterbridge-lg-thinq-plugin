@@ -1,19 +1,17 @@
 {
 	"name": "matterbridge-lg-thinq-plugin",
 	"type": "DynamicPlatform",
-	"version": "0.1.0",
+	"version": "0.1.1-rc05",
 	"thinq": {
 		"loginType": "account",
 		"username": "",
 		"password": "",
 		"refreshToken": "",
+		"personalAccessToken": "",
 		"country": "US",
 		"language": "en-US",
 		"refreshIntervalSeconds": 60,
 		"filterMonitoringIntervalSeconds": 3600,
-		"devices": []
-	},
-	"webos": {
 		"devices": []
 	},
 	"advancedFeature": {

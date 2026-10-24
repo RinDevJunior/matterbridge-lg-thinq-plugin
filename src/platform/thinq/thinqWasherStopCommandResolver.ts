@@ -35,12 +35,17 @@ function toWasherStopCommandPayload(entry: Record<string, unknown>): WasherStopC
 	return payload;
 }
 
+export type WasherPauseCommandPayload = WasherStopCommandPayload;
+
 /**
- * Extracts a real `WMStop`/`WMOff` command payload from a device's own downloaded model JSON
- * (`ControlWifi` slice). Pure, no I/O — returns `undefined` on any missing/malformed shape instead of
- * throwing, so callers can treat "no usable command" as a normal (fail-closed) outcome.
+ * Reads one `ControlWifi` entry from a device's own downloaded model JSON. Pure, no I/O — returns
+ * `undefined` on any missing/malformed shape instead of throwing, so callers can treat "no usable
+ * command" as a normal (fail-closed) outcome.
  */
-export function extractWasherStopCommand(deviceModel: Record<string, unknown>): WasherStopCommandPayload | undefined {
+function extractControlWifiEntry(
+	deviceModel: Record<string, unknown>,
+	key: 'WMStop' | 'WMOff' | 'WMWakeup' | 'ospWakeup',
+): WasherStopCommandPayload | undefined {
 	if (!isRecord(deviceModel)) {
 		return undefined;
 	}
@@ -50,13 +55,46 @@ export function extractWasherStopCommand(deviceModel: Record<string, unknown>): 
 		return undefined;
 	}
 
-	const stopEntry = isRecord(controlWifi.WMStop) ? controlWifi.WMStop : undefined;
-	const offEntry = isRecord(controlWifi.WMOff) ? controlWifi.WMOff : undefined;
-	const entry = stopEntry ?? offEntry;
-
-	if (!entry) {
+	const entry = controlWifi[key];
+	if (!isRecord(entry)) {
 		return undefined;
 	}
 
 	return toWasherStopCommandPayload(entry);
+}
+
+/**
+ * Extracts LG's `WMStop` control payload. Despite its name, LG's `WMStop` is the PAUSE control
+ * (`controlDataType: 'PAUSE'`), so it backs Matter `pause`. Never falls back to `WMOff`.
+ */
+export function extractWasherPauseCommand(deviceModel: Record<string, unknown>): WasherPauseCommandPayload | undefined {
+	return extractControlWifiEntry(deviceModel, 'WMStop');
+}
+
+/**
+ * Extracts LG's `WMOff` control payload. This is the POWEROFF control (`controlDataType: 'POWEROFF'`),
+ * so it backs Matter `stop`. Never falls back to `WMStop`: that would turn a pause into a power-off.
+ */
+export function extractWasherStopCommand(deviceModel: Record<string, unknown>): WasherStopCommandPayload | undefined {
+	return extractControlWifiEntry(deviceModel, 'WMOff');
+}
+
+export type WasherWakeupCommandPayload = WasherStopCommandPayload;
+
+/**
+ * Extracts LG's `WMWakeup` control payload. CLI only; not wired into the plugin runtime.
+ */
+export function extractWasherWakeupCommand(
+	deviceModel: Record<string, unknown>,
+): WasherWakeupCommandPayload | undefined {
+	return extractControlWifiEntry(deviceModel, 'WMWakeup');
+}
+
+/**
+ * Extracts LG's `ospWakeup` control payload. CLI only; not wired into the plugin runtime.
+ */
+export function extractWasherOspWakeupCommand(
+	deviceModel: Record<string, unknown>,
+): WasherWakeupCommandPayload | undefined {
+	return extractControlWifiEntry(deviceModel, 'ospWakeup');
 }

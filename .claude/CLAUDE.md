@@ -23,10 +23,13 @@ Activate the Engineer Manager persona via `/config` → **Output style** → Eng
 - Be concise — no yapping, details only when asked.
 - Never mix logic and test changes in one step.
 - No `Co-Authored-By` in commits. Subagents never run `git commit`/`git push`.
+- Commit messages MUST follow `.claude/templates/commit-message.md`; PR descriptions MUST follow `.claude/templates/pull-request.md`.
 
 ## Verification
 
 Compact scripts only: `format:ci`, `lint:fix:ci`, `test:ci`, `precommit:ci`, `diff:ci`, `type-check:ci`, `build:local:ci`, `doctor:ci`. Never raw `npm run test`/`build:local`/`tsc`, never paste full output — `*:ci` output is already compact, print as-is.
+
+`*:ci` scripts in package.json must be a single `node scripts/<name>.mjs` call (no `>`/`2>&1`/`;`/`&&`/`sh -c`) so they run under Windows cmd.exe.
 
 On `path/to/file.ts(line,col): error ...`, jump straight to `Read(file, offset: line, limit: ~15-20)` — don't grep/re-read the whole file first. Each agent's own verification gate must PASS before it reports complete.
 
@@ -40,4 +43,5 @@ On `path/to/file.ts(line,col): error ...`, jump straight to `Read(file, offset: 
 2. **`LSP`** — main session only, never reaches Task subagents (confirmed: absent from schema regardless of frontmatter/reload). Subagent definitions must not reference it.
 3. **Grep/Glob** — word-boundary pattern (e.g. `\bgetRoomMap\b`) + check `index.ts` barrels for re-exports. macOS/Linux native: use `mcp__glob-grep__Glob/Grep`. Windows/remote: native `Glob`/`Grep`. Last resort: `Bash` `rg`/`find` (ignores `.gitignore`, unlike the others).
 4. **Live device behavior** — need real CLI output (device status, map data, etc.) rather than static source? Use `mcp__cli-runner__RunCli` (requires a built `dist/cli.js` and an existing login session) instead of shelling out via `Bash`.
-5. **Log files** — see `.claude/instructions/shared-rules.md` (`ReadLog` MCP tool).
+5. **Matterbridge / Matter API** — read the reference copy `/Volumes/ExternalSSD/code/references/matterbridge`, never `node_modules/matterbridge` or `node_modules/@matter` (node_modules only for the installed version number). CodeGraph first: `codegraph explore -p /Volumes/ExternalSSD/code/references/matterbridge "<query>"` (shell), then Grep/Read there.
+6. **Log files** — see `.claude/instructions/shared-rules.md` (`ReadLog` MCP tool).

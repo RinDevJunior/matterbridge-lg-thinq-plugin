@@ -145,3 +145,5 @@ Report:
 - Edit only what's stale because of this task; don't rewrite unrelated content
 - No implementation recommendations — reflect what changed, factually
 - **Verification gate:** run `npm run format:ci` after edits; must PASS before reporting
+
+Matterbridge / Matter code: follow the "Matterbridge / Matter API" rule in `.claude/CLAUDE.md` (Code Exploration Priority) — reference copy, not `node_modules`.

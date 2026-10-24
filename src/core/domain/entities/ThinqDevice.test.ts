@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { ThinqDeviceData } from '../../../services/thinq/thinqApiClient.js';
 import { asPartial, buildThinqDeviceData } from '../../../tests/helpers/testUtils.js';
 import type { ThinqDevice } from './ThinqDevice.js';
 import { isAirConditionerDevice, isValidThinqDeviceId, isWasherDevice, toThinqDevice } from './ThinqDevice.js';
@@ -219,6 +220,102 @@ describe('ThinqDevice', () => {
 			const device = toThinqDevice(data);
 
 			expect(device.modelJsonUri).toBeUndefined();
+		});
+
+		describe('serialNumber', () => {
+			it('should map manufacture.serialNo to serialNumber when present', () => {
+				// Arrange
+				const data = buildThinqDeviceData({ manufacture: { serialNo: 'FAKESERIAL01' } });
+
+				// Act
+				const device = toThinqDevice(data);
+
+				// Assert
+				expect(device.serialNumber).toBe('FAKESERIAL01');
+			});
+
+			it('should trim surrounding whitespace from serialNumber', () => {
+				// Arrange
+				const data = buildThinqDeviceData({ manufacture: { serialNo: '  FAKESERIAL01  ' } });
+
+				// Act
+				const device = toThinqDevice(data);
+
+				// Assert
+				expect(device.serialNumber).toBe('FAKESERIAL01');
+			});
+
+			it('should return undefined serialNumber when serialNo is an empty string', () => {
+				// Arrange
+				const data = buildThinqDeviceData({ manufacture: { serialNo: '' } });
+
+				// Act
+				const device = toThinqDevice(data);
+
+				// Assert
+				expect(device.serialNumber).toBeUndefined();
+			});
+
+			it('should return undefined serialNumber when serialNo is whitespace only', () => {
+				// Arrange
+				const data = buildThinqDeviceData({ manufacture: { serialNo: '   ' } });
+
+				// Act
+				const device = toThinqDevice(data);
+
+				// Assert
+				expect(device.serialNumber).toBeUndefined();
+			});
+
+			it('should return undefined serialNumber when serialNo is not a string', () => {
+				// Arrange
+				// JSON.parse returns any, so a numeric serialNo reaches toThinqDevice without a type cast.
+				const manufacture: NonNullable<ThinqDeviceData['manufacture']> = JSON.parse('{"serialNo":12345}');
+				const data = buildThinqDeviceData({ manufacture });
+
+				// Act
+				const device = toThinqDevice(data);
+
+				// Assert
+				expect(device.serialNumber).toBeUndefined();
+			});
+
+			it('should return undefined serialNumber when manufacture is undefined', () => {
+				// Arrange
+				const data = buildThinqDeviceData({ manufacture: undefined });
+
+				// Act
+				const device = toThinqDevice(data);
+
+				// Assert
+				expect(device.serialNumber).toBeUndefined();
+			});
+
+			it('should return undefined serialNumber when manufacture has no serialNo', () => {
+				// Arrange
+				const data = buildThinqDeviceData({ manufacture: {} });
+
+				// Act
+				const device = toThinqDevice(data);
+
+				// Assert
+				expect(device.serialNumber).toBeUndefined();
+			});
+
+			it('should keep id as deviceId when serialNumber is present', () => {
+				// Arrange
+				const data = buildThinqDeviceData({
+					deviceId: 'test-id',
+					manufacture: { serialNo: 'FAKESERIAL01' },
+				});
+
+				// Act
+				const device = toThinqDevice(data);
+
+				// Assert
+				expect(device.id).toBe('test-id');
+				expect(device.serialNumber).toBe('FAKESERIAL01');
+			});
 		});
 	});
 });
