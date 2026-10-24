@@ -402,3 +402,5 @@ After `plan.md`, append new architectural decisions to `.claude/memory.md` (max 
 - Never spawn investigator for a locate-only question — use Explore (or CodeGraph); investigator is reserved for multi-question, cross-module traces that need an answers file
 - Complete the full planning tree in one session — no partial handoff to the main session
 - Report a ≤10-line summary — never paste plan contents back to the main session
+
+Matterbridge / Matter code: follow the "Matterbridge / Matter API" rule in `.claude/CLAUDE.md` (Code Exploration Priority) — reference copy, not `node_modules`.

@@ -174,14 +174,14 @@ It is version-controlled — commit and push changes so teammates can pull the l
   (Sep 27, 2026): live-tested on a real AC, confirmed NO EFFECT in Apple Home (no power tile
   appeared) — reverted. Do not retry this exact same-endpoint approach without new evidence. See
   `workspace/apple-energy-tab-ac-not-listed/`.
-- ThinQ Connect (PAT) planned (Oct 21, 2026): `src/thinqConnect/` (platform side; `src/services/thinqConnect/` = API client/pure helpers) self-contained (no imports of V1/`PlatformConfigManager`/`cli/`), neutral pure helpers in `services/thinqConnect/thinqConnectWasher.ts`; only `module.ts` imports both. matterbridge 3.10.14 AWAITS on/off/start/stop handlers then sets OnOff; never `await updateAttribute` inside a handler (deadlock) -> `deferThinqConnectApply`; refusal = throw. See `workspace/connect-power-handler-deadlock-fix/plan.md`. See `workspace/thinq-v2-washer-onoff/plan.md`.
+- ThinQ Connect (PAT) planned (Oct 21, 2026): `src/thinqConnect/` (platform side; `src/services/thinqConnect/` = API client/pure helpers) self-contained (no imports of V1/`PlatformConfigManager`/`cli/`), neutral pure helpers in `services/thinqConnect/thinqConnectWasher.ts`; only `module.ts` imports both. matterbridge 3.11.0 AWAITS on/off/start/stop handlers then sets OnOff; never `await updateAttribute` inside a handler (deadlock) -> `deferThinqConnectApply`; refusal = throw. See `workspace/connect-power-handler-deadlock-fix/plan.md`. See `workspace/thinq-v2-washer-onoff/plan.md`.
 - ThinQ Connect AC planned (Oct 21, 2026): Connect AC = `DEVICE_AIR_CONDITIONER`, plain-object state, profile read by path (not findKey). Thermostat/fan writes are raw attribute writes -> `subscribeAttribute` + `context.fabric` guard + explicit revert; `resetCondition` with no handler resets locally, so ThinQ Connect registers a throwing one. See `workspace/thinq-v2-air-conditioner/plan.md`.
 
-- ThinQ Connect washer Start/Stop planned (Oct 21, 2026, matterbridge 3.10.14 AWAITS OperationalState start/stop/pause/resume handlers then sets Running/Stopped itself): refusal MUST throw (no mutation), success returns; STOP not POWER_OFF; no auto POWER_ON; NO opt-in setting (user removed it; handlers always registered, safety = guards). See `workspace/connect-energy-probe-and-washer-start-stop/plan.md`.
+- ThinQ Connect washer Start/Stop planned (Oct 21, 2026, matterbridge 3.11.0 AWAITS OperationalState start/stop/pause/resume handlers then sets Running/Stopped itself): refusal MUST throw (no mutation), success returns; STOP not POWER_OFF; no auto POWER_ON; NO opt-in setting (user removed it; handlers always registered, safety = guards). See `workspace/connect-energy-probe-and-washer-start-stop/plan.md`.
 - ThinQ Connect push planned (Oct 21, 2026): MQTT event = trigger for a normal `GET /state` refresh (partial `report`, unverified washer shape); creds in memory only (async `node:crypto` keygen, forge only for CSR), only a stable `thinq-open-<uuid>` client id persisted; polling slows to 300 s while healthy. See `workspace/connect-ac-fahrenheit-fan-steps-error-push/plan.md`.
 - ThinQ Connect AC temperature (Oct 21, 2026): real profiles/SDK show top-level `temperature.unit` is `["C"]` and the SDK uses only `temperatureInUnits` (writable range is `coolTargetTemperature`); F support is gated on profile unit `['F']`, C path untouched. `windStep` (1-5) maps to 20/40/60/80/100 %.
 
-- Matter server-mode identity (Oct 22, 2026, matterbridge 3.10.14): node store = `deviceName.replace(/[ .]/g,'')` (`matterbridge.js:2171`); stored serial/uniqueId WIN over new ones (`:1920`); child endpoint stored by endpoint `id` -> new id = new endpoint number. See `workspace/connect-identity-mapping-file/plan.md`.
+- Matter server-mode identity (Oct 22, 2026, matterbridge 3.11.0): node store = `deviceName.replace(/[ .]/g,'')` (`matterbridge.js:2171`); stored serial/uniqueId WIN over new ones (`:1920`); child endpoint stored by endpoint `id` -> new id = new endpoint number. See `workspace/connect-identity-mapping-file/plan.md`.
 - V1 washer vtCtrl runtime planned (Oct 23, 2026): pure vt logic moves `cli/` -> `platform/thinq/thinqWasherVtCtrl.ts` (CLI = re-export shim); new `WasherVtController` (fresh read, guard, 10 s send timeout, poll, in-flight lock, 2 min Start lock-out). Start tap 1 (Remote Control OFF) stages the course and throws an instruction; tap 2 sends START. See `workspace/v1-washer-vtctrl-runtime/plan.md`.
 
 ## Test Patterns
@@ -244,6 +244,8 @@ It is version-controlled — commit and push changes so teammates can pull the l
 ## Module Notes
 
 <!-- Notes about specific modules, non-obvious behaviors -->
+
+- Matterbridge/Matter API (Oct 24, 2026 rule): read `/Volumes/ExternalSSD/code/references/matterbridge`, never `node_modules/matterbridge`/`@matter`; CodeGraph first: `codegraph explore -p <that path> "<query>"`.
 
 - `roomNameNormalizer.ts` (b01): pure module, no imports. `normalizeB01RoomName(roomName, roomTypeId?, roomId?)` returns non-empty; callers may still chain `|| fallback`. `rr_other` (typeId 0) always resolves to `Room ${roomId}`.
 

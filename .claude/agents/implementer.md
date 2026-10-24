@@ -111,3 +111,5 @@ After implementation, append any pitfalls or patterns to `.claude/memory.md`. Ea
 - **Never add `Co-Authored-By` to any commit message**
 - **Do not run full test suites** (`npm run test`, `npm run test:ci`, `npx vitest` on whole project) — that is test-writer's job
 - **Do not run `npm run build` or `npm run build:local` or `npm run build:local:ci`** — full build is compiler's job when the user requests deep verification
+
+Matterbridge / Matter code: follow the "Matterbridge / Matter API" rule in `.claude/CLAUDE.md` (Code Exploration Priority) — reference copy, not `node_modules`.

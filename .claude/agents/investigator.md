@@ -98,3 +98,5 @@ Read `.claude/memory.md` at session start. Append durable insights after answeri
 - Read paths outside this repo only when TA scopes them in the questions file and the path is listed in `wiki/reference-workspaces.md`
 - If a question is trivial, flag it: `Note: this could have been resolved without Investigator`
 - Return results to Technical Architect — not the main session
+
+Matterbridge / Matter code: follow the "Matterbridge / Matter API" rule in `.claude/CLAUDE.md` (Code Exploration Priority) — reference copy, not `node_modules`.
