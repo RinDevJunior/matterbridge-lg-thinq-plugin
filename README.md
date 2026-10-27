@@ -71,7 +71,10 @@ Requires matterbridge@3.11.0
 
 **Washer (account or token login, models with `uniProtocol` and `vtCtrl`)** — controlled through the LG app's own `vtCtrl` command: On, Off, Start, Pause, Resume and Stop. On uses the washer's own wake-up command from its model data (the vtCtrl power-on does not work on a washer that is off) and is refused when the model has none; the washer then goes from off to ready. Other washer models keep the older behaviour described above.
 
-- The wash course comes from `Selected Wash Course` in the plugin settings (restart the plugin after changing it). Home cannot pick a program.
+- The wash course comes from `Selected Wash Course` in the plugin settings (restart the plugin after changing it) or from Home, which lists the washer's own courses and sends a change to the washer.
+- Wash steps: Matter reports one of 8 steps (Detecting to Cooling) while the washer is washing; it is empty when off, paused, finished or in error.
+- Cycle finished: a one-time message is sent when a cycle ends, with the measured run and paused time. It is not sent at start-up or after a restart.
+- Home controls (course, temperature, spin, rinses): there is no setting to turn them off; the only way back is an older version. Not yet tested on a real washer through Home.
 - Start takes two taps. With the washer on and loaded and its door closed, the first tap selects your course and Home shows a message (the tap is reported as failed on purpose) asking you to hold the Remote Control button on the washer for 3 seconds. After that, tap Start again to begin the wash. If Remote Control is already on, the washer runs the course shown on its panel.
 - Pause and Resume work any time during a wash. Start while paused resumes.
 - Stop and Off are refused during a wash unless `Allow cancelling a running wash` is on. When it is on, the washer is paused first and then powered off, which abandons the cycle (water may stay in the drum and the door may stay locked). Stop or Off while a wash is running (with `Allow cancelling a running wash` on) pauses, confirms, then powers off, which can take 30 seconds or more, so a Home app may show "no response" although the washer did what was asked; Start and the course tap take up to about 15 seconds.
