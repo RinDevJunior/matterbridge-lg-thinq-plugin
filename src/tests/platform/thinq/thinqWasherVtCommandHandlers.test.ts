@@ -20,7 +20,7 @@ vi.mock('../../../platform/thinq/thinqWasherStateSync.js', () => ({
 	applyThinqSnapshotToWasher: vi.fn().mockResolvedValue(undefined),
 }));
 
-const REGISTERED_COMMANDS = ['on', 'off', 'start', 'pause', 'resume', 'stop', 'changeToMode'];
+const REGISTERED_COMMANDS = ['on', 'off', 'start', 'pause', 'resume', 'stop'];
 
 function createMockDevice(): ThinqWasherDevice {
 	return asPartial<ThinqWasherDevice>({ id: 'washer-123', type: 'WASHER', online: true });
@@ -78,7 +78,7 @@ describe('thinqWasherVtCommandHandlers', () => {
 	}
 
 	describe('registration', () => {
-		it('should register each of the seven command handlers exactly once', () => {
+		it('should register each of the six command handlers exactly once', () => {
 			// Arrange / Act
 			const names = vi.mocked(endpoint.addCommandHandler).mock.calls.map(([command]) => command);
 			// Assert
@@ -236,14 +236,11 @@ describe('thinqWasherVtCommandHandlers', () => {
 	});
 
 	describe('changeToMode', () => {
-		it('should reject with the course-in-settings text and never run the runner', async () => {
-			// Arrange
-			const handler = getHandler('changeToMode');
-			// Act / Assert
-			await expect(handler()).rejects.toThrow(
-				'Wash course is chosen in the plugin settings (Selected Wash Course), not from Home.',
-			);
-			expect(run).not.toHaveBeenCalled();
+		it('should register no changeToMode handler so the selection handlers own it', () => {
+			// Arrange / Act
+			const names = vi.mocked(endpoint.addCommandHandler).mock.calls.map(([command]) => command);
+			// Assert
+			expect(names).not.toContain('changeToMode');
 		});
 	});
 });

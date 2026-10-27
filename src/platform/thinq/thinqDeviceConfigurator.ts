@@ -20,6 +20,12 @@ import { extractWasherCourseCatalog, type WasherCourseCatalog } from './thinqWas
 import { reconcileWasherCourseConfig } from './thinqWasherCourseConfigReconciler.js';
 import { resolveWasherCourseSelectionFromConfig } from './thinqWasherCourseSelectionResolver.js';
 import { buildWasherEndpoint } from './thinqWasherEndpointFactory.js';
+import {
+	buildWasherEndpointClusterOptions,
+	resolveWasherMatterPlan,
+	type WasherMatterPlan,
+	washerMatterPlanRefusalReason,
+} from './thinqWasherMatterPlan.js';
 import { extractWasherStartCommand, type WasherStartCommandPayload } from './thinqWasherStartCommandResolver.js';
 import {
 	extractWasherPauseCommand,
@@ -30,6 +36,7 @@ import {
 import { createWasherVtPorts, registerWasherVtCommandHandlers } from './thinqWasherVtCommandHandlers.js';
 import { WasherVtController } from './thinqWasherVtController.js';
 import { buildWasherOspWakeBody } from './thinqWasherVtCtrl.js';
+import { registerWasherVtSelectionHandlers } from './thinqWasherVtSelectionHandlers.js';
 import { isWasherVtSupported, resolveWasherVtStagePlan } from './thinqWasherVtStagePlan.js';
 
 const DEFAULT_TEMPERATURE_CELSIUS = 20;
@@ -64,6 +71,7 @@ export function mapWindStrengthToFixedFanMode(windStrength: number | undefined):
  */
 export class ThinqDeviceConfigurator {
 	private courseConfigChanged = false;
+	private readonly washerMatterPlans = new Map<string, WasherMatterPlan>();
 
 	constructor(
 		private readonly logger: AnsiLogger,
@@ -75,6 +83,10 @@ export class ThinqDeviceConfigurator {
 		const changed = this.courseConfigChanged;
 		this.courseConfigChanged = false;
 		return changed;
+	}
+
+	public getWasherMatterPlan(deviceId: string): WasherMatterPlan | undefined {
+		return this.washerMatterPlans.get(deviceId);
 	}
 
 	private resolveProductIdentity(device: ThinqAirConditionerDevice | ThinqWasherDevice): {
@@ -160,21 +172,36 @@ export class ThinqDeviceConfigurator {
 			: undefined;
 		const productIdentity = this.resolveProductIdentity(device);
 
-		const washer = buildWasherEndpoint(device, {
-			vendorId: matterOverride?.matterVendorId,
-			vendorName: matterOverride?.matterVendorName,
-			productId: productIdentity.productId,
-			productName: productIdentity.productName,
-		});
-
-		// Hardcoded: the washer is always exposed as its own standalone Matter node (server mode), matching the AC.
-		washer.mode = 'server';
-
+		// The model is fetched before the endpoint is built: LaundryWasherMode.supportedModes is a Fixed attribute.
 		const {
 			pause: pauseCommandPayload,
 			stop: stopCommandPayload,
 			vtModel,
 		} = await this.resolveWasherPauseAndStopCommandPayloads(device);
+
+		const plan = vtModel === undefined ? undefined : resolveWasherMatterPlan(vtModel);
+		if (plan !== undefined) {
+			this.washerMatterPlans.set(device.id, plan);
+		} else {
+			this.washerMatterPlans.delete(device.id);
+		}
+
+		const washer = buildWasherEndpoint(
+			device,
+			{
+				vendorId: matterOverride?.matterVendorId,
+				vendorName: matterOverride?.matterVendorName,
+				productId: productIdentity.productId,
+				productName: productIdentity.productName,
+			},
+			plan === undefined ? undefined : buildWasherEndpointClusterOptions(plan, device.snapshot, this.logger),
+		);
+
+		// Hardcoded: the washer is always exposed as its own standalone Matter node (server mode), matching the AC.
+		washer.mode = 'server';
+		if (vtModel !== undefined) {
+			this.logWasherMatterPlan(device, vtModel, plan);
+		}
 
 		const courseCatalog = await this.resolveWasherCourseCatalog(device);
 		if (courseCatalog) {
@@ -185,7 +212,7 @@ export class ThinqDeviceConfigurator {
 		}
 
 		if (vtModel) {
-			this.registerWasherVtControl(washer, device, vtModel);
+			this.registerWasherVtControl(washer, device, vtModel, plan);
 			this.logger.debug(`registerWasher: completed for deviceId=${device.id}`);
 			return washer;
 		}
@@ -204,10 +231,28 @@ export class ThinqDeviceConfigurator {
 		return washer;
 	}
 
+	private logWasherMatterPlan(
+		device: ThinqWasherDevice,
+		vtModel: Record<string, unknown>,
+		plan: WasherMatterPlan | undefined,
+	): void {
+		const maskedId = maskSecret(device.id, 4);
+		if (plan === undefined) {
+			this.logger.warn(
+				`ThinQ Washer ${maskedId}: ${washerMatterPlanRefusalReason(vtModel)}; Home shows the placeholder course list`,
+			);
+			return;
+		}
+		this.logger.info(
+			`ThinQ Washer ${maskedId}: ${plan.modes.length} course(s) exposed as modes, Normal-tagged course ${plan.normalCourseId}`,
+		);
+	}
+
 	private registerWasherVtControl(
 		washer: MatterbridgeEndpoint,
 		device: ThinqWasherDevice,
 		vtModel: Record<string, unknown>,
+		plan: WasherMatterPlan | undefined,
 	): void {
 		const washerControl = this.configManager.getWasherControlConfig(device.id);
 		const stagePlan = resolveWasherVtStagePlan(vtModel, washerControl);
@@ -232,8 +277,15 @@ export class ThinqDeviceConfigurator {
 			allowCancelCycle: washerControl.allowCancelCycle === true,
 			stagePlan,
 			wakeBody: buildWasherOspWakeBody(vtModel),
+			resolveCourseOptions: plan === undefined ? undefined : (courseId: string) => plan.optionsOf(courseId),
 		});
 		registerWasherVtCommandHandlers(washer, device, controller, this.logger);
+		if (plan !== undefined) {
+			registerWasherVtSelectionHandlers(washer, device, controller, plan, this.logger);
+			this.logger.info(
+				`ThinQ Washer ${maskedId}: Home can set the course, temperature, spin and rinses (washer on and idle, Remote Control off, no child lock, no error)`,
+			);
+		}
 	}
 
 	/**

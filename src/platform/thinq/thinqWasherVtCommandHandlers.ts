@@ -13,8 +13,6 @@ export type WasherVtRunner = Pick<WasherVtController, 'run'>;
 
 export const WASHER_VT_DEFERRED_APPLY_DELAY_MS = 500;
 
-const CHANGE_TO_MODE_REFUSAL = 'Wash course is chosen in the plugin settings (Selected Wash Course), not from Home.';
-
 /** Real ports: a fresh device-list read (never the cached poll snapshot), `control-sync` sends, real timers. */
 export function createWasherVtPorts(device: ThinqWasherDevice, apiClient: ThinqApiClient): WasherVtPorts {
 	return {
@@ -89,8 +87,4 @@ export function registerWasherVtCommandHandlers(
 	washer.addCommandHandler('pause', async () => handle('pause', 'operationalState'));
 	washer.addCommandHandler('resume', async () => handle('resume', 'operationalState'));
 	washer.addCommandHandler('stop', async () => handle('stop', 'operationalState'));
-	washer.addCommandHandler('changeToMode', async () => {
-		logger.warn(`${prefix}: 'changeToMode' refused, the course is chosen in the plugin settings`);
-		throw new Error(CHANGE_TO_MODE_REFUSAL);
-	});
 }

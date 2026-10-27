@@ -1,9 +1,11 @@
 import { LaundryWasher } from 'matterbridge/devices';
+import { LaundryWasherControls, LaundryWasherMode } from 'matterbridge/matter/clusters';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ThinqWasherDevice } from '../../../core/domain/entities/ThinqDevice.js';
 import { ThinqSnapshot } from '../../../core/domain/value-objects/ThinqSnapshot.js';
 import { buildWasherEndpoint } from '../../../platform/thinq/thinqWasherEndpointFactory.js';
+import type { WasherEndpointClusterOptions } from '../../../platform/thinq/thinqWasherMatterPlan.js';
 import { asPartial } from '../../helpers/testUtils.js';
 
 vi.mock('matterbridge/devices', () => ({
@@ -35,6 +37,23 @@ function createMockWasherDevice(): ThinqWasherDevice {
 			'washerDryer.state': 'RUNNING',
 		}),
 	});
+}
+
+/** A fixed cluster-options object, so the factory is tested on its own (no plan resolution involved). */
+function createClusterOptions(): WasherEndpointClusterOptions {
+	return {
+		currentMode: 3,
+		supportedModes: [
+			{ label: 'Cold', mode: 1, modeTags: [{ value: LaundryWasherMode.ModeTag.Auto }] },
+			{ label: 'Normal', mode: 3, modeTags: [{ value: LaundryWasherMode.ModeTag.Normal }] },
+		],
+		spinSpeeds: ['800', '1400'],
+		spinSpeedCurrent: 1,
+		supportedTemperatureLevels: ['Cold', '40C'],
+		selectedTemperatureLevel: 1,
+		numberOfRinses: LaundryWasherControls.NumberOfRinses.Normal,
+		supportedRinses: [LaundryWasherControls.NumberOfRinses.Normal],
+	};
 }
 
 describe('thinqWasherEndpointFactory', () => {
@@ -186,6 +205,81 @@ describe('thinqWasherEndpointFactory', () => {
 			// Assert
 			const mockInstance = laundryWasherMock.mock.results[0]?.value;
 			expect(mockInstance?.addChildDeviceType).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('buildWasherEndpoint with clusterOptions (slice 1 display)', () => {
+		it('should construct LaundryWasher with exactly two arguments when no clusterOptions is passed', () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const laundryWasherSpy = vi.mocked(LaundryWasher);
+
+			// Act
+			buildWasherEndpoint(device);
+
+			// Assert
+			expect(laundryWasherSpy.mock.calls[0]).toHaveLength(2);
+		});
+
+		it('should pass the clusterOptions list and index fields as the third LaundryWasher argument', () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const clusterOptions = createClusterOptions();
+			const laundryWasherSpy = vi.mocked(LaundryWasher);
+
+			// Act
+			buildWasherEndpoint(device, undefined, clusterOptions);
+
+			// Assert
+			const thirdArgument = laundryWasherSpy.mock.calls[0]?.[2];
+			expect(laundryWasherSpy.mock.calls[0]).toHaveLength(3);
+			expect(thirdArgument).toMatchObject({
+				supportedModes: clusterOptions.supportedModes,
+				currentMode: 3,
+				spinSpeeds: ['800', '1400'],
+				spinSpeedCurrent: 1,
+				supportedTemperatureLevels: ['Cold', '40C'],
+				selectedTemperatureLevel: 1,
+				numberOfRinses: LaundryWasherControls.NumberOfRinses.Normal,
+				supportedRinses: [LaundryWasherControls.NumberOfRinses.Normal],
+			});
+		});
+
+		it('should not pass id, number, tagList or mode in the third LaundryWasher argument', () => {
+			// Arrange
+			const device = createMockWasherDevice();
+			const laundryWasherSpy = vi.mocked(LaundryWasher);
+
+			// Act
+			buildWasherEndpoint(device, undefined, createClusterOptions());
+
+			// Assert
+			const thirdArgument = laundryWasherSpy.mock.calls[0]?.[2];
+			expect(thirdArgument).not.toHaveProperty('id');
+			expect(thirdArgument).not.toHaveProperty('number');
+			expect(thirdArgument).not.toHaveProperty('tagList');
+			expect(thirdArgument).not.toHaveProperty('mode');
+		});
+
+		it('should keep the same identity arguments to createDefaultBasicInformationClusterServer when clusterOptions is passed', () => {
+			// Arrange
+			const device = { ...createMockWasherDevice(), serialNumber: 'FAKESERIAL01' };
+			const laundryWasherSpy = vi.mocked(LaundryWasher);
+
+			// Act
+			buildWasherEndpoint(device, undefined, createClusterOptions());
+
+			// Assert
+			expect(laundryWasherSpy).toHaveBeenCalledWith('Living Room Washer', 'washer-123', expect.any(Object));
+			const mockInstance = laundryWasherSpy.mock.results[0]?.value;
+			expect(mockInstance?.createDefaultBasicInformationClusterServer).toHaveBeenCalledWith(
+				'Living Room Washer',
+				'FAKESERIAL01',
+				0xfff1,
+				'Matterbridge',
+				0x8000,
+				'Matterbridge Laundry Washer',
+			);
 		});
 	});
 });

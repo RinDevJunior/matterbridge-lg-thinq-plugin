@@ -15,6 +15,7 @@ import { buildWasherEndpoint } from '../../../platform/thinq/thinqWasherEndpoint
 import { extractWasherStartCommand } from '../../../platform/thinq/thinqWasherStartCommandResolver.js';
 import { registerWasherVtCommandHandlers } from '../../../platform/thinq/thinqWasherVtCommandHandlers.js';
 import { WasherVtController } from '../../../platform/thinq/thinqWasherVtController.js';
+import { registerWasherVtSelectionHandlers } from '../../../platform/thinq/thinqWasherVtSelectionHandlers.js';
 import type { ThinqApiClient } from '../../../services/thinq/thinqApiClient.js';
 import { asPartial, createMockLogger } from '../../helpers/testUtils.js';
 import { createFakeWasherModel } from '../../helpers/washerFixtures.js';
@@ -51,6 +52,9 @@ vi.mock('../../../platform/thinq/thinqWasherVtCommandHandlers.js', () => ({
 }));
 vi.mock('../../../platform/thinq/thinqWasherVtController.js', () => ({
 	WasherVtController: vi.fn(),
+}));
+vi.mock('../../../platform/thinq/thinqWasherVtSelectionHandlers.js', () => ({
+	registerWasherVtSelectionHandlers: vi.fn(),
 }));
 
 /** LG `ControlWifi.WMStop` entry: the PAUSE control (matches the LG sample washer model shape). */
@@ -467,6 +471,7 @@ describe('ThinqDeviceConfigurator', () => {
 					productId: 0x8001,
 					productName: 'LG Washer',
 				}),
+				undefined, // no cluster options: the model has no usable course list
 			);
 		});
 
@@ -1375,6 +1380,317 @@ describe('registerWasher vtCtrl routing', () => {
 			expect.arrayContaining(['pause', 'stop', 'start']),
 		);
 		expect(getDeviceModel).toHaveBeenCalledTimes(3);
+	});
+});
+
+describe('registerWasher Home selection wiring (vtCtrl)', () => {
+	let mockLogger: ReturnType<typeof createMockLogger>;
+	let mockConfigManager: PlatformConfigManager;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockLogger = createMockLogger();
+		mockConfigManager = asPartial<PlatformConfigManager>({
+			...createMockConfigManager(),
+			ensureWasherControlEntry: vi.fn().mockReturnValue({}),
+		});
+	});
+
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('should register the selection handlers once with the endpoint, device, controller, plan and logger on a vt model', async () => {
+		// Arrange
+		const device = createMockWasherDevice();
+		const configurator = createConfiguratorWithDeviceModel(
+			mockLogger,
+			mockConfigManager,
+			vi.fn().mockResolvedValue(createFakeWasherModel()),
+		);
+
+		// Act
+		await configurator.registerWasher(device);
+
+		// Assert
+		expect(registerWasherVtSelectionHandlers).toHaveBeenCalledTimes(1);
+		const args = vi.mocked(registerWasherVtSelectionHandlers).mock.calls[0];
+		expect(args?.length).toBe(5);
+		expect(args?.[1]).toBe(device);
+		expect(args?.[2]).toBe(vi.mocked(WasherVtController).mock.instances[0]);
+		expect(args?.[3]?.normalCourseId).toBe('NORMAL');
+		expect(args?.[4]).toBe(mockLogger);
+	});
+
+	it('should pass resolveCourseOptions that returns the course options for a known course and undefined for an unknown one', async () => {
+		// Arrange
+		const configurator = createConfiguratorWithDeviceModel(
+			mockLogger,
+			mockConfigManager,
+			vi.fn().mockResolvedValue(createFakeWasherModel()),
+		);
+
+		// Act
+		await configurator.registerWasher(createMockWasherDevice());
+
+		// Assert
+		const resolveCourseOptions = vi.mocked(WasherVtController).mock.calls[0]?.[3]?.resolveCourseOptions;
+		expect(resolveCourseOptions?.('NORMAL')).toMatchObject({
+			spin: { values: ['SPIN_800', 'SPIN_1000', 'SPIN_1200', 'SPIN_1400'], defaultValue: 'SPIN_1400', writable: true },
+		});
+		expect(resolveCourseOptions?.('GHOST')).toBeUndefined();
+	});
+
+	it('should not register selection handlers and should leave resolveCourseOptions undefined when the model has fewer than two courses', async () => {
+		// Arrange
+		const oneCourseModel = {
+			...createFakeWasherModel(),
+			Course: { NORMAL: { function: [{ value: 'spin', default: 'SPIN_1400', selectable: ['SPIN_1400'] }] } },
+		};
+		const configurator = createConfiguratorWithDeviceModel(
+			mockLogger,
+			mockConfigManager,
+			vi.fn().mockResolvedValue(oneCourseModel),
+		);
+
+		// Act
+		const result = await configurator.registerWasher(createMockWasherDevice());
+
+		// Assert
+		expect(result).toBeDefined();
+		expect(registerWasherVtSelectionHandlers).not.toHaveBeenCalled();
+		expect(registerWasherVtCommandHandlers).toHaveBeenCalledTimes(1);
+		expect(vi.mocked(WasherVtController).mock.calls[0]?.[3]?.resolveCourseOptions).toBeUndefined();
+	});
+
+	it('should not register selection handlers on a non-vt model and keep the legacy pause, stop and start payloads', async () => {
+		// Arrange
+		const configurator = createConfiguratorWithDeviceModel(
+			mockLogger,
+			mockConfigManager,
+			vi.fn().mockResolvedValue({ ControlWifi: { WMStop: { command: 'Set', data: {} } } }),
+		);
+
+		// Act
+		await configurator.registerWasher(createMockWasherDevice());
+
+		// Assert
+		expect(registerWasherSelectionSpyCallCount()).toBe(0);
+		expect(registerWasherCommandHandlers).toHaveBeenCalledTimes(1);
+		expect(Object.keys(vi.mocked(registerWasherCommandHandlers).mock.calls[0]?.[4] ?? {})).toEqual(
+			expect.arrayContaining(['pause', 'stop', 'start']),
+		);
+	});
+
+	it('should log the Home selection line and drop the display-only wording on a vt model', async () => {
+		// Arrange
+		const configurator = createConfiguratorWithDeviceModel(
+			mockLogger,
+			mockConfigManager,
+			vi.fn().mockResolvedValue(createFakeWasherModel()),
+		);
+
+		// Act
+		await configurator.registerWasher(createMockWasherDevice());
+
+		// Assert
+		expect(mockLogger.info).toHaveBeenCalledWith(
+			expect.stringContaining('Home can set the course, temperature, spin and rinses'),
+		);
+		expect(mockLogger.info).not.toHaveBeenCalledWith(expect.stringContaining('display only'));
+	});
+});
+
+function registerWasherSelectionSpyCallCount(): number {
+	return vi.mocked(registerWasherVtSelectionHandlers).mock.calls.length;
+}
+
+describe('registerWasher plan wiring (slice 1)', () => {
+	let mockLogger: ReturnType<typeof createMockLogger>;
+	let mockConfigManager: PlatformConfigManager;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockLogger = createMockLogger();
+		mockConfigManager = asPartial<PlatformConfigManager>({
+			...createMockConfigManager(),
+			ensureWasherControlEntry: vi.fn().mockReturnValue({}),
+		});
+	});
+
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('should await the model fetch before buildWasherEndpoint is called on a vt model', async () => {
+		// Arrange
+		const getDeviceModel = vi.fn().mockResolvedValue(createFakeWasherModel());
+		const configurator = createConfiguratorWithDeviceModel(mockLogger, mockConfigManager, getDeviceModel);
+
+		// Act
+		await configurator.registerWasher(createMockWasherDevice());
+
+		// Assert
+		const modelOrder = getDeviceModel.mock.invocationCallOrder[0] ?? Number.NaN;
+		const buildOrder = vi.mocked(buildWasherEndpoint).mock.invocationCallOrder[0] ?? Number.NaN;
+		expect(modelOrder).toBeLessThan(buildOrder);
+	});
+
+	it('should pass a defined cluster-options third argument built from the model plan on a vt model', async () => {
+		// Arrange
+		const configurator = createConfiguratorWithDeviceModel(
+			mockLogger,
+			mockConfigManager,
+			vi.fn().mockResolvedValue(createFakeWasherModel()),
+		);
+
+		// Act
+		await configurator.registerWasher(createMockWasherDevice());
+
+		// Assert
+		// Fake model: COTTON (mode 1) and NORMAL (mode 2, Normal). The device snapshot has no course, so Normal is used.
+		expect(vi.mocked(buildWasherEndpoint).mock.calls[0]?.[2]).toMatchObject({
+			currentMode: 2,
+			spinSpeeds: ['800', '1000', '1200', '1400'],
+			spinSpeedCurrent: 3,
+		});
+		expect(mockLogger.info).toHaveBeenCalledWith(
+			expect.stringContaining('2 course(s) exposed as modes, Normal-tagged course NORMAL'),
+		);
+	});
+
+	it('should warn that the Course map is missing and register with no cluster options when the model has none', async () => {
+		// Arrange
+		const device = createMockWasherDevice();
+		const modelWithoutCourse = { ...createFakeWasherModel(), Course: undefined };
+		const configurator = createConfiguratorWithDeviceModel(
+			mockLogger,
+			mockConfigManager,
+			vi.fn().mockResolvedValue(modelWithoutCourse),
+		);
+
+		// Act
+		const result = await configurator.registerWasher(device);
+
+		// Assert
+		expect(result).toBeDefined();
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			expect.stringContaining('model has a missing or malformed Course map'),
+		);
+		expect(vi.mocked(buildWasherEndpoint).mock.calls[0]?.[2]).toBeUndefined();
+		expect(configurator.getWasherMatterPlan(device.id)).toBeUndefined();
+	});
+
+	it('should warn that the Course map is malformed and register with no cluster options when Course is an array', async () => {
+		// Arrange
+		const device = createMockWasherDevice();
+		const modelWithArrayCourse = { ...createFakeWasherModel(), Course: ['NORMAL', 'COLDWASH'] };
+		const configurator = createConfiguratorWithDeviceModel(
+			mockLogger,
+			mockConfigManager,
+			vi.fn().mockResolvedValue(modelWithArrayCourse),
+		);
+
+		// Act
+		const result = await configurator.registerWasher(device);
+
+		// Assert
+		expect(result).toBeDefined();
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			expect.stringContaining('model has a missing or malformed Course map'),
+		);
+		expect(mockLogger.warn).not.toHaveBeenCalledWith(expect.stringContaining('usable course(s)'));
+		expect(vi.mocked(buildWasherEndpoint).mock.calls[0]?.[2]).toBeUndefined();
+		expect(configurator.getWasherMatterPlan(device.id)).toBeUndefined();
+	});
+
+	it('should pass an undefined third argument and keep the pause/stop/start payloads on a non-vt model', async () => {
+		// Arrange
+		const device = createMockWasherDevice();
+		const configurator = createConfiguratorWithDeviceModel(
+			mockLogger,
+			mockConfigManager,
+			vi.fn().mockResolvedValue({
+				ControlWifi: { WMStop: PAUSE_CONTROL_ENTRY, WMOff: POWEROFF_CONTROL_ENTRY },
+			}),
+		);
+
+		// Act
+		await configurator.registerWasher(device);
+
+		// Assert
+		expect(vi.mocked(buildWasherEndpoint).mock.calls[0]?.[2]).toBeUndefined();
+		expect(registerWasherVtCommandHandlers).not.toHaveBeenCalled();
+		const payloads = vi.mocked(registerWasherCommandHandlers).mock.calls[0]?.[4];
+		expect(payloads).toMatchObject({
+			pause: { command: 'Set', dataSetList: { washerDryer: PAUSE_CONTROL_ENTRY.data.washerDryer } },
+			stop: { command: 'Set', dataSetList: { washerDryer: POWEROFF_CONTROL_ENTRY.data.washerDryer } },
+		});
+		expect(configurator.getWasherMatterPlan(device.id)).toBeUndefined();
+	});
+
+	it('should still register a vt model with no cluster options and no plan when it has fewer than 2 courses', async () => {
+		// Arrange
+		const device = createMockWasherDevice();
+		const oneCourseModel = {
+			...createFakeWasherModel(),
+			Course: { NORMAL: { function: [{ value: 'spin', default: 'SPIN_1400', selectable: ['SPIN_1400'] }] } },
+		};
+		const configurator = createConfiguratorWithDeviceModel(
+			mockLogger,
+			mockConfigManager,
+			vi.fn().mockResolvedValue(oneCourseModel),
+		);
+
+		// Act
+		const result = await configurator.registerWasher(device);
+
+		// Assert
+		expect(result).toBeDefined();
+		expect(vi.mocked(buildWasherEndpoint).mock.calls[0]?.[2]).toBeUndefined();
+		expect(configurator.getWasherMatterPlan(device.id)).toBeUndefined();
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			expect.stringContaining('model has 1 usable course(s), Matter needs at least 2'),
+		);
+		expect(registerWasherVtCommandHandlers).toHaveBeenCalledTimes(1);
+	});
+
+	it('should keep the plan per device and return it from getWasherMatterPlan', async () => {
+		// Arrange
+		const configurator = createConfiguratorWithDeviceModel(
+			mockLogger,
+			mockConfigManager,
+			vi.fn().mockResolvedValue(createFakeWasherModel()),
+		);
+
+		// Act
+		await configurator.registerWasher(createMockWasherDevice());
+		await configurator.registerWasher({ ...createMockWasherDevice(), id: 'washer-789' });
+
+		// Assert
+		const plan = configurator.getWasherMatterPlan('washer-456');
+		expect(plan?.modes.map((entry) => entry.courseId)).toEqual(['COTTON', 'NORMAL']);
+		expect(plan?.normalCourseId).toBe('NORMAL');
+		expect(configurator.getWasherMatterPlan('washer-789')).toBeDefined();
+		expect(configurator.getWasherMatterPlan('unknown-id')).toBeUndefined();
+	});
+
+	it('should still register the washer with no plan when the model fetch rejects', async () => {
+		// Arrange
+		const device = createMockWasherDevice();
+		const configurator = createConfiguratorWithDeviceModel(
+			mockLogger,
+			mockConfigManager,
+			vi.fn().mockRejectedValue(new Error('Model unavailable')),
+		);
+
+		// Act
+		const result = await configurator.registerWasher(device);
+
+		// Assert
+		expect(result).toBeDefined();
+		expect(vi.mocked(buildWasherEndpoint).mock.calls[0]?.[2]).toBeUndefined();
+		expect(configurator.getWasherMatterPlan(device.id)).toBeUndefined();
 	});
 });
 
