@@ -6,7 +6,9 @@ import { ThinqSnapshot } from '../../../core/domain/value-objects/ThinqSnapshot.
 import {
 	applyWasherSelectionDisplay,
 	buildWasherEndpointClusterOptions,
+	CANONICAL_RINSE_ENUM,
 	courseIdToMode,
+	MATTER_RINSE_ORDER,
 	matterRinseToEnum,
 	modeToCourseId,
 	readWasherCourseOption,
@@ -481,7 +483,7 @@ describe('thinqWasherMatterPlan', () => {
 			]);
 		});
 
-		it('should return the first list member that maps to the requested Matter rinse count', () => {
+		it('should return the canonical value for the requested Matter rinse count when the list allows it', () => {
 			// Arrange
 			const list = listOf(['NO_RINSE', 'RINSE_2', 'RINSE_3'], 'RINSE_2');
 
@@ -501,6 +503,146 @@ describe('thinqWasherMatterPlan', () => {
 
 			// Assert
 			expect(value).toBeUndefined();
+		});
+	});
+
+	describe('canonical rinse write map', () => {
+		const FULL_LIST = listOf(['NO_RINSE', 'RINSE_1', 'RINSE_2', 'RINSE_3', 'RINSE_4', 'RINSE_5'], 'RINSE_2');
+
+		it('should map each Matter rinse count to its one canonical LG value', () => {
+			// Act / Assert
+			expect(CANONICAL_RINSE_ENUM).toEqual({
+				[LaundryWasherControls.NumberOfRinses.None]: 'NO_RINSE',
+				[LaundryWasherControls.NumberOfRinses.Normal]: 'RINSE_2',
+				[LaundryWasherControls.NumberOfRinses.Extra]: 'RINSE_3',
+				[LaundryWasherControls.NumberOfRinses.Max]: 'RINSE_4',
+			});
+		});
+
+		it('should list the Matter rinse counts in enum order None, Normal, Extra, Max', () => {
+			// Act / Assert
+			expect(MATTER_RINSE_ORDER).toEqual([
+				LaundryWasherControls.NumberOfRinses.None,
+				LaundryWasherControls.NumberOfRinses.Normal,
+				LaundryWasherControls.NumberOfRinses.Extra,
+				LaundryWasherControls.NumberOfRinses.Max,
+			]);
+		});
+
+		it.each(MATTER_RINSE_ORDER)(
+			'should round-trip Matter count %s through its canonical value to the same count',
+			(count) => {
+				// Act / Assert
+				expect(rinseEnumToMatter(CANONICAL_RINSE_ENUM[count])).toBe(count);
+			},
+		);
+
+		it.each([
+			[LaundryWasherControls.NumberOfRinses.None, 'NO_RINSE'],
+			[LaundryWasherControls.NumberOfRinses.Normal, 'RINSE_2'],
+			[LaundryWasherControls.NumberOfRinses.Extra, 'RINSE_3'],
+			[LaundryWasherControls.NumberOfRinses.Max, 'RINSE_4'],
+		])('should write LG value for Matter count %s on a full writable list as %s', (count, value) => {
+			// Act / Assert
+			expect(matterRinseToEnum(FULL_LIST, count)).toBe(value);
+		});
+
+		it('should return undefined for None and the canonical values for the rest when NO_RINSE is not listed', () => {
+			// Arrange
+			const list = listOf(['RINSE_1', 'RINSE_2', 'RINSE_3', 'RINSE_4', 'RINSE_5'], 'RINSE_1');
+
+			// Act / Assert
+			expect(matterRinseToEnum(list, LaundryWasherControls.NumberOfRinses.None)).toBeUndefined();
+			expect(matterRinseToEnum(list, LaundryWasherControls.NumberOfRinses.Normal)).toBe('RINSE_2');
+			expect(matterRinseToEnum(list, LaundryWasherControls.NumberOfRinses.Extra)).toBe('RINSE_3');
+			expect(matterRinseToEnum(list, LaundryWasherControls.NumberOfRinses.Max)).toBe('RINSE_4');
+		});
+
+		it.each(MATTER_RINSE_ORDER)('should return undefined for Matter count %s on a non-writable list', (count) => {
+			// Arrange: the one value's own default maps to Normal, so Normal is the tricky case.
+			const list = listOf(['RINSE_2'], 'RINSE_2', false);
+
+			// Act / Assert
+			expect(matterRinseToEnum(list, count)).toBeUndefined();
+		});
+	});
+
+	describe('supportedRinsesOf write-aware list', () => {
+		it('should offer None, Normal, Extra and Max on the full VCDWL_QEUK list', () => {
+			// Arrange
+			const list = listOf(['NO_RINSE', 'RINSE_1', 'RINSE_2', 'RINSE_3', 'RINSE_4', 'RINSE_5'], 'RINSE_2');
+
+			// Act / Assert
+			expect(supportedRinsesOf(list)).toEqual([
+				LaundryWasherControls.NumberOfRinses.None,
+				LaundryWasherControls.NumberOfRinses.Normal,
+				LaundryWasherControls.NumberOfRinses.Extra,
+				LaundryWasherControls.NumberOfRinses.Max,
+			]);
+		});
+
+		it('should not offer None on the TURBO39 / SPEED14 / RINSE_SPIN list', () => {
+			// Arrange
+			const list = listOf(['RINSE_1', 'RINSE_2', 'RINSE_3', 'RINSE_4', 'RINSE_5'], 'RINSE_1');
+
+			// Act / Assert
+			expect(supportedRinsesOf(list)).toEqual([
+				LaundryWasherControls.NumberOfRinses.Normal,
+				LaundryWasherControls.NumberOfRinses.Extra,
+				LaundryWasherControls.NumberOfRinses.Max,
+			]);
+		});
+
+		it('should offer only Normal on the TUB_CLEAN fixed list', () => {
+			// Arrange
+			const list = listOf(['RINSE_2'], 'RINSE_2', false);
+
+			// Act / Assert
+			expect(supportedRinsesOf(list)).toEqual([LaundryWasherControls.NumberOfRinses.Normal]);
+		});
+
+		it('should offer only None on the SPIN_ONLY fixed list', () => {
+			// Arrange
+			const list = listOf(['NO_RINSE'], 'NO_RINSE', false);
+
+			// Act / Assert
+			expect(supportedRinsesOf(list)).toEqual([LaundryWasherControls.NumberOfRinses.None]);
+		});
+
+		it('should not duplicate Max when the shown value is RINSE_5 on a full list', () => {
+			// Arrange
+			const list = listOf(['NO_RINSE', 'RINSE_1', 'RINSE_2', 'RINSE_3', 'RINSE_4', 'RINSE_5'], 'RINSE_2');
+
+			// Act
+			const supported = supportedRinsesOf(list, 'RINSE_5');
+
+			// Assert
+			expect(supported).toEqual([
+				LaundryWasherControls.NumberOfRinses.None,
+				LaundryWasherControls.NumberOfRinses.Normal,
+				LaundryWasherControls.NumberOfRinses.Extra,
+				LaundryWasherControls.NumberOfRinses.Max,
+			]);
+		});
+
+		it('should always include the shown count so numberOfRinses stays a member on a non-writable list', () => {
+			// Arrange
+			const list = listOf(['RINSE_1'], 'RINSE_1', false);
+
+			// Act / Assert
+			expect(supportedRinsesOf(list, 'RINSE_1')).toEqual([LaundryWasherControls.NumberOfRinses.Normal]);
+		});
+
+		it('should return distinct counts in enum order, not input order, for a shuffled list', () => {
+			// Arrange
+			const list = listOf(['RINSE_4', 'NO_RINSE', 'RINSE_2'], 'RINSE_2');
+
+			// Act / Assert
+			expect(supportedRinsesOf(list)).toEqual([
+				LaundryWasherControls.NumberOfRinses.None,
+				LaundryWasherControls.NumberOfRinses.Normal,
+				LaundryWasherControls.NumberOfRinses.Max,
+			]);
 		});
 	});
 
@@ -915,6 +1057,77 @@ describe('thinqWasherMatterPlan', () => {
 
 			// Assert
 			expect(washer.updateAttribute).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('rinse list refresh on the display path', () => {
+		it('should write supportedRinses before numberOfRinses and show Max for RINSE_5 on a full writable list', async () => {
+			// Arrange
+			const plan = buildPlan();
+			const washer = createMockWasherEndpoint();
+			const snapshot = snapshotOf({ state: 'INITIAL', course: 'NORMAL', rinse: 'RINSE_5' });
+
+			// Act
+			await applyWasherSelectionDisplay(washer, snapshot, plan, createMockLogger());
+
+			// Assert
+			const attributes = vi.mocked(washer.updateAttribute).mock.calls.map((call: unknown[]) => call[1]);
+			expect(attributes.indexOf('supportedRinses')).toBeLessThan(attributes.indexOf('numberOfRinses'));
+			expect(washer.updateAttribute).toHaveBeenCalledWith(
+				LaundryWasherControls.id,
+				'numberOfRinses',
+				LaundryWasherControls.NumberOfRinses.Max,
+				expect.anything(),
+			);
+		});
+
+		it('should publish only Normal and show Normal for RINSE_1 on a non-writable single-value list', async () => {
+			// Arrange
+			const model = {
+				Config: { defaultCourse: 'NORMAL' },
+				Course: {
+					NORMAL: { function: [{ value: 'rinse', default: 'RINSE_2' }] },
+					OTHER: { function: [] },
+				},
+			};
+			const washer = createMockWasherEndpoint();
+			const snapshot = snapshotOf({ state: 'INITIAL', course: 'NORMAL', rinse: 'RINSE_1' });
+
+			// Act
+			await applyWasherSelectionDisplay(washer, snapshot, buildPlan(model), createMockLogger());
+
+			// Assert
+			expect(washer.updateAttribute).toHaveBeenCalledWith(
+				LaundryWasherControls.id,
+				'supportedRinses',
+				[LaundryWasherControls.NumberOfRinses.Normal],
+				expect.anything(),
+			);
+			expect(washer.updateAttribute).toHaveBeenCalledWith(
+				LaundryWasherControls.id,
+				'numberOfRinses',
+				LaundryWasherControls.NumberOfRinses.Normal,
+				expect.anything(),
+			);
+		});
+
+		it('should fall back to the course default count and keep numberOfRinses a member on a POWEROFF snapshot', () => {
+			// Arrange
+			const plan = buildPlan();
+			const snapshot = snapshotOf({ state: 'POWEROFF', course: 'NORMAL', rinse: 'RINSE_5' });
+
+			// Act
+			const options = buildClusterOptionsOrFail(plan, snapshot);
+
+			// Assert
+			expect(options.numberOfRinses).toBe(LaundryWasherControls.NumberOfRinses.Normal);
+			expect(options.supportedRinses).toContain(options.numberOfRinses);
+			expect(options.supportedRinses).toEqual([
+				LaundryWasherControls.NumberOfRinses.None,
+				LaundryWasherControls.NumberOfRinses.Normal,
+				LaundryWasherControls.NumberOfRinses.Extra,
+				LaundryWasherControls.NumberOfRinses.Max,
+			]);
 		});
 	});
 
