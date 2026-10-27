@@ -2,9 +2,24 @@
 
 ## [Unreleased]
 
+## [0.1.1-rc06] - 2026-10-27
+
+### Added
+
+- **Warning: no off switch for Home controls** — there is no setting to turn the Home controls below off; the only way back is an older version. They are not yet tested on a real washer through Home.
+- **V1 washer wash steps in Matter** — the washer reports one of 8 steps (Detecting, Pre-Wash, Washing, Rinsing, Softening, Spinning, Drying, Cooling), grouped from the 26 LG states. It is empty when the washer is off, paused, finished or in error.
+- **Cycle finished message** — a one-time OperationCompletion event with the measured total run time and paused time. It is never sent at start-up or after a restart, not when the washer is switched off mid-wash, and not on error.
+- **Real courses and settings in Home** — Home shows the washer's own course list and the current temperature, spin and rinse settings.
+- **Home controls for the washer** — changing the course, temperature, spin speed or number of rinses in Home now reaches the washer. The changes are sent as one message with the course and all four settings; changes made within 1.2 s are merged. A change is accepted only when the washer is on and waiting, Remote Control is off, child lock is off, there is no error, and the washer is online. These changes never carry a start, pause or resume command. Each one is tried once with a 10 s limit and is not retried. Refused spin or rinse changes snap back in Home. Start uses the course picked in Home. Rinse pairs are None = no rinse, Normal = 2, Extra = 3, Max = 4, and Home offers only the rinse choices the selected course allows. This applies to V1 washers with `uniProtocol` and `vtCtrl` only.
+
 ### Changed
 
-- PAT login is marked under development and removed from the supported login types in the README; Matterbridge 3.11.0 is the expected version.
+- **PAT login under development** — PAT login is marked under development and removed from the supported login types in the README; Matterbridge 3.11.0 is the expected version.
+- **Course or temperature change from Home** — a course or temperature change from Home used to do nothing on the washer; it now sends to the washer. The old refusal "course is chosen in settings" is removed.
+
+<a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
+
+---
 
 ## [0.1.1-rc05] - 2026-10-23
 
