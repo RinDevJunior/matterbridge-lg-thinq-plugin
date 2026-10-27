@@ -8,6 +8,7 @@ import {
 	parseWasherField,
 	type WasherFields,
 } from './thinqWasherFields.js';
+import type { WasherCourseOptions } from './thinqWasherMatterPlan.js';
 import {
 	buildWasherVtBody,
 	buildWasherVtCells,
@@ -21,11 +22,14 @@ import {
 	WASHER_POLL_ATTEMPTS,
 	WASHER_POLL_INTERVAL_MS,
 	WASHER_VT_IDLE_STATES,
+	WASHER_VT_OPTION_KEYS,
 	WASHER_VT_POWER_POLL_ATTEMPTS,
 	WASHER_VT_RUNNING_STATES,
 	WASHER_VT_SEND_TIMEOUT_MS,
 	WASHER_VT_START_LOCKOUT_MS,
 	type WasherVtBody,
+	type WasherVtOptionKey,
+	type WasherVtOptions,
 	type WasherVtRefusal,
 	type WasherVtSendName,
 } from './thinqWasherVtCtrl.js';
@@ -39,6 +43,10 @@ export interface WasherVtOutcome {
 	readonly message: string;
 	readonly snapshot?: ThinqSnapshot;
 }
+
+export type WasherVtChange =
+	| { readonly kind: 'course'; readonly courseId: string }
+	| { readonly kind: 'option'; readonly key: WasherVtOptionKey; readonly value: string };
 
 export interface WasherVtReading {
 	readonly fields: WasherFields;
@@ -63,6 +71,13 @@ export interface WasherVtControllerOptions {
 	readonly powerPollAttempts?: number;
 	readonly pollIntervalMs?: number;
 	readonly startLockoutMs?: number;
+	/** Per-course allowed values. Omitted = the controller refuses every `applyChanges`. */
+	readonly resolveCourseOptions?: ((courseId: string) => WasherCourseOptions | undefined) | undefined;
+}
+
+interface WasherVtSelection {
+	readonly courseId: string;
+	readonly options: WasherVtOptions;
 }
 
 interface SendResult {
@@ -77,6 +92,10 @@ const MSG_LOCKOUT =
 	'A Start was sent a moment ago and the washer has not confirmed it. Check the washer before trying again.';
 const MSG_NO_WAKE =
 	'This washer model has no wake-up command, so Home cannot switch it on. Use the power button on the washer.';
+const MSG_NO_COURSE = 'The washer has no wash course selected. Pick a course on the washer first.';
+const MSG_NO_OPTIONS = 'This washer model does not describe its wash courses, so Home cannot change them.';
+const MSG_KEY_NOT_ON_COURSE = 'The selected wash course has no such setting.';
+const MSG_VALUE_NOT_ALLOWED = 'The selected wash course does not allow that setting.';
 const MSG_REMOTE_OFF = 'Press the Remote Control button on the washer for 3 seconds, then tap Start again.';
 
 const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -89,6 +108,7 @@ function stateOf(fields: WasherFields): string | undefined {
 export class WasherVtController {
 	private inFlight = false;
 	private startLockedUntil = 0;
+	private homeSelection: WasherVtSelection | undefined;
 
 	private readonly sendTimeoutMs: number;
 	private readonly pollAttempts: number;
@@ -111,19 +131,109 @@ export class WasherVtController {
 
 	/** Never throws. `done` and `noop` are success; every other status is a refusal or failure for the caller to surface. */
 	public async run(action: WasherVtAction): Promise<WasherVtOutcome> {
+		return this.withLock(action, () => this.execute(action));
+	}
+
+	/** Never throws. One `vt-course` send carrying the course and all four option cells; never `wmControl`. */
+	public async applyChanges(changes: readonly WasherVtChange[]): Promise<WasherVtOutcome> {
+		return this.withLock('apply-changes', () => this.executeChanges(changes));
+	}
+
+	private async withLock(label: string, body: () => Promise<WasherVtOutcome>): Promise<WasherVtOutcome> {
 		if (this.inFlight) {
-			this.logger.warn(`ThinQ Washer ${this.label}: '${action}' refused, another command is running`);
+			this.logger.warn(`ThinQ Washer ${this.label}: '${label}' refused, another command is running`);
 			return { status: 'refused', message: MSG_BUSY };
 		}
 		this.inFlight = true;
 		try {
-			return await this.execute(action);
+			return await body();
 		} catch (error) {
-			this.logger.error(`ThinQ Washer ${this.label}: '${action}' failed unexpectedly: ${errorText(error)}`);
+			this.logger.error(`ThinQ Washer ${this.label}: '${label}' failed unexpectedly: ${errorText(error)}`);
 			return { status: 'failed', message: `Could not control the washer: ${errorText(error)}` };
 		} finally {
 			this.inFlight = false;
 		}
+	}
+
+	private async executeChanges(changes: readonly WasherVtChange[]): Promise<WasherVtOutcome> {
+		if (changes.length === 0) {
+			return { status: 'noop', message: 'nothing to change' };
+		}
+		const reading = await this.read();
+		if ('status' in reading) {
+			return reading;
+		}
+		const refusal = checkWasherVtGuard('vt-course', reading.fields, reading.online);
+		if (refusal) {
+			return this.refuse(refusal, reading);
+		}
+
+		const requestedCourse = changes.findLast((change) => change.kind === 'course')?.courseId;
+		const courseId = requestedCourse ?? parseWasherField(reading.fields, 'course');
+		if (typeof courseId !== 'string' || courseId === '' || courseId === 'NOT_SELECTED' || courseId === 'DOWNLOAD') {
+			return this.refuseSelection(reading, MSG_NO_COURSE);
+		}
+		const courseOptions = this.options.resolveCourseOptions?.(courseId);
+		if (courseOptions === undefined) {
+			return this.refuseSelection(reading, MSG_NO_OPTIONS);
+		}
+
+		const requested = new Map<WasherVtOptionKey, string>();
+		for (const change of changes) {
+			if (change.kind === 'option') {
+				requested.set(change.key, change.value);
+			}
+		}
+		const cells: Partial<Record<WasherVtOptionKey, string>> = {};
+		for (const key of WASHER_VT_OPTION_KEYS) {
+			const list = courseOptions[key];
+			const value = requested.get(key);
+			if (list === undefined) {
+				if (value !== undefined) {
+					return this.refuseSelection(reading, MSG_KEY_NOT_ON_COURSE);
+				}
+				continue;
+			}
+			if (value !== undefined) {
+				if (!list.writable || !list.values.includes(value)) {
+					return this.refuseSelection(reading, MSG_VALUE_NOT_ALLOWED);
+				}
+				cells[key] = value;
+				continue;
+			}
+			const current = parseWasherField(reading.fields, key);
+			cells[key] = typeof current === 'string' && list.values.includes(current) ? current : list.defaultValue;
+		}
+
+		if (isWasherVtCourseApplied(reading.fields, courseId, cells)) {
+			this.homeSelection = { courseId, options: cells };
+			return this.noop(reading, 'the washer already has these settings');
+		}
+		const result = await this.sendAndConfirm(
+			'vt-course',
+			reading,
+			this.pollAttempts,
+			(fields) => isWasherVtCourseApplied(fields, courseId, cells),
+			undefined,
+			{ courseId, options: cells },
+		);
+		if (result.outcome.status === 'done') {
+			this.homeSelection = { courseId, options: cells };
+			return result.outcome;
+		}
+		if (result.outcome.status === 'unconfirmed') {
+			const rejected = rejectedWasherVtCells(result.reply);
+			return {
+				...result.outcome,
+				message: `${result.outcome.message}${rejected.length > 0 ? ` LG did not apply: ${rejected.join(', ')}.` : ''}`,
+			};
+		}
+		return result.outcome;
+	}
+
+	private refuseSelection(reading: WasherVtReading, message: string): WasherVtOutcome {
+		this.logger.warn(`ThinQ Washer ${this.label}: refused, ${message}`);
+		return { status: 'refused', message, snapshot: reading.snapshot };
 	}
 
 	private async execute(action: WasherVtAction): Promise<WasherVtOutcome> {
@@ -302,7 +412,7 @@ export class WasherVtController {
 		if (refusal) {
 			return this.refuse(refusal, reading);
 		}
-		const { stagePlan } = this.options;
+		const stagePlan = this.homeSelection ?? this.options.stagePlan;
 		if (stagePlan === undefined) {
 			this.logger.warn(`ThinQ Washer ${this.label}: no valid Selected Wash Course configured, nothing staged`);
 			return remoteOff;
@@ -312,8 +422,13 @@ export class WasherVtController {
 			return { ...remoteOff, message: `Course ${stagePlan.courseId} is already selected. ${MSG_REMOTE_OFF}` };
 		}
 
-		const result = await this.sendAndConfirm('vt-course', reading, this.pollAttempts, (fields) =>
-			isWasherVtCourseApplied(fields, stagePlan.courseId, stagePlan.options),
+		const result = await this.sendAndConfirm(
+			'vt-course',
+			reading,
+			this.pollAttempts,
+			(fields) => isWasherVtCourseApplied(fields, stagePlan.courseId, stagePlan.options),
+			undefined,
+			{ courseId: stagePlan.courseId, options: stagePlan.options },
 		);
 		if (result.outcome.status === 'done') {
 			return {
@@ -366,8 +481,9 @@ export class WasherVtController {
 		attempts: number,
 		confirm?: (fields: WasherFields) => boolean,
 		bodyOverride?: WasherVtBody,
+		stageOverride?: WasherVtSelection,
 	): Promise<SendResult> {
-		const stage = name === 'vt-course' ? this.options.stagePlan : undefined;
+		const stage = stageOverride ?? (name === 'vt-course' ? this.options.stagePlan : undefined);
 		const body = bodyOverride ?? buildWasherVtBody(name as WasherVtSendName, stage?.courseId, stage?.options ?? {});
 		const cells =
 			bodyOverride === undefined

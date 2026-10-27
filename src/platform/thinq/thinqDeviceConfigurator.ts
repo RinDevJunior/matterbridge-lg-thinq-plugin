@@ -36,6 +36,7 @@ import {
 import { createWasherVtPorts, registerWasherVtCommandHandlers } from './thinqWasherVtCommandHandlers.js';
 import { WasherVtController } from './thinqWasherVtController.js';
 import { buildWasherOspWakeBody } from './thinqWasherVtCtrl.js';
+import { registerWasherVtSelectionHandlers } from './thinqWasherVtSelectionHandlers.js';
 import { isWasherVtSupported, resolveWasherVtStagePlan } from './thinqWasherVtStagePlan.js';
 
 const DEFAULT_TEMPERATURE_CELSIUS = 20;
@@ -211,7 +212,7 @@ export class ThinqDeviceConfigurator {
 		}
 
 		if (vtModel) {
-			this.registerWasherVtControl(washer, device, vtModel);
+			this.registerWasherVtControl(washer, device, vtModel, plan);
 			this.logger.debug(`registerWasher: completed for deviceId=${device.id}`);
 			return washer;
 		}
@@ -243,7 +244,7 @@ export class ThinqDeviceConfigurator {
 			return;
 		}
 		this.logger.info(
-			`ThinQ Washer ${maskedId}: ${plan.modes.length} course(s) exposed as modes, Normal-tagged course ${plan.normalCourseId} (display only)`,
+			`ThinQ Washer ${maskedId}: ${plan.modes.length} course(s) exposed as modes, Normal-tagged course ${plan.normalCourseId}`,
 		);
 	}
 
@@ -251,6 +252,7 @@ export class ThinqDeviceConfigurator {
 		washer: MatterbridgeEndpoint,
 		device: ThinqWasherDevice,
 		vtModel: Record<string, unknown>,
+		plan: WasherMatterPlan | undefined,
 	): void {
 		const washerControl = this.configManager.getWasherControlConfig(device.id);
 		const stagePlan = resolveWasherVtStagePlan(vtModel, washerControl);
@@ -275,8 +277,15 @@ export class ThinqDeviceConfigurator {
 			allowCancelCycle: washerControl.allowCancelCycle === true,
 			stagePlan,
 			wakeBody: buildWasherOspWakeBody(vtModel),
+			resolveCourseOptions: plan === undefined ? undefined : (courseId: string) => plan.optionsOf(courseId),
 		});
 		registerWasherVtCommandHandlers(washer, device, controller, this.logger);
+		if (plan !== undefined) {
+			registerWasherVtSelectionHandlers(washer, device, controller, plan, this.logger);
+			this.logger.info(
+				`ThinQ Washer ${maskedId}: Home can set the course, temperature, spin and rinses (washer on and idle, Remote Control off, no child lock, no error)`,
+			);
+		}
 	}
 
 	/**

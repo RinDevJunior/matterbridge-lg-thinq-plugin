@@ -228,21 +228,47 @@ export function rinseEnumToMatter(value: string): LaundryWasherControls.NumberOf
 	}
 }
 
-/** The first value of the list that maps to the requested Matter rinse count. */
+/** The one LG value Home writes for each Matter rinse count; RINSE_1 and RINSE_5 are display-only. */
+export const CANONICAL_RINSE_ENUM: Readonly<Record<LaundryWasherControls.NumberOfRinses, string>> = {
+	[LaundryWasherControls.NumberOfRinses.None]: 'NO_RINSE',
+	[LaundryWasherControls.NumberOfRinses.Normal]: 'RINSE_2',
+	[LaundryWasherControls.NumberOfRinses.Extra]: 'RINSE_3',
+	[LaundryWasherControls.NumberOfRinses.Max]: 'RINSE_4',
+};
+
+/** Matter rinse counts in enum order. */
+export const MATTER_RINSE_ORDER: readonly LaundryWasherControls.NumberOfRinses[] = [
+	LaundryWasherControls.NumberOfRinses.None,
+	LaundryWasherControls.NumberOfRinses.Normal,
+	LaundryWasherControls.NumberOfRinses.Extra,
+	LaundryWasherControls.NumberOfRinses.Max,
+];
+
+/** The LG value to send for a Matter rinse count: the canonical one, only when the course lets Home write it. */
 export function matterRinseToEnum(
 	list: WasherCourseOptionList,
 	rinses: LaundryWasherControls.NumberOfRinses,
 ): string | undefined {
-	return list.values.find((value) => rinseEnumToMatter(value) === rinses);
+	if (!list.writable) {
+		return undefined;
+	}
+	const canonical = CANONICAL_RINSE_ENUM[rinses];
+	return canonical !== undefined && list.values.includes(canonical) ? canonical : undefined;
 }
 
-/** Distinct Matter rinse counts the list can express, in list order. */
-export function supportedRinsesOf(list: WasherCourseOptionList): LaundryWasherControls.NumberOfRinses[] {
-	const rinses = list.values.flatMap((value) => {
-		const mapped = rinseEnumToMatter(value);
+/**
+ * Matter rinse counts Home may offer, in `MATTER_RINSE_ORDER`: the writable ones, plus what the washer shows now
+ * and the course default so `numberOfRinses` is always a member (RINSE_1 / RINSE_5 keep displaying).
+ */
+export function supportedRinsesOf(
+	list: WasherCourseOptionList,
+	currentValue?: string,
+): LaundryWasherControls.NumberOfRinses[] {
+	const shown = [currentValue, list.defaultValue].flatMap((value) => {
+		const mapped = value === undefined ? undefined : rinseEnumToMatter(value);
 		return mapped === undefined ? [] : [mapped];
 	});
-	return [...new Set(rinses)];
+	return MATTER_RINSE_ORDER.filter((rinses) => matterRinseToEnum(list, rinses) !== undefined || shown.includes(rinses));
 }
 
 /** Constructor options for a vtCtrl washer. Every field is supplied; the whole object is absent when a list is missing. */
@@ -340,7 +366,7 @@ export function buildWasherEndpointClusterOptions(
 
 	const powered = snapshot.washerRawState !== WASHER_POWER_OFF_STATE;
 	const rinseValue = (powered ? readWasherString(snapshot, 'rinse') : undefined) ?? rinse.defaultValue;
-	const supportedRinses = supportedRinsesOf(rinse);
+	const supportedRinses = supportedRinsesOf(rinse, rinseValue);
 	const mappedRinse = rinseEnumToMatter(rinseValue);
 
 	return {
@@ -369,7 +395,7 @@ export function buildWasherEndpointClusterOptions(
 }
 
 /**
- * W3: pushes course/temp/spin/rinse onto the endpoint. Display only, nothing is sent to the appliance.
+ * W3: pushes course/temp/spin/rinse onto the endpoint. Nothing is sent to the appliance.
  * Each list is written BEFORE its index; nothing is written while the washer is powered off (it reports
  * placeholder NO_* values then).
  */
@@ -427,11 +453,11 @@ export async function applyWasherSelectionDisplay(
 	}
 
 	if (options.rinse !== undefined) {
-		const supported = supportedRinsesOf(options.rinse);
+		const rinse = readWasherString(snapshot, 'rinse');
+		const supported = supportedRinsesOf(options.rinse, rinse);
 		if (supported.length > 0) {
 			await washer.updateAttribute(LaundryWasherControls.id, 'supportedRinses', supported, logger);
 		}
-		const rinse = readWasherString(snapshot, 'rinse');
 		const mapped = rinse === undefined ? undefined : rinseEnumToMatter(rinse);
 		if (mapped === undefined || !supported.includes(mapped)) {
 			logger.debug(`applyWasherSelectionDisplay: rinse '${rinse ?? '(absent)'}' not mappable for course=${courseId}`);
