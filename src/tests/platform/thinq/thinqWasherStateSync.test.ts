@@ -1,8 +1,15 @@
-import { OnOff, OperationalState } from 'matterbridge/matter/clusters';
+import {
+	LaundryWasherControls,
+	LaundryWasherMode,
+	OnOff,
+	OperationalState,
+	TemperatureControl,
+} from 'matterbridge/matter/clusters';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { ThinqSnapshot } from '../../../core/domain/value-objects/ThinqSnapshot.js';
 import { type WasherCycleCompletion, WasherCycleTracker } from '../../../platform/thinq/thinqWasherCycleTracker.js';
+import { resolveWasherMatterPlan, type WasherMatterPlan } from '../../../platform/thinq/thinqWasherMatterPlan.js';
 import { WASHER_PHASE_LIST } from '../../../platform/thinq/thinqWasherPhases.js';
 import {
 	applyThinqSnapshotToWasher,
@@ -10,6 +17,7 @@ import {
 	resolveWasherRunStatus,
 } from '../../../platform/thinq/thinqWasherStateSync.js';
 import { asPartial, createMockLogger } from '../../helpers/testUtils.js';
+import { createFakeWasherModel } from '../../helpers/washerFixtures.js';
 
 function createMockWasherEndpoint(): any {
 	return asPartial<any>({
@@ -47,6 +55,119 @@ function createFakeClock(startMs = 1_000_000): FakeClock {
 function findUpdateCall(updateAttribute: Mock, attribute: string): unknown[] | undefined {
 	return updateAttribute.mock.calls.find((call: unknown[]) => call[1] === attribute);
 }
+
+const DISPLAY_CLUSTER_IDS: readonly unknown[] = [LaundryWasherMode.id, LaundryWasherControls.id, TemperatureControl.id];
+
+function displayPlan(): WasherMatterPlan {
+	const plan = resolveWasherMatterPlan(createFakeWasherModel());
+	if (plan === undefined) {
+		throw new Error('fixture model must produce a plan');
+	}
+	return plan;
+}
+
+describe('applyThinqSnapshotToWasher display argument (slice 1)', () => {
+	let mockLogger: ReturnType<typeof createMockLogger>;
+	let mockWasher: any;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockLogger = createMockLogger();
+		mockWasher = createMockWasherEndpoint();
+	});
+
+	it('should write exactly the W2 attributes in order when the 5th argument is omitted', async () => {
+		// Arrange
+		const snapshot = new ThinqSnapshot({ washerDryer: { state: 'RUNNING', course: 'NORMAL', temp: 'TEMP_40' } });
+
+		// Act
+		await applyThinqSnapshotToWasher(mockWasher, snapshot, mockLogger);
+
+		// Assert
+		const attributes = vi.mocked(mockWasher.updateAttribute).mock.calls.map((call: unknown[]) => call[1]);
+		expect(attributes).toEqual(['onOff', 'operationalState', 'operationalError', 'phaseList', 'currentPhase']);
+	});
+
+	it('should not write any LaundryWasherMode, LaundryWasherControls or TemperatureControl attribute without display', async () => {
+		// Arrange
+		const running = new ThinqSnapshot({ washerDryer: { state: 'RUNNING', course: 'NORMAL' } });
+		const ended = new ThinqSnapshot({ washerDryer: { state: 'END', course: 'NORMAL' } });
+
+		// Act
+		await applyThinqSnapshotToWasher(mockWasher, running, mockLogger);
+		await applyThinqSnapshotToWasher(mockWasher, ended, mockLogger);
+
+		// Assert
+		const clusterIds = vi.mocked(mockWasher.updateAttribute).mock.calls.map((call: unknown[]) => call[0]);
+		expect(clusterIds.filter((id: unknown) => DISPLAY_CLUSTER_IDS.includes(id))).toEqual([]);
+	});
+
+	it('should write the mode, controls and temperature attributes after phaseList and currentPhase when display is supplied', async () => {
+		// Arrange
+		const snapshot = new ThinqSnapshot({
+			washerDryer: { state: 'RUNNING', course: 'NORMAL', temp: 'TEMP_40', spin: 'SPIN_1400', rinse: 'RINSE_2' },
+		});
+
+		// Act
+		await applyThinqSnapshotToWasher(mockWasher, snapshot, mockLogger, undefined, { plan: displayPlan() });
+
+		// Assert
+		const calls = vi.mocked(mockWasher.updateAttribute).mock.calls;
+		const currentPhaseIndex = calls.findIndex((call: unknown[]) => call[1] === 'currentPhase');
+		const firstDisplayIndex = calls.findIndex((call: unknown[]) => DISPLAY_CLUSTER_IDS.includes(call[0]));
+		expect(currentPhaseIndex).toBeGreaterThanOrEqual(0);
+		expect(firstDisplayIndex).toBeGreaterThan(currentPhaseIndex);
+		expect(calls.some((call: unknown[]) => call[0] === LaundryWasherMode.id && call[1] === 'currentMode')).toBe(true);
+	});
+
+	it('should still emit operationCompletion exactly once across END polls when display is supplied', async () => {
+		// Arrange
+		const clock = createFakeClock();
+		const tracker = new WasherCycleTracker(clock.now);
+		const running = new ThinqSnapshot({ washerDryer: { state: 'RUNNING', course: 'NORMAL' } });
+		const ended = new ThinqSnapshot({ washerDryer: { state: 'END', course: 'NORMAL' } });
+		const display = { plan: displayPlan() };
+
+		// Act
+		await applyThinqSnapshotToWasher(mockWasher, running, mockLogger, tracker, display);
+		clock.advance(600_000);
+		await applyThinqSnapshotToWasher(mockWasher, ended, mockLogger, tracker, display);
+		await applyThinqSnapshotToWasher(mockWasher, ended, mockLogger, tracker, display);
+
+		// Assert
+		const completionCalls = vi
+			.mocked(mockWasher.triggerEvent)
+			.mock.calls.filter((call: unknown[]) => call[1] === 'operationCompletion');
+		expect(completionCalls).toHaveLength(1);
+	});
+
+	it('should skip all display writes when washerDryer.state is absent', async () => {
+		// Arrange
+		const snapshot = new ThinqSnapshot({ washerDryer: { course: 'NORMAL' } });
+
+		// Act
+		await applyThinqSnapshotToWasher(mockWasher, snapshot, mockLogger, undefined, { plan: displayPlan() });
+
+		// Assert
+		expect(mockWasher.updateAttribute).not.toHaveBeenCalled();
+	});
+
+	it('should keep the W2 writes that already happened and propagate a rejected display write', async () => {
+		// Arrange
+		const snapshot = new ThinqSnapshot({ washerDryer: { state: 'RUNNING', course: 'NORMAL' } });
+		mockWasher.updateAttribute.mockImplementation((_clusterId: unknown, attribute: string) =>
+			attribute === 'currentMode' ? Promise.reject(new Error('mode write failed')) : Promise.resolve(false),
+		);
+
+		// Act
+		const act = applyThinqSnapshotToWasher(mockWasher, snapshot, mockLogger, undefined, { plan: displayPlan() });
+
+		// Assert
+		await expect(act).rejects.toThrow('mode write failed');
+		const attributes = vi.mocked(mockWasher.updateAttribute).mock.calls.map((call: unknown[]) => call[1]);
+		expect(attributes).toEqual(expect.arrayContaining(['onOff', 'operationalState', 'phaseList', 'currentPhase']));
+	});
+});
 
 describe('thinqWasherStateSync', () => {
 	describe('mapWasherStateToOperationalState', () => {
