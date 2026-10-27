@@ -2,6 +2,7 @@ import { MatterbridgeEndpoint } from 'matterbridge';
 import { LaundryWasher } from 'matterbridge/devices';
 
 import type { ThinqWasherDevice } from '../../core/domain/entities/ThinqDevice.js';
+import type { WasherEndpointClusterOptions } from './thinqWasherMatterPlan.js';
 
 /**
  * Options for building a washer endpoint with custom vendor/product identity.
@@ -23,8 +24,13 @@ export interface BuildWasherEndpointOptions {
 export function buildWasherEndpoint(
 	device: ThinqWasherDevice,
 	options?: BuildWasherEndpointOptions,
+	clusterOptions?: WasherEndpointClusterOptions,
 ): MatterbridgeEndpoint {
-	const washer = new LaundryWasher(device.name, device.id);
+	// No id/number/tagList/mode here: LaundryWasher's default id keeps today's Matter identity.
+	const washer =
+		clusterOptions === undefined
+			? new LaundryWasher(device.name, device.id)
+			: new LaundryWasher(device.name, device.id, { ...clusterOptions });
 	washer.createDefaultBasicInformationClusterServer(
 		device.name,
 		device.serialNumber ?? device.id,

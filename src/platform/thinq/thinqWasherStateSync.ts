@@ -4,6 +4,7 @@ import { OnOff, OperationalState } from 'matterbridge/matter/clusters';
 
 import type { ThinqSnapshot } from '../../core/domain/value-objects/ThinqSnapshot.js';
 import { WasherCycleTracker, type WasherRunStatus } from './thinqWasherCycleTracker.js';
+import { applyWasherSelectionDisplay, type WasherMatterPlan } from './thinqWasherMatterPlan.js';
 import { resolveWasherPhaseIndex, WASHER_PHASE_LIST } from './thinqWasherPhases.js';
 
 /** Maps a ThinQ washer snapshot to the coarse run status shared by the Matter state and the cycle tracker. */
@@ -43,6 +44,7 @@ export async function applyThinqSnapshotToWasher(
 	snapshot: ThinqSnapshot,
 	logger: AnsiLogger,
 	cycleTracker?: WasherCycleTracker,
+	display?: { readonly plan: WasherMatterPlan },
 ): Promise<void> {
 	const deviceId = washer.serialNumber ?? washer.uniqueId ?? 'unknown';
 
@@ -92,5 +94,9 @@ export async function applyThinqSnapshotToWasher(
 		);
 		// completionErrorCode 0 === OperationalState.ErrorState.NoError
 		await washer.triggerEvent(OperationalState.id, 'operationCompletion', { ...completion }, logger);
+	}
+
+	if (display !== undefined) {
+		await applyWasherSelectionDisplay(washer, snapshot, display.plan, logger);
 	}
 }

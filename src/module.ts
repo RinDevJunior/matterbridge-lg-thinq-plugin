@@ -16,6 +16,7 @@ import { applyThinqFilterStateToAirConditioner } from './platform/thinq/thinqAir
 import { applyThinqSnapshotToAirConditioner } from './platform/thinq/thinqAirConditionerStateSync.js';
 import { reconcileThinqDeviceConfigEntries } from './platform/thinq/thinqDeviceConfigReconciler.js';
 import { WasherCycleTracker } from './platform/thinq/thinqWasherCycleTracker.js';
+import type { WasherMatterPlan } from './platform/thinq/thinqWasherMatterPlan.js';
 import { applyThinqSnapshotToWasher } from './platform/thinq/thinqWasherStateSync.js';
 import { resolveThinqGeneration } from './platform/thinqGeneration.js';
 import { ThinqServiceContainer } from './services/thinq/serviceContainer.js';
@@ -74,6 +75,7 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 
 	private thinqPollingIntervalMs: number | undefined;
 	private readonly thinqDeviceKindById = new Map<string, 'AC' | 'WASHER'>();
+	private readonly washerMatterPlanById = new Map<string, WasherMatterPlan>();
 	private readonly washerCycleTracker = new WasherCycleTracker();
 	private readonly filterMonitoringDeviceIds: string[] = [];
 	private identityMapping: ThinqConnectIdentityMapping | undefined;
@@ -235,13 +237,18 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 			}
 
 			if (this.thinqDeviceKindById.get(deviceId) === 'WASHER') {
-				void applyThinqSnapshotToWasher(endpoint, snapshot, this.log, this.washerCycleTracker).catch(
-					(error: unknown) => {
-						this.log.error(
-							`Failed to apply ThinQ state update for ${deviceId}: ${error instanceof Error ? error.message : String(error)}`,
-						);
-					},
-				);
+				const plan = this.washerMatterPlanById.get(deviceId);
+				void applyThinqSnapshotToWasher(
+					endpoint,
+					snapshot,
+					this.log,
+					this.washerCycleTracker,
+					plan === undefined ? undefined : { plan },
+				).catch((error: unknown) => {
+					this.log.error(
+						`Failed to apply ThinQ state update for ${deviceId}: ${error instanceof Error ? error.message : String(error)}`,
+					);
+				});
 				return;
 			}
 
@@ -509,6 +516,12 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 				await this.registerDevice(washer);
 				this.registry.register(device.id, washer);
 				this.thinqDeviceKindById.set(device.id, 'WASHER');
+				const washerPlan = configurator.getWasherMatterPlan(device.id);
+				if (washerPlan) {
+					this.washerMatterPlanById.set(device.id, washerPlan);
+				} else {
+					this.washerMatterPlanById.delete(device.id);
+				}
 				continue;
 			}
 		}
