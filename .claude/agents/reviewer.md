@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: "Use this agent to review code changes against the approved workspace/<task-folder>/plan.md. It checks plan conformance, correctness, CLAUDE.md compliance, architecture violations, and test coverage gaps."
-model: claude-opus-5
+model: claude-sonnet-5
 color: red
 effort: medium
 maxTurns: 30
