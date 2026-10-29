@@ -97,6 +97,8 @@ interface WasherVtSendStage {
 interface SendResult {
 	readonly outcome: WasherVtOutcome;
 	readonly reply: unknown;
+	/** Fields of the last successful post-send poll read; `undefined` when no read succeeded. */
+	readonly afterFields?: WasherFields;
 }
 
 const MSG_BUSY = 'Another washer command is still running. Wait a few seconds.';
@@ -274,7 +276,7 @@ export class WasherVtController {
 			undefined,
 			{ courseId: omitCourse ? undefined : courseId, options: bodyCells },
 		);
-		this.rememberRefusedValues(bodyCells, result.reply);
+		this.rememberRefusedValues(bodyCells, result.reply, result.afterFields);
 		if (result.outcome.status === 'done') {
 			this.homeSelection = { courseId, options: cells };
 			const ignored = rejectedWasherVtCells(result.reply);
@@ -315,12 +317,22 @@ export class WasherVtController {
 		});
 	}
 
-	/** Learns the values this washer rejected in the ack, so Home never sends them again this session. */
-	private rememberRefusedValues(sent: WasherVtOptions, reply: unknown): void {
+	/** Learns a value only when the ack rejected it AND the post-send read shows it did not take effect. */
+	private rememberRefusedValues(sent: WasherVtOptions, reply: unknown, after: WasherFields | undefined): void {
+		// The ack code alone is not proof: live, code 15 came back for a value that was applied.
+		if (after === undefined) {
+			return;
+		}
 		for (const cmd of rejectedWasherVtCellKeys(reply)) {
 			const key = WASHER_VT_OPTION_KEYS.find((candidate) => candidate === cmd);
 			const value = key === undefined ? undefined : sent[key];
 			if (key === undefined || value === undefined) {
+				continue;
+			}
+			if (parseWasherField(after, key) === value) {
+				this.logger.info(
+					`ThinQ Washer ${this.label}: the washer answered a refusal for ${key}=${value} but it is set, not learning it`,
+				);
 				continue;
 			}
 			const known = this.learnedRefusedValues.get(key) ?? new Set<string>();
@@ -635,13 +647,14 @@ export class WasherVtController {
 			this.pollIntervalMs,
 		);
 		const last = poll.value ?? before;
+		const afterFields = poll.value?.fields;
 		const after = stateOf(last.fields) ?? 'unknown';
 		this.logger.info(
 			`ThinQ Washer ${this.label}: ${name} ${poll.done ? 'confirmed' : 'not confirmed'} after ${poll.polls} poll(s), state after=${after}`,
 		);
 
 		if (poll.done) {
-			return { outcome: { status: 'done', message: `${name} confirmed`, snapshot: last.snapshot }, reply };
+			return { outcome: { status: 'done', message: `${name} confirmed`, snapshot: last.snapshot }, reply, afterFields };
 		}
 
 		if (name === 'vt-start' || name === 'vt-resume') {
@@ -651,6 +664,6 @@ export class WasherVtController {
 			sendError === undefined
 				? `LG accepted the command but the washer did not change state (${after}). Check the washer before trying again.`
 				: `The command may not have reached the washer (${errorText(sendError)}). Check the washer before trying again.`;
-		return { outcome: { status: 'unconfirmed', message, snapshot: last.snapshot }, reply };
+		return { outcome: { status: 'unconfirmed', message, snapshot: last.snapshot }, reply, afterFields };
 	}
 }
