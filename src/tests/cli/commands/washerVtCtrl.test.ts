@@ -131,6 +131,25 @@ describe('washerVtCtrl', () => {
 			expect(cells).toStrictEqual([VT_COURSE_CELL, { cmd: 'spin', value: 'SPIN_800', type: 'ABSOLUTE' }]);
 		});
 
+		it('should emit no course cell and only the passed option cell when vt-course has no course', () => {
+			// Arrange
+			const options = { rinse: 'RINSE_3' };
+
+			// Act
+			const cells = buildWasherVtCells('vt-course', undefined, options);
+
+			// Assert
+			expect(cells).toStrictEqual([{ cmd: 'rinse', value: 'RINSE_3', type: 'ABSOLUTE' }]);
+		});
+
+		it('should emit no cells when vt-course has neither a course nor any option', () => {
+			// Arrange / Act
+			const cells = buildWasherVtCells('vt-course', undefined, {});
+
+			// Assert
+			expect(cells).toStrictEqual([]);
+		});
+
 		it('should emit a single wmControl START cell for vt-start', () => {
 			// Arrange / Act
 			const cells = buildWasherVtCells('vt-start', undefined, {});
@@ -255,6 +274,38 @@ describe('washerVtCtrl', () => {
 
 			// Act
 			const request = buildWasherVtRequest('vt-course', model, { courseId: 'NORMAL', variant: 'a' });
+
+			// Assert
+			expect(request).toBeUndefined();
+		});
+
+		it('should build a course-less body with only the option cell when vt-course has one option and no course', () => {
+			// Arrange
+			const model = createFakeWasherModel();
+
+			// Act
+			const request = buildWasherVtRequest('vt-course', model, { options: { rinse: 'RINSE_3' }, variant: 'a' });
+
+			// Assert
+			expect(request).toBeDefined();
+			expect(request?.body.dataSetList).toStrictEqual({
+				ctrlTarget: ['UNDEFINE'],
+				reqDevType: 'APP',
+				productType: 'NORMAL',
+				vtData: { UNDEFINE: [{ cmd: 'rinse', value: 'RINSE_3', type: 'ABSOLUTE' }] },
+			});
+			expect(request?.mayStartCycle).toBe(false);
+		});
+
+		it('should return undefined when vt-course has no course and every option key is explicitly undefined', () => {
+			// Arrange
+			const model = createFakeWasherModel();
+
+			// Act
+			const request = buildWasherVtRequest('vt-course', model, {
+				options: { soilWash: undefined, rinse: undefined, spin: undefined, temp: undefined },
+				variant: 'a',
+			});
 
 			// Assert
 			expect(request).toBeUndefined();

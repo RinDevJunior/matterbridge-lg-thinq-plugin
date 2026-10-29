@@ -110,6 +110,7 @@ function baseOptions(
 		soil: undefined,
 		variant: 'a',
 		signature: false,
+		noCourse: false,
 		endpoint: undefined,
 		...overrides,
 	};
@@ -427,6 +428,61 @@ describe('parseWasherControlOptions', () => {
 		});
 	});
 
+	describe('no-course option (vt-course only)', () => {
+		it('should parse --no-course with an option and leave course undefined', () => {
+			// Arrange
+			const args = { send: 'vt-course', 'no-course': 'true', rinse: 'RINSE_3' };
+
+			// Act
+			const options = parseWasherControlOptions(args);
+
+			// Assert
+			expect(options).toMatchObject({ send: 'vt-course', noCourse: true, course: undefined, rinse: 'RINSE_3' });
+		});
+
+		it('should default noCourse to false when the flag is absent', () => {
+			// Arrange
+			const args = { send: 'vt-course', rinse: 'RINSE_3' };
+
+			// Act
+			const options = parseWasherControlOptions(args);
+
+			// Assert
+			expect(options.noCourse).toBe(false);
+		});
+
+		it.each([
+			[
+				'a send other than vt-course',
+				{ send: 'vt-start', 'no-course': 'true' },
+				'--no-course applies only to vt-course.',
+			],
+			[
+				'--course',
+				{ send: 'vt-course', 'no-course': 'true', course: 'NORMAL', rinse: 'RINSE_3' },
+				'--no-course cannot be combined with --course.',
+			],
+			[
+				'no option value at all',
+				{ send: 'vt-course', 'no-course': 'true' },
+				'--no-course needs at least one of --soil, --rinse, --spin, --temp (the body would be empty).',
+			],
+		])('should refuse --no-course with %s', (_label, args, message) => {
+			// Arrange / Act / Assert
+			expect(() => parseWasherControlOptions(args)).toThrow(message);
+		});
+
+		it('should refuse --no-course given a value as a bare-flag error', () => {
+			// Arrange
+			const args = { send: 'vt-course', 'no-course': 'NORMAL', rinse: 'RINSE_3' };
+
+			// Act / Assert
+			expect(() => parseWasherControlOptions(args)).toThrow(
+				'--no-course is a bare flag and takes no value (got "NORMAL").',
+			);
+		});
+	});
+
 	describe('value validation', () => {
 		it('should refuse --yes with a value because it is a bare flag', () => {
 			// Arrange
@@ -641,6 +697,25 @@ describe('cmdWasherControl', () => {
 			expect(output).toContain('"ctrlKey": "WMDownload"');
 			expect(output).toContain('"remoteStart": "REMOTE_START_OFF"');
 			expect(output).not.toContain('Verdict:');
+			expect(client.sendCommandAndGetResponse).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('no-course dry run and send', () => {
+		it('should print a course-less body with only the rinse cell, the unconfirmed warning, and send nothing without --yes', async () => {
+			// Arrange
+			givenReadyForCourse();
+
+			// Act
+			await cmdWasherControl(
+				SESSION,
+				baseOptions({ send: 'vt-course', course: undefined, noCourse: true, rinse: 'RINSE_3' }),
+				createMockLogger(),
+			);
+
+			// Assert
+			expect(printedBodyOf(logSpy)).toStrictEqual(expectedVtBody({ cmd: 'rinse', value: 'RINSE_3' }));
+			expect(outputOf(logSpy)).toContain('NEVER been confirmed on hardware');
 			expect(client.sendCommandAndGetResponse).not.toHaveBeenCalled();
 		});
 	});

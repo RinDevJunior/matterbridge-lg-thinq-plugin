@@ -76,6 +76,7 @@ interface HarnessOptions {
 	/** `null` simulates a model without ControlWifi.ospWakeup. */
 	readonly wakeBody?: WasherVtBody | null;
 	readonly resolveCourseOptions?: (courseId: string) => WasherCourseOptions | undefined;
+	readonly omitCourseCellWhenUnchanged?: boolean;
 }
 
 /** Fake ports: reads follow `steps` (last one repeats), sends resolve with a `0000` reply unless a test overrides them. */
@@ -111,6 +112,7 @@ function createHarness(steps: readonly ReadStep[], options: HarnessOptions = {})
 		wakeBody: options.wakeBody === null ? undefined : (options.wakeBody ?? DEFAULT_WAKE_BODY),
 		stagePlan: options.stagePlan,
 		resolveCourseOptions: options.resolveCourseOptions,
+		omitCourseCellWhenUnchanged: options.omitCourseCellWhenUnchanged,
 	});
 
 	return {
@@ -131,6 +133,16 @@ function createHarness(steps: readonly ReadStep[], options: HarnessOptions = {})
 /** JSON of every send call, for substring checks on the cells that were sent. */
 function sentJson(send: Mock<SendFn>): string {
 	return JSON.stringify(send.mock.calls);
+}
+
+/** The `dataSetList` a `vtCtrl` body carries for exactly these cells (every cell is ABSOLUTE). */
+function vtDataSetList(cells: readonly { cmd: string; value: string }[]): unknown {
+	return {
+		ctrlTarget: ['UNDEFINE'],
+		reqDevType: 'APP',
+		productType: 'NORMAL',
+		vtData: { UNDEFINE: cells.map((cell) => ({ ...cell, type: 'ABSOLUTE' })) },
+	};
 }
 
 afterEach(() => {
@@ -785,6 +797,77 @@ describe('WasherVtController', () => {
 		});
 	});
 
+	describe('start, stage branch refused-value protection', () => {
+		const STAGE_NORMAL_OPTIONS: WasherCourseOptions = {
+			soilWash: { values: ['SOILWASH_NORMAL', 'SOILWASH_HEAVY'], defaultValue: 'SOILWASH_NORMAL', writable: true },
+			rinse: { values: ['NO_RINSE', 'RINSE_1', 'RINSE_2', 'RINSE_3'], defaultValue: 'RINSE_2', writable: true },
+			spin: { values: ['SPIN_800', 'SPIN_1000', 'SPIN_1200', 'SPIN_1400'], defaultValue: 'SPIN_1400', writable: true },
+			temp: { values: ['TEMP_COLD', 'TEMP_40', 'TEMP_60'], defaultValue: 'TEMP_40', writable: true },
+		};
+
+		it('should stage the course without the refused temperature and warn when the configured plan carries it', async () => {
+			// Arrange
+			const plan: WasherVtStagePlan = { courseId: 'NORMAL', options: { temp: 'TEMP_COLD' }, ignoredOptions: [] };
+			const harness = createHarness(
+				[washer({ ...REMOTE_OFF, course: 'COTTON' }), washer({ ...REMOTE_OFF, course: 'NORMAL' })],
+				{ stagePlan: plan },
+			);
+			// Act
+			const outcome = await harness.controller.run('start');
+			// Assert
+			expect(outcome.status).toBe('staged');
+			expect(harness.send.mock.calls[0]?.[0]?.dataSetList).toStrictEqual(
+				vtDataSetList([{ cmd: 'course', value: 'NORMAL' }]),
+			);
+			expect(vi.mocked(harness.logger.warn)).toHaveBeenCalledWith(expect.stringContaining('temp=TEMP_COLD'));
+		});
+
+		it('should report the course as already selected without sending when the filtered plan already matches', async () => {
+			// Arrange
+			const plan: WasherVtStagePlan = { courseId: 'NORMAL', options: { temp: 'TEMP_COLD' }, ignoredOptions: [] };
+			const harness = createHarness([washer({ ...REMOTE_OFF, course: 'NORMAL', temp: 'TEMP_40' })], {
+				stagePlan: plan,
+			});
+			// Act
+			const outcome = await harness.controller.run('start');
+			// Assert
+			expect(outcome.message).toContain('Course NORMAL is already selected');
+			expect(harness.send).not.toHaveBeenCalled();
+		});
+
+		it('should stage the Home selection without its refused temperature and report staged', async () => {
+			// Arrange
+			const harness = createHarness(
+				[
+					washer({ ...REMOTE_OFF, course: 'NORMAL', temp: 'TEMP_COLD' }),
+					washer({ ...REMOTE_OFF, course: 'NORMAL', temp: 'TEMP_COLD', spin: 'SPIN_1000' }),
+				],
+				{
+					resolveCourseOptions: (courseId) => (courseId === 'NORMAL' ? STAGE_NORMAL_OPTIONS : undefined),
+					omitCourseCellWhenUnchanged: true,
+				},
+			);
+			const applied = await harness.controller.applyChanges([{ kind: 'option', key: 'spin', value: 'SPIN_1000' }]);
+			harness.setSteps([
+				washer({ ...REMOTE_OFF, course: 'COTTON', temp: 'TEMP_40', spin: 'SPIN_800' }),
+				washer({ ...REMOTE_OFF, course: 'NORMAL', temp: 'TEMP_COLD', spin: 'SPIN_1000' }),
+			]);
+			// Act
+			const outcome = await harness.controller.run('start');
+			// Assert
+			expect(applied.status).toBe('done');
+			expect(outcome.status).toBe('staged');
+			expect(harness.send.mock.calls[1]?.[0]?.dataSetList).toStrictEqual(
+				vtDataSetList([
+					{ cmd: 'course', value: 'NORMAL' },
+					{ cmd: 'soilWash', value: 'SOILWASH_NORMAL' },
+					{ cmd: 'rinse', value: 'RINSE_2' },
+					{ cmd: 'spin', value: 'SPIN_1000' },
+				]),
+			);
+		});
+	});
+
 	describe('start, send branch (Remote Control ON)', () => {
 		it('should send one wmControl=START and report done when the washer goes DETECTING', async () => {
 			// Arrange
@@ -1121,6 +1204,9 @@ describe('WasherVtController', () => {
 		]);
 		const MSG_NO_COURSE = 'The washer has no wash course selected. Pick a course on the washer first.';
 		const MSG_NO_OPTIONS = 'This washer model does not describe its wash courses, so Home cannot change them.';
+		const MSG_VALUE_REFUSED = 'The washer does not accept that setting. Pick a different value.';
+		const MSG_CARRIED_REFUSED =
+			'The washer will not keep its current temperature or spin setting, so this change would reset it. Change that setting in Home first, then try again.';
 
 		function resolveCourseOptions(courseId: string): WasherCourseOptions | undefined {
 			return COURSE_OPTIONS.get(courseId);
@@ -1166,27 +1252,312 @@ describe('WasherVtController', () => {
 			expect(sentJson(harness.send)).not.toContain('wmControl');
 		});
 
-		it('should keep the snapshot course and send the changed option with the other cells when only an option changes', async () => {
+		it('should send only the changed spin cell and no course cell when only an option changes', async () => {
 			// Arrange
-			const harness = createHarness([readingWith({}), readingWith({ spin: 'SPIN_1000' })], { resolveCourseOptions });
+			const harness = createHarness([readingWith({}), readingWith({ spin: 'SPIN_1000' })], {
+				resolveCourseOptions,
+				omitCourseCellWhenUnchanged: true,
+			});
 			// Act
 			const outcome = await harness.controller.applyChanges([{ kind: 'option', key: 'spin', value: 'SPIN_1000' }]);
 			// Assert
 			expect(outcome.status).toBe('done');
-			expect(harness.send.mock.calls[0]?.[0]).toMatchObject({
-				dataSetList: {
-					vtData: {
-						UNDEFINE: [
-							{ cmd: 'course', value: 'NORMAL' },
-							{ cmd: 'soilWash', value: 'SOILWASH_NORMAL' },
-							{ cmd: 'rinse', value: 'RINSE_2' },
-							{ cmd: 'spin', value: 'SPIN_1000' },
-							{ cmd: 'temp', value: 'TEMP_40' },
-						],
-					},
-				},
-			});
+			expect(harness.send).toHaveBeenCalledTimes(1);
+			expect(harness.send.mock.calls[0]?.[0]?.dataSetList).toStrictEqual(
+				vtDataSetList([{ cmd: 'spin', value: 'SPIN_1000' }]),
+			);
+			expect(sentJson(harness.send)).not.toContain('"cmd":"course"');
 			expect(sentJson(harness.send)).not.toContain('wmControl');
+		});
+
+		it('should send the course and all four carried cells when only an option changes and the omit gate is off', async () => {
+			// Arrange
+			const harness = createHarness([readingWith({}), readingWith({ spin: 'SPIN_1000' })], {
+				resolveCourseOptions,
+				omitCourseCellWhenUnchanged: false,
+			});
+			// Act
+			const outcome = await harness.controller.applyChanges([{ kind: 'option', key: 'spin', value: 'SPIN_1000' }]);
+			// Assert
+			expect(outcome.status).toBe('done');
+			expect(harness.send.mock.calls[0]?.[0]?.dataSetList).toStrictEqual(
+				vtDataSetList([
+					{ cmd: 'course', value: 'NORMAL' },
+					{ cmd: 'soilWash', value: 'SOILWASH_NORMAL' },
+					{ cmd: 'rinse', value: 'RINSE_2' },
+					{ cmd: 'spin', value: 'SPIN_1000' },
+					{ cmd: 'temp', value: 'TEMP_40' },
+				]),
+			);
+		});
+
+		it('should send the course and all four cells when the course changes and the omit gate is explicitly on', async () => {
+			// Arrange
+			const harness = createHarness([readingWith({ course: 'COTTON' }), readingWith({ course: 'NORMAL' })], {
+				resolveCourseOptions,
+				omitCourseCellWhenUnchanged: true,
+			});
+			// Act
+			const outcome = await harness.controller.applyChanges([{ kind: 'course', courseId: 'NORMAL' }]);
+			// Assert
+			expect(outcome.status).toBe('done');
+			expect(harness.send.mock.calls[0]?.[0]?.dataSetList).toStrictEqual(
+				vtDataSetList([
+					{ cmd: 'course', value: 'NORMAL' },
+					{ cmd: 'soilWash', value: 'SOILWASH_NORMAL' },
+					{ cmd: 'rinse', value: 'RINSE_2' },
+					{ cmd: 'spin', value: 'SPIN_1400' },
+					{ cmd: 'temp', value: 'TEMP_40' },
+				]),
+			);
+		});
+
+		it('should report done when the washer keeps its course and the requested spin applies', async () => {
+			// Arrange
+			const harness = createHarness([readingWith({}), readingWith({ spin: 'SPIN_1000', course: 'NORMAL' })], {
+				resolveCourseOptions,
+				omitCourseCellWhenUnchanged: true,
+			});
+			// Act
+			const outcome = await harness.controller.applyChanges([{ kind: 'option', key: 'spin', value: 'SPIN_1000' }]);
+			// Assert
+			expect(outcome.status).toBe('done');
+		});
+
+		it('should report unconfirmed when the washer moves its own course after an option-only send', async () => {
+			// Arrange
+			const harness = createHarness([readingWith({}), readingWith({ course: 'COTTON', spin: 'SPIN_1000' })], {
+				resolveCourseOptions,
+				omitCourseCellWhenUnchanged: true,
+			});
+			// Act
+			const outcome = await harness.controller.applyChanges([{ kind: 'option', key: 'spin', value: 'SPIN_1000' }]);
+			// Assert
+			expect(outcome.status).toBe('unconfirmed');
+		});
+
+		it('should send exactly the two requested cells in fixed key order when two options change and the course does not', async () => {
+			// Arrange
+			const harness = createHarness([readingWith({}), readingWith({ spin: 'SPIN_1000', soilWash: 'SOILWASH_HEAVY' })], {
+				resolveCourseOptions,
+				omitCourseCellWhenUnchanged: true,
+			});
+			// Act
+			const outcome = await harness.controller.applyChanges([
+				{ kind: 'option', key: 'spin', value: 'SPIN_1000' },
+				{ kind: 'option', key: 'soilWash', value: 'SOILWASH_HEAVY' },
+			]);
+			// Assert
+			expect(outcome.status).toBe('done');
+			expect(harness.send.mock.calls[0]?.[0]?.dataSetList).toStrictEqual(
+				vtDataSetList([
+					{ cmd: 'soilWash', value: 'SOILWASH_HEAVY' },
+					{ cmd: 'spin', value: 'SPIN_1000' },
+				]),
+			);
+		});
+
+		it('should report noop and send nothing when the washer already has the target and the omit gate is off', async () => {
+			// Arrange
+			const harness = createHarness([readingWith({ spin: 'SPIN_1000' })], {
+				resolveCourseOptions,
+				omitCourseCellWhenUnchanged: false,
+			});
+			// Act
+			const outcome = await harness.controller.applyChanges([{ kind: 'option', key: 'spin', value: 'SPIN_1000' }]);
+			// Assert
+			expect(outcome.status).toBe('noop');
+			expect(harness.send).not.toHaveBeenCalled();
+		});
+
+		it('should confirm only the requested cell and send the carried temperature when the omit gate is off and the washer resets it', async () => {
+			// Arrange
+			const harness = createHarness(
+				[readingWith({ temp: 'TEMP_60' }), readingWith({ temp: 'TEMP_40', rinse: 'NO_RINSE' })],
+				{
+					resolveCourseOptions,
+					omitCourseCellWhenUnchanged: false,
+				},
+			);
+			harness.send.mockResolvedValueOnce(
+				washerVtReply('0000', [
+					['course', '17'],
+					['rinse', '0'],
+					['spin', '17'],
+					['temp', '15'],
+				]),
+			);
+			// Act
+			const outcome = await harness.controller.applyChanges([{ kind: 'option', key: 'rinse', value: 'NO_RINSE' }]);
+			// Assert
+			expect(outcome.status).toBe('done');
+			expect(harness.send).toHaveBeenCalledTimes(1);
+			expect(harness.send.mock.calls[0]?.[0]?.dataSetList).toStrictEqual(
+				vtDataSetList([
+					{ cmd: 'course', value: 'NORMAL' },
+					{ cmd: 'soilWash', value: 'SOILWASH_NORMAL' },
+					{ cmd: 'rinse', value: 'NO_RINSE' },
+					{ cmd: 'spin', value: 'SPIN_1400' },
+					{ cmd: 'temp', value: 'TEMP_60' },
+				]),
+			);
+		});
+
+		it('should report unconfirmed with the rejected requested cell when the requested rinse is refused', async () => {
+			// Arrange
+			const harness = createHarness([readingWith({ temp: 'TEMP_60' })], {
+				resolveCourseOptions,
+				omitCourseCellWhenUnchanged: false,
+			});
+			harness.send.mockResolvedValueOnce(washerVtReply('0000', [['rinse', '15']]));
+			// Act
+			const outcome = await harness.controller.applyChanges([{ kind: 'option', key: 'rinse', value: 'NO_RINSE' }]);
+			// Assert
+			expect(outcome.status).toBe('unconfirmed');
+			expect(outcome.message).toMatch(/LG did not apply: rinse=15\.$/);
+		});
+
+		it('should warn about the refused carried cell when the omit gate is off and the washer resets it', async () => {
+			// Arrange
+			const harness = createHarness(
+				[readingWith({ temp: 'TEMP_60' }), readingWith({ temp: 'TEMP_40', rinse: 'NO_RINSE' })],
+				{
+					resolveCourseOptions,
+					omitCourseCellWhenUnchanged: false,
+				},
+			);
+			harness.send.mockResolvedValueOnce(
+				washerVtReply('0000', [
+					['course', '17'],
+					['rinse', '0'],
+					['spin', '17'],
+					['temp', '15'],
+				]),
+			);
+			// Act
+			await harness.controller.applyChanges([{ kind: 'option', key: 'rinse', value: 'NO_RINSE' }]);
+			// Assert
+			expect(vi.mocked(harness.logger.warn)).toHaveBeenCalledWith(expect.stringContaining('temp=15'));
+		});
+
+		it('should report noop when the requested rinse is already set and the carried temperature is outside the course list', async () => {
+			// Arrange
+			const harness = createHarness([readingWith({ rinse: 'NO_RINSE', temp: 'TEMP_30' })], {
+				resolveCourseOptions,
+				omitCourseCellWhenUnchanged: false,
+			});
+			// Act
+			const outcome = await harness.controller.applyChanges([{ kind: 'option', key: 'rinse', value: 'NO_RINSE' }]);
+			// Assert
+			expect(outcome).toMatchObject({ status: 'noop', message: 'the washer already has these settings' });
+			expect(harness.send).not.toHaveBeenCalled();
+		});
+
+		it.each([true, false])(
+			'should refuse a requested refused temperature up front without sending when the omit gate is %s',
+			async (omitCourseCellWhenUnchanged) => {
+				// Arrange
+				const harness = createHarness([readingWith({ temp: 'TEMP_40' })], {
+					resolveCourseOptions,
+					omitCourseCellWhenUnchanged,
+				});
+				// Act
+				const outcome = await harness.controller.applyChanges([{ kind: 'option', key: 'temp', value: 'TEMP_COLD' }]);
+				// Assert
+				expect(outcome).toMatchObject({ status: 'refused', message: MSG_VALUE_REFUSED });
+				expect(outcome.snapshot).toBeDefined();
+				expect(harness.send).not.toHaveBeenCalled();
+			},
+		);
+
+		it('should refuse with the carried-value text and send nothing when a refused carried temperature would be reset', async () => {
+			// Arrange
+			const harness = createHarness([readingWith({ temp: 'TEMP_COLD' })], {
+				resolveCourseOptions,
+				omitCourseCellWhenUnchanged: false,
+			});
+			// Act
+			const outcome = await harness.controller.applyChanges([{ kind: 'option', key: 'rinse', value: 'NO_RINSE' }]);
+			// Assert
+			expect(outcome).toMatchObject({ status: 'refused', message: MSG_CARRIED_REFUSED });
+			expect(outcome.snapshot).toBeDefined();
+			expect(harness.send).not.toHaveBeenCalled();
+		});
+
+		it('should send only the requested rinse cell when the omit gate is on and the carried temperature is refused', async () => {
+			// Arrange
+			const harness = createHarness(
+				[readingWith({ temp: 'TEMP_COLD' }), readingWith({ temp: 'TEMP_COLD', rinse: 'NO_RINSE' })],
+				{ resolveCourseOptions, omitCourseCellWhenUnchanged: true },
+			);
+			// Act
+			const outcome = await harness.controller.applyChanges([{ kind: 'option', key: 'rinse', value: 'NO_RINSE' }]);
+			// Assert
+			expect(outcome.status).toBe('done');
+			expect(harness.send.mock.calls[0]?.[0]?.dataSetList).toStrictEqual(
+				vtDataSetList([{ cmd: 'rinse', value: 'NO_RINSE' }]),
+			);
+		});
+
+		it('should drop a refused carried temperature with a warning when the course is the requested one', async () => {
+			// Arrange
+			const harness = createHarness(
+				[readingWith({ temp: 'TEMP_COLD' }), readingWith({ temp: 'TEMP_COLD', rinse: 'RINSE_3' })],
+				{ resolveCourseOptions, omitCourseCellWhenUnchanged: false },
+			);
+			// Act
+			const outcome = await harness.controller.applyChanges([
+				{ kind: 'course', courseId: 'NORMAL' },
+				{ kind: 'option', key: 'rinse', value: 'RINSE_3' },
+			]);
+			// Assert
+			expect(outcome.status).toBe('done');
+			expect(harness.send.mock.calls[0]?.[0]?.dataSetList).toStrictEqual(
+				vtDataSetList([
+					{ cmd: 'course', value: 'NORMAL' },
+					{ cmd: 'soilWash', value: 'SOILWASH_NORMAL' },
+					{ cmd: 'rinse', value: 'RINSE_3' },
+					{ cmd: 'spin', value: 'SPIN_1400' },
+				]),
+			);
+			expect(vi.mocked(harness.logger.warn)).toHaveBeenCalledWith(expect.stringContaining('temp=TEMP_COLD'));
+		});
+
+		it('should learn a refused spin from the ack and refuse that value on the next change only', async () => {
+			// Arrange
+			const harness = createHarness(
+				[readingWith({ spin: 'SPIN_1400' }), readingWith({ spin: 'SPIN_1400', rinse: 'NO_RINSE' })],
+				{ resolveCourseOptions, omitCourseCellWhenUnchanged: false },
+			);
+			harness.send.mockResolvedValueOnce(washerVtReply('0000', [['spin', '15']]));
+			// Act
+			const first = await harness.controller.applyChanges([{ kind: 'option', key: 'rinse', value: 'NO_RINSE' }]);
+			harness.setSteps([readingWith({ spin: 'SPIN_1400', rinse: 'RINSE_2' })]);
+			const second = await harness.controller.applyChanges([{ kind: 'option', key: 'rinse', value: 'RINSE_3' }]);
+			// Assert
+			expect(first.status).toBe('done');
+			expect(vi.mocked(harness.logger.warn)).toHaveBeenCalledWith(expect.stringContaining('spin=SPIN_1400'));
+			expect(second).toMatchObject({ status: 'refused', message: MSG_CARRIED_REFUSED });
+			expect(harness.send).toHaveBeenCalledTimes(1);
+		});
+
+		it('should send a normal spin after learning refuses only SPIN_1400', async () => {
+			// Arrange
+			const harness = createHarness(
+				[readingWith({ spin: 'SPIN_1400' }), readingWith({ spin: 'SPIN_1400', rinse: 'NO_RINSE' })],
+				{ resolveCourseOptions, omitCourseCellWhenUnchanged: false },
+			);
+			harness.send.mockResolvedValueOnce(washerVtReply('0000', [['spin', '15']]));
+			await harness.controller.applyChanges([{ kind: 'option', key: 'rinse', value: 'NO_RINSE' }]);
+			harness.setSteps([
+				readingWith({ spin: 'SPIN_1000', rinse: 'RINSE_2' }),
+				readingWith({ spin: 'SPIN_1000', rinse: 'RINSE_3' }),
+			]);
+			// Act
+			const outcome = await harness.controller.applyChanges([{ kind: 'option', key: 'rinse', value: 'RINSE_3' }]);
+			// Assert
+			expect(outcome.status).toBe('done');
+			expect(harness.send).toHaveBeenCalledTimes(2);
 		});
 
 		it.each([
