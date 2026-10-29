@@ -40,6 +40,13 @@ export const WASHER_VT_SEND_TIMEOUT_MS = 10_000;
 export const WASHER_VT_POWER_POLL_ATTEMPTS = 16;
 export const WASHER_VT_START_LOCKOUT_MS = 120_000;
 
+/**
+ * Option A default: omit the `course` cell from a `vt-course` body when the course is not changing.
+ * LIVE-TEST GATED (see workspace/washer-vtctrl-carry-forward/test-plan.md): set to `false` if the washer
+ * refuses a course-less body; the carry-forward body plus the refused-value block is the proven fallback.
+ */
+export const WASHER_VT_OMIT_COURSE_CELL_DEFAULT = true;
+
 export type WasherVtBody = ThinqCommandPayload & { ctrlKey: string };
 
 const WASHER_VT_ACK_SEARCH_DEPTH = 6;
@@ -84,7 +91,7 @@ export function isWasherVtSendName(value: string): value is WasherVtSendName {
 	return (WASHER_VT_SEND_NAMES as readonly string[]).includes(value);
 }
 
-/** Maps the send to the `vtCtrl` cells the LG app sends: course + the option cells the caller passed, in fixed order. */
+/** Maps the send to the `vtCtrl` cells the LG app sends: the course cell when a course is given, then the option cells the caller passed, in fixed order. */
 export function buildWasherVtCells(
 	name: WasherVtSendName,
 	courseId: string | undefined,
@@ -105,13 +112,13 @@ export function buildWasherVtCells(
 	if (name === 'vt-power-off') {
 		return [{ cmd: 'power', value: 'POWER_OFF', type: 'ABSOLUTE' }];
 	}
-	if (courseId === undefined) {
-		return [];
-	}
 	const optionCells = WASHER_VT_OPTION_KEYS.flatMap((key): WasherVtCell[] => {
 		const value = options[key];
 		return value === undefined ? [] : [{ cmd: key, value, type: 'ABSOLUTE' }];
 	});
+	if (courseId === undefined) {
+		return optionCells;
+	}
 	return [{ cmd: 'course', value: courseId, type: 'ABSOLUTE' }, ...optionCells];
 }
 
@@ -162,7 +169,7 @@ export function buildWasherOspWakeBody(model: Record<string, unknown>): WasherVt
 	};
 }
 
-/** Fail closed (`undefined`) when `Config.uniProtocol` is not true, `ControlWifi.vtCtrl` is missing or not `Set`, or vt-course has no course. */
+/** Fail closed (`undefined`) when `Config.uniProtocol` is not true, `ControlWifi.vtCtrl` is missing or not `Set`, or vt-course has neither a course nor a single option cell. */
 export function buildWasherVtRequest(
 	name: WasherVtSendName,
 	model: Record<string, unknown>,
@@ -172,7 +179,10 @@ export function buildWasherVtRequest(
 		return undefined;
 	}
 	if (name === 'vt-course' && input.courseId === undefined) {
-		return undefined;
+		const hasOptionCell = WASHER_VT_OPTION_KEYS.some((key) => input.options?.[key] !== undefined);
+		if (!hasOptionCell) {
+			return undefined;
+		}
 	}
 
 	const body = buildWasherVtBody(name, input.courseId, input.options ?? {});
@@ -553,6 +563,20 @@ export function rejectedWasherVtCells(reply: unknown): string[] {
 		const code = entry.slice(entry.lastIndexOf('=') + 1);
 		return code !== '0' && code !== '17';
 	});
+}
+
+/**
+ * Option values the washer firmware refuses through a `vtCtrl` cell even though the model lists them as
+ * `selectable`. Confirmed live: `temp=TEMP_COLD` answers returnCode 15 and, when a `course` cell is
+ * present, is replaced by the course default (`workspace/washer-send-after-wake/answer.md`).
+ */
+export const WASHER_VT_SEEDED_REFUSED_VALUES: Readonly<Partial<Record<WasherVtOptionKey, readonly string[]>>> = {
+	temp: ['TEMP_COLD'],
+};
+
+/** The `cmd` names of the reply's rejected cells (any code other than `0` or `17`); `[]` when none. */
+export function rejectedWasherVtCellKeys(reply: unknown): string[] {
+	return rejectedWasherVtCells(reply).map((entry) => entry.slice(0, entry.lastIndexOf('=')));
 }
 
 /** Generic app-style poll: up to `attempts` times sleep then read; stops at the first read where `isDone` is true. */

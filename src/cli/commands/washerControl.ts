@@ -81,6 +81,7 @@ export interface WasherControlOptions {
 	readonly variant: WasherVtVariant;
 	readonly signature: boolean;
 	readonly endpoint: ThinqControlEndpoint | undefined;
+	readonly noCourse: boolean;
 }
 
 export interface WasherControlRequest {
@@ -180,6 +181,7 @@ export function parseWasherControlOptions(args: Record<string, string>): WasherC
 	const allowStart = readBareFlag(args, 'allow-start');
 	const allowInterrupt = readBareFlag(args, 'allow-interrupt');
 	const signature = readBareFlag(args, 'signature');
+	const noCourse = readBareFlag(args, 'no-course');
 	const course = readValueOption(args, 'course');
 	const spin = readValueOption(args, 'spin');
 	const temp = readValueOption(args, 'temp');
@@ -213,6 +215,15 @@ export function parseWasherControlOptions(args: Record<string, string>): WasherC
 	if (allowInterrupt && rawSend !== 'vt-power-off') {
 		throw new Error('--allow-interrupt applies only to vt-power-off.');
 	}
+	if (noCourse && rawSend !== 'vt-course') {
+		throw new Error('--no-course applies only to vt-course.');
+	}
+	if (noCourse && course !== undefined) {
+		throw new Error('--no-course cannot be combined with --course.');
+	}
+	if (noCourse && spin === undefined && temp === undefined && rinse === undefined && soil === undefined) {
+		throw new Error('--no-course needs at least one of --soil, --rinse, --spin, --temp (the body would be empty).');
+	}
 
 	const deviceArg = args.device;
 	return {
@@ -230,6 +241,7 @@ export function parseWasherControlOptions(args: Record<string, string>): WasherC
 		variant,
 		signature,
 		endpoint,
+		noCourse,
 	};
 }
 
@@ -445,9 +457,11 @@ export async function cmdWasherControl(
 	let vtCourseId: string | undefined;
 	try {
 		if (send === 'vt-course') {
-			vtCourseId = resolveWasherCourseId(model, courseId === undefined ? undefined : { courseId });
-			if (vtCourseId === undefined) {
-				throw new Error('Model has no usable default course.');
+			if (!options.noCourse) {
+				vtCourseId = resolveWasherCourseId(model, courseId === undefined ? undefined : { courseId });
+				if (vtCourseId === undefined) {
+					throw new Error('Model has no usable default course.');
+				}
 			}
 			vtOptions = {
 				soilWash:
@@ -518,6 +532,11 @@ export async function cmdWasherControl(
 	if (isVt) {
 		console.log(
 			`Variant: ${options.variant.toUpperCase()}; endpoint and body shape are inferred from the LG app and not proven.`,
+		);
+	}
+	if (options.noCourse) {
+		console.log(
+			'--no-course: the body carries option cells with NO course cell. This shape is inferred from the LG app and has NEVER been confirmed on hardware; the washer may refuse it.',
 		);
 	}
 	if (request.mayStartCycle) {

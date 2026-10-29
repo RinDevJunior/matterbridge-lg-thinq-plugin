@@ -12,11 +12,14 @@ import {
 	isWasherVtCourseApplied,
 	isWasherVtExpectedState,
 	pollWasherUntil,
+	rejectedWasherVtCellKeys,
 	rejectedWasherVtCells,
 	WASHER_VT_IDLE_STATES,
+	WASHER_VT_OMIT_COURSE_CELL_DEFAULT,
 	WASHER_VT_POWER_OFF_SAFE_STATES,
 	WASHER_VT_POWER_POLL_ATTEMPTS,
 	WASHER_VT_RUNNING_STATES,
+	WASHER_VT_SEEDED_REFUSED_VALUES,
 	WASHER_VT_SEND_TIMEOUT_MS,
 	WASHER_VT_START_LOCKOUT_MS,
 	type WasherVtRefusal,
@@ -680,6 +683,37 @@ describe('thinqWasherVtCtrl', () => {
 		});
 	});
 
+	describe('rejectedWasherVtCellKeys', () => {
+		it('should return only the cmd name of each rejected cell from the real vtAck reply shape', () => {
+			// Arrange
+			const reply = washerVtReply('0000', [
+				['course', '17'],
+				['rinse', '0'],
+				['spin', '17'],
+				['temp', '15'],
+			]);
+			// Act / Assert
+			expect(rejectedWasherVtCellKeys(reply)).toStrictEqual(['temp']);
+		});
+
+		it('should return an empty list when every cell is applied (0) or already held (17)', () => {
+			// Arrange
+			const reply = washerVtReply('0000', [
+				['course', '17'],
+				['spin', '0'],
+			]);
+			// Act / Assert
+			expect(rejectedWasherVtCellKeys(reply)).toStrictEqual([]);
+		});
+
+		it('should return an empty list when the reply has no vtAck', () => {
+			// Arrange
+			const reply = { resultCode: '0000', result: { data: {} } };
+			// Act / Assert
+			expect(rejectedWasherVtCellKeys(reply)).toStrictEqual([]);
+		});
+	});
+
 	describe('pollWasherUntil', () => {
 		it('should stop after one read when the first read is done', async () => {
 			// Arrange
@@ -744,6 +778,20 @@ describe('thinqWasherVtCtrl', () => {
 	});
 
 	describe('constants', () => {
+		it('should seed TEMP_COLD as a refused temperature and nothing for rinse, spin or soilWash', () => {
+			// Arrange / Act / Assert
+			expect(WASHER_VT_SEEDED_REFUSED_VALUES.temp).toContain('TEMP_COLD');
+			expect(Object.keys(WASHER_VT_SEEDED_REFUSED_VALUES)).toStrictEqual(['temp']);
+			expect(WASHER_VT_SEEDED_REFUSED_VALUES.rinse).toBeUndefined();
+			expect(WASHER_VT_SEEDED_REFUSED_VALUES.spin).toBeUndefined();
+			expect(WASHER_VT_SEEDED_REFUSED_VALUES.soilWash).toBeUndefined();
+		});
+
+		it('should keep the course-less Option A gate on by default', () => {
+			// Arrange / Act / Assert
+			expect(WASHER_VT_OMIT_COURSE_CELL_DEFAULT).toBe(true);
+		});
+
 		it('should use a 10 second send timeout, 16 power polls and a 2 minute start lock-out', () => {
 			// Arrange / Act / Assert
 			expect(WASHER_VT_SEND_TIMEOUT_MS).toBe(10_000);

@@ -71,6 +71,7 @@ ${b}Washer-control options:${r}
   ${y}--course${r}       Course id from the model (default: model's default course)
   ${y}--spin${r} / ${y}--temp${r} Value or shorthand (800, COLD); must be listed by the course
   ${y}--rinse${r} / ${y}--soil${r} Value or shorthand; vt-course only
+  ${y}--no-course${r}   vt-course only: send the option cells with NO course cell (unproven shape; needs one of --soil/--rinse/--spin/--temp)
   ${y}--variant${r}      A|B body shape for the vt-* sends (default: A)
   ${y}--signature${r}    ioBroker-style WMDownload body (download-* only)
   ${y}--endpoint${r}     control|control-sync (default: control-sync)
@@ -121,4 +122,5 @@ ${b}Examples:${r}
   npm run cli -- --command ${g}washer-control${r} --send vt-start --allow-start
   npm run cli -- --command ${g}washer-control${r} --send vt-resume --allow-start
   npm run cli -- --command ${g}washer-control${r} --send vt-power-off --allow-interrupt
+  npm run cli -- --command ${g}washer-control${r} --send vt-course --no-course --rinse RINSE_3
 `;
