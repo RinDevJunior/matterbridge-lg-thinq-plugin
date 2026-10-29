@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.1.1-rc07] - 2026-10-29
+
+### Changed
+
+- **Washer message without course** — a V1 washer message that only changes one setting can now be sent without the wash course, so other settings are never touched by that change.
+
+### Fixed
+
+- **Unrelated washer setting no longer changed** — changing one washer setting in Home (course, temperature, spin or number of rinses) could silently change a different setting you did not touch, such as a Cold wash temperature being replaced by the course default. Now an unrelated setting the washer refuses is left alone and not sent, and Home shows "the washer will not keep <value>, change it first" instead of a silent change.
+- **Home no longer rolls back accepted changes** — changing one washer setting in Home could show an error and put the old value back even though the washer accepted the change. Home now checks only the setting you asked to change.
+
+<a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
+
+---
+
 ## [0.1.1-rc06] - 2026-10-27
 
 ### Added
