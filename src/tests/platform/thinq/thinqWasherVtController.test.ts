@@ -1526,7 +1526,7 @@ describe('WasherVtController', () => {
 		it('should learn a refused spin from the ack and refuse that value on the next change only', async () => {
 			// Arrange
 			const harness = createHarness(
-				[readingWith({ spin: 'SPIN_1400' }), readingWith({ spin: 'SPIN_1400', rinse: 'NO_RINSE' })],
+				[readingWith({ spin: 'SPIN_1400' }), readingWith({ spin: 'SPIN_1000', rinse: 'NO_RINSE' })],
 				{ resolveCourseOptions, omitCourseCellWhenUnchanged: false },
 			);
 			harness.send.mockResolvedValueOnce(washerVtReply('0000', [['spin', '15']]));
@@ -1544,7 +1544,7 @@ describe('WasherVtController', () => {
 		it('should send a normal spin after learning refuses only SPIN_1400', async () => {
 			// Arrange
 			const harness = createHarness(
-				[readingWith({ spin: 'SPIN_1400' }), readingWith({ spin: 'SPIN_1400', rinse: 'NO_RINSE' })],
+				[readingWith({ spin: 'SPIN_1400' }), readingWith({ spin: 'SPIN_1000', rinse: 'NO_RINSE' })],
 				{ resolveCourseOptions, omitCourseCellWhenUnchanged: false },
 			);
 			harness.send.mockResolvedValueOnce(washerVtReply('0000', [['spin', '15']]));
@@ -1557,6 +1557,105 @@ describe('WasherVtController', () => {
 			const outcome = await harness.controller.applyChanges([{ kind: 'option', key: 'rinse', value: 'RINSE_3' }]);
 			// Assert
 			expect(outcome.status).toBe('done');
+			expect(harness.send).toHaveBeenCalledTimes(2);
+		});
+
+		it('should not learn a refusal when the ack rejects a value the washer actually set', async () => {
+			// Arrange
+			const harness = createHarness([readingWith({ rinse: 'RINSE_2' }), readingWith({ rinse: 'RINSE_3' })], {
+				resolveCourseOptions,
+				omitCourseCellWhenUnchanged: true,
+			});
+			harness.send.mockResolvedValueOnce(washerVtReply('0000', [['rinse', '15']]));
+			// Act
+			const first = await harness.controller.applyChanges([{ kind: 'option', key: 'rinse', value: 'RINSE_3' }]);
+			harness.setSteps([readingWith({ rinse: 'RINSE_2' }), readingWith({ rinse: 'RINSE_3' })]);
+			const second = await harness.controller.applyChanges([{ kind: 'option', key: 'rinse', value: 'RINSE_3' }]);
+			// Assert
+			expect(first.status).toBe('done');
+			expect(vi.mocked(harness.logger.warn)).not.toHaveBeenCalledWith(
+				expect.stringContaining('Home will not send that value again'),
+			);
+			expect(second.status).toBe('done');
+			expect(harness.send).toHaveBeenCalledTimes(2);
+		});
+
+		it('should learn a refusal when the ack rejects a value and the washer did not set it', async () => {
+			// Arrange
+			const harness = createHarness([readingWith({ rinse: 'RINSE_2' }), readingWith({ rinse: 'RINSE_2' })], {
+				resolveCourseOptions,
+				omitCourseCellWhenUnchanged: true,
+			});
+			harness.send.mockResolvedValueOnce(washerVtReply('0000', [['rinse', '15']]));
+			// Act
+			const first = await harness.controller.applyChanges([{ kind: 'option', key: 'rinse', value: 'RINSE_3' }]);
+			harness.setSteps([readingWith({ rinse: 'RINSE_2' })]);
+			const second = await harness.controller.applyChanges([{ kind: 'option', key: 'rinse', value: 'RINSE_3' }]);
+			// Assert
+			expect(first.status).toBe('unconfirmed');
+			expect(vi.mocked(harness.logger.warn)).toHaveBeenCalledWith(expect.stringContaining('rinse=RINSE_3'));
+			expect(second).toMatchObject({ status: 'refused', message: MSG_VALUE_REFUSED });
+			expect(harness.send).toHaveBeenCalledTimes(1);
+		});
+
+		it('should learn a carried temperature the washer reset when the omit gate is off', async () => {
+			// Arrange
+			const harness = createHarness(
+				[readingWith({ temp: 'TEMP_60' }), readingWith({ temp: 'TEMP_40', rinse: 'NO_RINSE' })],
+				{ resolveCourseOptions, omitCourseCellWhenUnchanged: false },
+			);
+			harness.send.mockResolvedValueOnce(
+				washerVtReply('0000', [
+					['course', '17'],
+					['rinse', '0'],
+					['spin', '17'],
+					['temp', '15'],
+				]),
+			);
+			// Act
+			const outcome = await harness.controller.applyChanges([{ kind: 'option', key: 'rinse', value: 'NO_RINSE' }]);
+			// Assert
+			expect(outcome.status).toBe('done');
+			expect(vi.mocked(harness.logger.warn)).toHaveBeenCalledWith(expect.stringContaining('temp=TEMP_60'));
+		});
+
+		it('should not learn a refusal when the washer gives no post-send read', async () => {
+			// Arrange
+			const harness = createHarness([readingWith({ rinse: 'RINSE_2' }), undefined], {
+				resolveCourseOptions,
+				omitCourseCellWhenUnchanged: true,
+			});
+			harness.send.mockResolvedValueOnce(washerVtReply('0000', [['rinse', '15']]));
+			// Act
+			const first = await harness.controller.applyChanges([{ kind: 'option', key: 'rinse', value: 'RINSE_3' }]);
+			harness.setSteps([readingWith({ rinse: 'RINSE_2' }), readingWith({ rinse: 'RINSE_3' })]);
+			const second = await harness.controller.applyChanges([{ kind: 'option', key: 'rinse', value: 'RINSE_3' }]);
+			// Assert
+			expect(first.status).toBe('unconfirmed');
+			expect(vi.mocked(harness.logger.warn)).not.toHaveBeenCalledWith(
+				expect.stringContaining('Home will not send that value again'),
+			);
+			expect(second.status).toBe('done');
+			expect(harness.send).toHaveBeenCalledTimes(2);
+		});
+
+		it('should not learn a refusal when LG rejects the send before any post-send read', async () => {
+			// Arrange
+			const harness = createHarness([readingWith({ rinse: 'RINSE_2' })], {
+				resolveCourseOptions,
+				omitCourseCellWhenUnchanged: true,
+			});
+			harness.send.mockResolvedValueOnce(washerVtReply('0110', [['rinse', '15']]));
+			// Act
+			const first = await harness.controller.applyChanges([{ kind: 'option', key: 'rinse', value: 'RINSE_3' }]);
+			harness.setSteps([readingWith({ rinse: 'RINSE_2' }), readingWith({ rinse: 'RINSE_3' })]);
+			const second = await harness.controller.applyChanges([{ kind: 'option', key: 'rinse', value: 'RINSE_3' }]);
+			// Assert
+			expect(first.status).toBe('failed');
+			expect(vi.mocked(harness.logger.warn)).not.toHaveBeenCalledWith(
+				expect.stringContaining('Home will not send that value again'),
+			);
+			expect(second.status).toBe('done');
 			expect(harness.send).toHaveBeenCalledTimes(2);
 		});
 
