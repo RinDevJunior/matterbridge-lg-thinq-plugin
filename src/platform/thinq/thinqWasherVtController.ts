@@ -18,13 +18,16 @@ import {
 	isWasherVtCourseApplied,
 	isWasherVtExpectedState,
 	pollWasherUntil,
+	rejectedWasherVtCellKeys,
 	rejectedWasherVtCells,
 	WASHER_POLL_ATTEMPTS,
 	WASHER_POLL_INTERVAL_MS,
 	WASHER_VT_IDLE_STATES,
+	WASHER_VT_OMIT_COURSE_CELL_DEFAULT,
 	WASHER_VT_OPTION_KEYS,
 	WASHER_VT_POWER_POLL_ATTEMPTS,
 	WASHER_VT_RUNNING_STATES,
+	WASHER_VT_SEEDED_REFUSED_VALUES,
 	WASHER_VT_SEND_TIMEOUT_MS,
 	WASHER_VT_START_LOCKOUT_MS,
 	type WasherVtBody,
@@ -73,10 +76,21 @@ export interface WasherVtControllerOptions {
 	readonly startLockoutMs?: number;
 	/** Per-course allowed values. Omitted = the controller refuses every `applyChanges`. */
 	readonly resolveCourseOptions?: ((courseId: string) => WasherCourseOptions | undefined) | undefined;
+	/**
+	 * Option A: omit the `course` cell and send only the requested cells when the course is not changing.
+	 * Default `WASHER_VT_OMIT_COURSE_CELL_DEFAULT`. Tests set it explicitly; nothing wires it from config.
+	 */
+	readonly omitCourseCellWhenUnchanged?: boolean;
 }
 
 interface WasherVtSelection {
 	readonly courseId: string;
+	readonly options: WasherVtOptions;
+}
+
+/** What a send puts in the body: `courseId: undefined` means the `course` cell is left out (Option A). */
+interface WasherVtSendStage {
+	readonly courseId: string | undefined;
 	readonly options: WasherVtOptions;
 }
 
@@ -97,6 +111,9 @@ const MSG_NO_OPTIONS = 'This washer model does not describe its wash courses, so
 const MSG_KEY_NOT_ON_COURSE = 'The selected wash course has no such setting.';
 const MSG_VALUE_NOT_ALLOWED = 'The selected wash course does not allow that setting.';
 const MSG_REMOTE_OFF = 'Press the Remote Control button on the washer for 3 seconds, then tap Start again.';
+const MSG_VALUE_REFUSED_BY_WASHER = 'The washer does not accept that setting. Pick a different value.';
+const MSG_CARRIED_VALUE_REFUSED =
+	'The washer will not keep its current temperature or spin setting, so this change would reset it. Change that setting in Home first, then try again.';
 
 const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -105,16 +122,30 @@ function stateOf(fields: WasherFields): string | undefined {
 	return typeof state === 'string' ? state : undefined;
 }
 
+function withoutKeys(cells: WasherVtOptions, keys: readonly WasherVtOptionKey[]): WasherVtOptions {
+	const kept: WasherVtOptions = {};
+	for (const key of WASHER_VT_OPTION_KEYS) {
+		const value = cells[key];
+		if (value !== undefined && !keys.includes(key)) {
+			kept[key] = value;
+		}
+	}
+	return kept;
+}
+
 export class WasherVtController {
 	private inFlight = false;
 	private startLockedUntil = 0;
 	private homeSelection: WasherVtSelection | undefined;
+	/** Values this washer refused at runtime, on top of the seeded list. Per instance, never persisted. */
+	private readonly learnedRefusedValues = new Map<WasherVtOptionKey, Set<string>>();
 
 	private readonly sendTimeoutMs: number;
 	private readonly pollAttempts: number;
 	private readonly powerPollAttempts: number;
 	private readonly pollIntervalMs: number;
 	private readonly startLockoutMs: number;
+	private readonly omitCourseCellWhenUnchanged: boolean;
 
 	public constructor(
 		private readonly label: string,
@@ -127,6 +158,7 @@ export class WasherVtController {
 		this.powerPollAttempts = options.powerPollAttempts ?? WASHER_VT_POWER_POLL_ATTEMPTS;
 		this.pollIntervalMs = options.pollIntervalMs ?? WASHER_POLL_INTERVAL_MS;
 		this.startLockoutMs = options.startLockoutMs ?? WASHER_VT_START_LOCKOUT_MS;
+		this.omitCourseCellWhenUnchanged = options.omitCourseCellWhenUnchanged ?? WASHER_VT_OMIT_COURSE_CELL_DEFAULT;
 	}
 
 	/** Never throws. `done` and `noop` are success; every other status is a refusal or failure for the caller to surface. */
@@ -185,6 +217,7 @@ export class WasherVtController {
 			}
 		}
 		const cells: Partial<Record<WasherVtOptionKey, string>> = {};
+		const confirmCells: Partial<Record<WasherVtOptionKey, string>> = {};
 		for (const key of WASHER_VT_OPTION_KEYS) {
 			const list = courseOptions[key];
 			const value = requested.get(key);
@@ -198,27 +231,58 @@ export class WasherVtController {
 				if (!list.writable || !list.values.includes(value)) {
 					return this.refuseSelection(reading, MSG_VALUE_NOT_ALLOWED);
 				}
+				if (this.isRefusedValue(key, value)) {
+					return this.refuseSelection(reading, MSG_VALUE_REFUSED_BY_WASHER);
+				}
 				cells[key] = value;
+				confirmCells[key] = value;
 				continue;
 			}
 			const current = parseWasherField(reading.fields, key);
 			cells[key] = typeof current === 'string' && list.values.includes(current) ? current : list.defaultValue;
 		}
 
-		if (isWasherVtCourseApplied(reading.fields, courseId, cells)) {
+		if (isWasherVtCourseApplied(reading.fields, courseId, confirmCells)) {
 			this.homeSelection = { courseId, options: cells };
 			return this.noop(reading, 'the washer already has these settings');
 		}
+
+		// Option A: with no `course` cell the washer has no template to re-apply, so only the cells the
+		// user asked for are sent and every other setting is left alone.
+		const omitCourse = requestedCourse === undefined && this.omitCourseCellWhenUnchanged;
+		const refusedCarried = this.refusedCarriedKeys(cells, confirmCells);
+		if (refusedCarried.length > 0 && !omitCourse) {
+			if (requestedCourse === undefined) {
+				return this.refuseSelection(reading, MSG_CARRIED_VALUE_REFUSED);
+			}
+			for (const key of refusedCarried) {
+				this.logger.warn(
+					`ThinQ Washer ${this.label}: leaving ${key}=${cells[key]} out of the send, the washer refuses that value`,
+				);
+			}
+		}
+		const bodyCells = omitCourse ? confirmCells : withoutKeys(cells, refusedCarried);
+		if (omitCourse && WASHER_VT_OPTION_KEYS.every((key) => bodyCells[key] === undefined)) {
+			return this.noop(reading, 'nothing to change');
+		}
+
 		const result = await this.sendAndConfirm(
 			'vt-course',
 			reading,
 			this.pollAttempts,
-			(fields) => isWasherVtCourseApplied(fields, courseId, cells),
+			(fields) => isWasherVtCourseApplied(fields, courseId, confirmCells),
 			undefined,
-			{ courseId, options: cells },
+			{ courseId: omitCourse ? undefined : courseId, options: bodyCells },
 		);
+		this.rememberRefusedValues(bodyCells, result.reply);
 		if (result.outcome.status === 'done') {
 			this.homeSelection = { courseId, options: cells };
+			const ignored = rejectedWasherVtCells(result.reply);
+			if (ignored.length > 0) {
+				this.logger.warn(
+					`ThinQ Washer ${this.label}: the washer refused ${ignored.join(', ')} while applying the requested change; it kept or reset those settings itself`,
+				);
+			}
 			return result.outcome;
 		}
 		if (result.outcome.status === 'unconfirmed') {
@@ -234,6 +298,38 @@ export class WasherVtController {
 	private refuseSelection(reading: WasherVtReading, message: string): WasherVtOutcome {
 		this.logger.warn(`ThinQ Washer ${this.label}: refused, ${message}`);
 		return { status: 'refused', message, snapshot: reading.snapshot };
+	}
+
+	private isRefusedValue(key: WasherVtOptionKey, value: string): boolean {
+		return (
+			WASHER_VT_SEEDED_REFUSED_VALUES[key]?.includes(value) === true ||
+			this.learnedRefusedValues.get(key)?.has(value) === true
+		);
+	}
+
+	/** Keys whose value came from carry-forward (not from `requested`) and is one the washer refuses. */
+	private refusedCarriedKeys(cells: WasherVtOptions, requested: WasherVtOptions): WasherVtOptionKey[] {
+		return WASHER_VT_OPTION_KEYS.filter((key) => {
+			const value = cells[key];
+			return value !== undefined && requested[key] === undefined && this.isRefusedValue(key, value);
+		});
+	}
+
+	/** Learns the values this washer rejected in the ack, so Home never sends them again this session. */
+	private rememberRefusedValues(sent: WasherVtOptions, reply: unknown): void {
+		for (const cmd of rejectedWasherVtCellKeys(reply)) {
+			const key = WASHER_VT_OPTION_KEYS.find((candidate) => candidate === cmd);
+			const value = key === undefined ? undefined : sent[key];
+			if (key === undefined || value === undefined) {
+				continue;
+			}
+			const known = this.learnedRefusedValues.get(key) ?? new Set<string>();
+			known.add(value);
+			this.learnedRefusedValues.set(key, known);
+			this.logger.warn(
+				`ThinQ Washer ${this.label}: the washer refused ${key}=${value}; Home will not send that value again`,
+			);
+		}
 	}
 
 	private async execute(action: WasherVtAction): Promise<WasherVtOutcome> {
@@ -417,7 +513,14 @@ export class WasherVtController {
 			this.logger.warn(`ThinQ Washer ${this.label}: no valid Selected Wash Course configured, nothing staged`);
 			return remoteOff;
 		}
-		if (isWasherVtCourseApplied(reading.fields, stagePlan.courseId, stagePlan.options)) {
+		const refusedStage = this.refusedCarriedKeys(stagePlan.options, {});
+		for (const key of refusedStage) {
+			this.logger.warn(
+				`ThinQ Washer ${this.label}: leaving ${key}=${stagePlan.options[key]} out of the staged course, the washer refuses that value`,
+			);
+		}
+		const stageOptions = withoutKeys(stagePlan.options, refusedStage);
+		if (isWasherVtCourseApplied(reading.fields, stagePlan.courseId, stageOptions)) {
 			this.logger.info(`ThinQ Washer ${this.label}: course ${stagePlan.courseId} already selected, nothing staged`);
 			return { ...remoteOff, message: `Course ${stagePlan.courseId} is already selected. ${MSG_REMOTE_OFF}` };
 		}
@@ -426,9 +529,9 @@ export class WasherVtController {
 			'vt-course',
 			reading,
 			this.pollAttempts,
-			(fields) => isWasherVtCourseApplied(fields, stagePlan.courseId, stagePlan.options),
+			(fields) => isWasherVtCourseApplied(fields, stagePlan.courseId, stageOptions),
 			undefined,
-			{ courseId: stagePlan.courseId, options: stagePlan.options },
+			{ courseId: stagePlan.courseId, options: stageOptions },
 		);
 		if (result.outcome.status === 'done') {
 			return {
@@ -481,7 +584,7 @@ export class WasherVtController {
 		attempts: number,
 		confirm?: (fields: WasherFields) => boolean,
 		bodyOverride?: WasherVtBody,
-		stageOverride?: WasherVtSelection,
+		stageOverride?: WasherVtSendStage,
 	): Promise<SendResult> {
 		const stage = stageOverride ?? (name === 'vt-course' ? this.options.stagePlan : undefined);
 		const body = bodyOverride ?? buildWasherVtBody(name as WasherVtSendName, stage?.courseId, stage?.options ?? {});
