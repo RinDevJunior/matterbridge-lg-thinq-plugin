@@ -41,7 +41,7 @@
 
 ---
 
-**Matterbridge LG ThinQ Plugin** is a dynamic platform plugin for [Matterbridge](https://www.npmjs.com/package/matterbridge) that exposes LG ThinQ cloud-connected appliances to Apple Home and other Matter-compatible apps.
+**Matterbridge LG ThinQ Plugin** is a dynamic platform plugin for [Matterbridge](https://www.npmjs.com/package/matterbridge) that exposes LG ThinQ cloud-connected appliances — air conditioners, washers, and eventually webOS TVs — to Apple Home and other Matter-compatible apps.
 
 > ⭐ If you find this project useful, please consider starring the repository on GitHub:  
 > [https://github.com/RinDevJunior/matterbridge-lg-thinq-plugin](https://github.com/RinDevJunior/matterbridge-lg-thinq-plugin)
@@ -58,18 +58,29 @@ Requires matterbridge@3.11.0
 
 ---
 
+### 🚧 Project Status
+
+- **Under active development**
+- Requires **`matterbridge@3.11.0`**
+
+---
+
 ### 🧊 Supported Devices
 
-**Air Conditioner** — full control:
+#### Air Conditioner — full control
 
 - Power, mode, temperature, fan speed, swing/vane control
 - Humidity and air-quality (AQI/PM2.5/PM10) sensors
 - Live energy/power consumption monitoring
 - Filter life monitoring, plus an opt-in filter-reset command
 
-**Washer** — read-only status, plus real Start, Pause and Stop from the washer's own controls in Google Home / Apple Home (resolved from the device's own model data and your selected wash course). On models without the LG app's `vtCtrl` command, Stop turns the washer off and Resume is not supported by LG.
+#### Washer — baseline models
 
-**Washer (account or token login, models with `uniProtocol` and `vtCtrl`)** — controlled through the LG app's own `vtCtrl` command: On, Off, Start, Pause, Resume and Stop. On uses the washer's own wake-up command from its model data (the vtCtrl power-on does not work on a washer that is off) and is refused when the model has none; the washer then goes from off to ready. Other washer models keep the older behaviour described above.
+Read-only status, plus real Start, Pause and Stop from the washer's own controls in Google Home / Apple Home (resolved from the device's own model data and your selected wash course). On models without the LG app's `vtCtrl` command, Stop turns the washer off and Resume is not supported by LG.
+
+#### Washer — `vtCtrl` models (account or token login, models with `uniProtocol` and `vtCtrl`)
+
+Controlled through the LG app's own `vtCtrl` command: On, Off, Start, Pause, Resume and Stop. On uses the washer's own wake-up command from its model data (the vtCtrl power-on does not work on a washer that is off) and is refused when the model has none; the washer then goes from off to ready. Other washer models keep the baseline behaviour described above.
 
 - The wash course comes from `Selected Wash Course` in the plugin settings (restart the plugin after changing it) or from Home, which lists the washer's own courses and sends a change to the washer.
 - Wash steps: Matter reports one of 8 steps (Detecting to Cooling) while the washer is washing; it is empty when off, paused, finished or in error.
@@ -79,6 +90,10 @@ Requires matterbridge@3.11.0
 - Pause and Resume work any time during a wash. Start while paused resumes.
 - Stop and Off are refused during a wash unless `Allow cancelling a running wash` is on. When it is on, the washer is paused first and then powered off, which abandons the cycle (water may stay in the drum and the door may stay locked). Stop or Off while a wash is running (with `Allow cancelling a running wash` on) pauses, confirms, then powers off, which can take 30 seconds or more, so a Home app may show "no response" although the washer did what was asked; Start and the course tap take up to about 15 seconds.
 - Every command re-reads the washer first and is checked against its real state. If the washer does not confirm a Start or Resume, further Start and Resume taps are refused for 2 minutes; check the washer first. The lock-out is kept in memory and is cleared by a plugin restart; a timed-out send may still complete later, and the lock-out covers Start and Resume only.
+
+#### webOS TV
+
+Groundwork only — no Matter device is exposed yet.
 
 ---
 
@@ -129,13 +144,6 @@ Limits:
 - Air conditioner: no heat mode, energy monitoring, filter reset, swing angle, dust values, display light, timers.
 - Washer Start and Stop work through ThinQ Connect only when the washer is idle (`INITIAL`) with Remote Start on; START has not been tested on hardware yet. Pause and resume are not available.
 - Push needs a token with the event permission. If LG's event subscription cap is reached (error 1312) that device stays on polling. Push is not yet tested against the real LG service; if it fails, polling keeps everything working.
-
----
-
-### 🚧 Project Status
-
-- **Under active development**
-- Requires **`matterbridge@3.11.0`**
 
 ---
 
