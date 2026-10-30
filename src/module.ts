@@ -15,12 +15,35 @@ import { PlatformState } from './platform/platformState.js';
 import { applyThinqFilterStateToAirConditioner } from './platform/thinq/thinqAirConditionerFilterStateSync.js';
 import { applyThinqSnapshotToAirConditioner } from './platform/thinq/thinqAirConditionerStateSync.js';
 import { reconcileThinqDeviceConfigEntries } from './platform/thinq/thinqDeviceConfigReconciler.js';
+import { WasherCycleTracker } from './platform/thinq/thinqWasherCycleTracker.js';
+import type { WasherMatterPlan } from './platform/thinq/thinqWasherMatterPlan.js';
 import { applyThinqSnapshotToWasher } from './platform/thinq/thinqWasherStateSync.js';
+import { resolveThinqGeneration } from './platform/thinqGeneration.js';
 import { ThinqServiceContainer } from './services/thinq/serviceContainer.js';
 import { ThinqSession } from './services/thinq/session.js';
 import { ThinqDeviceUpdateListener } from './services/thinq/thinqDeviceService.js';
 import type { ThinqFilterUpdateListener } from './services/thinq/thinqFilterMonitoringService.js';
 import { PLUGIN_NAME } from './settings.js';
+import { applyThinqConnectAirConditionerState } from './thinqConnect/thinqConnectAirConditionerEndpoint.js';
+import { registerThinqConnectAirConditioners } from './thinqConnect/thinqConnectAirConditionerRegistration.js';
+import type { ThinqConnectAirConditioner } from './thinqConnect/thinqConnectAirConditionerService.js';
+import { loadOrCreateThinqConnectClientId } from './thinqConnect/thinqConnectClientId.js';
+import { syncThinqConnectDeviceConfigEntries } from './thinqConnect/thinqConnectDeviceConfigReconciler.js';
+import {
+	createThinqConnectIdentityMapping,
+	ensureIdentityMappingFile,
+	IDENTITY_MAPPING_FILE_NAME,
+	loadIdentityMapping,
+	type ThinqConnectIdentityMapping,
+} from './thinqConnect/thinqConnectIdentityMapping.js';
+import {
+	resolveThinqConnectMatterIdentity as buildThinqConnectMatterIdentity,
+	type ThinqConnectMatterIdentityOverride,
+} from './thinqConnect/thinqConnectMatterIdentity.js';
+import { ThinqConnectServiceContainer } from './thinqConnect/thinqConnectServiceContainer.js';
+import { applyThinqConnectWasherState } from './thinqConnect/thinqConnectWasherEndpoint.js';
+import { registerThinqConnectWashers } from './thinqConnect/thinqConnectWasherRegistration.js';
+import type { ThinqConnectWasher } from './thinqConnect/thinqConnectWasherService.js';
 
 export default function initializePlugin(
 	matterbridge: PlatformMatterbridge,
@@ -45,9 +68,17 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 	// ThinQ family services (Phase 1: auth + discovery + polling, AirConditioner only)
 	public readonly thinqServices: ThinqServiceContainer;
 
+	// ThinQ Connect (PAT) generation: only defined when loginType is 'pat'
+	private readonly thinqConnectServices: ThinqConnectServiceContainer | undefined;
+	private thinqConnectWashers: ThinqConnectWasher[] = [];
+	private thinqConnectAirConditioners: ThinqConnectAirConditioner[] = [];
+
 	private thinqPollingIntervalMs: number | undefined;
 	private readonly thinqDeviceKindById = new Map<string, 'AC' | 'WASHER'>();
+	private readonly washerMatterPlanById = new Map<string, WasherMatterPlan>();
+	private readonly washerCycleTracker = new WasherCycleTracker();
 	private readonly filterMonitoringDeviceIds: string[] = [];
+	private identityMapping: ThinqConnectIdentityMapping | undefined;
 
 	constructor(
 		matterbridge: PlatformMatterbridge,
@@ -73,6 +104,59 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 			this.configManager,
 			Path.join(this.matterbridge.matterbridgePluginDirectory, PLUGIN_NAME, 'mqtt-certs'),
 		);
+		this.thinqConnectServices =
+			resolveThinqGeneration(this.configManager.thinqLoginType) === 'connect'
+				? new ThinqConnectServiceContainer(this.log, {
+						personalAccessToken: this.configManager.thinqPersonalAccessToken ?? '',
+						country: this.configManager.country,
+						pollIntervalSeconds: this.configManager.thinqRefreshIntervalSeconds,
+						clientId: this.loadThinqConnectClientId(),
+					})
+				: undefined;
+		this.ensureIdentityMappingFile();
+	}
+
+	private identityMappingPath(): string {
+		return Path.join(this.matterbridge.matterbridgePluginDirectory, PLUGIN_NAME, IDENTITY_MAPPING_FILE_NAME);
+	}
+
+	private ensureIdentityMappingFile(): void {
+		const filePath = this.identityMappingPath();
+		try {
+			if (ensureIdentityMappingFile(filePath) === 'created') {
+				this.log.info(`Created ${IDENTITY_MAPPING_FILE_NAME} template at ${filePath}`);
+			}
+		} catch (error) {
+			this.log.warn(
+				`could not create ${IDENTITY_MAPPING_FILE_NAME}: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+	}
+
+	private loadIdentityMapping(): ThinqConnectIdentityMapping {
+		const parsed = loadIdentityMapping(this.identityMappingPath());
+		for (const warning of parsed.warnings) {
+			this.log.warn(`ThinQ Connect: ${warning}`);
+		}
+		if (parsed.entries.size > 0) {
+			this.log.info(
+				`ThinQ Connect: loaded ${parsed.entries.size} device mapping(s) from ${IDENTITY_MAPPING_FILE_NAME}.`,
+			);
+		}
+		return createThinqConnectIdentityMapping(parsed.entries);
+	}
+
+	private loadThinqConnectClientId(): string | undefined {
+		try {
+			return loadOrCreateThinqConnectClientId(
+				Path.join(this.matterbridge.matterbridgePluginDirectory, PLUGIN_NAME, 'thinq-connect-client-id.json'),
+			);
+		} catch (error) {
+			this.log.warn(
+				`ThinQ Connect: could not store the client id, using a temporary one: ${error instanceof Error ? error.message : String(error)}`,
+			);
+			return undefined;
+		}
 	}
 
 	// #region Lifecycle
@@ -97,7 +181,11 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 		}
 
 		try {
-			await this.startThinqDevices();
+			if (this.thinqConnectServices) {
+				await this.startThinqConnectDevices();
+			} else {
+				await this.startThinqDevices();
+			}
 		} catch (error) {
 			this.log.error(`ThinQ startup failed: ${error instanceof Error ? error.message : String(error)}`);
 			this.state.setStartupCompleted(false);
@@ -136,6 +224,11 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 			return;
 		}
 
+		if (this.thinqConnectServices) {
+			this.startThinqConnectPolling();
+			return;
+		}
+
 		const applyDeviceUpdate: ThinqDeviceUpdateListener = (deviceId, snapshot) => {
 			const endpoint = this.registry.getDevice(deviceId) as MatterbridgeEndpoint | undefined;
 			if (!endpoint) {
@@ -144,7 +237,14 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 			}
 
 			if (this.thinqDeviceKindById.get(deviceId) === 'WASHER') {
-				void applyThinqSnapshotToWasher(endpoint, snapshot, this.log).catch((error: unknown) => {
+				const plan = this.washerMatterPlanById.get(deviceId);
+				void applyThinqSnapshotToWasher(
+					endpoint,
+					snapshot,
+					this.log,
+					this.washerCycleTracker,
+					plan === undefined ? undefined : { plan },
+				).catch((error: unknown) => {
 					this.log.error(
 						`Failed to apply ThinQ state update for ${deviceId}: ${error instanceof Error ? error.message : String(error)}`,
 					);
@@ -203,10 +303,15 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 		this.log.debug(`onShutdown: entry (reason=${reason ?? 'none'})`);
 		this.log.notice('onShutdown called with reason:', reason ?? 'none');
 
-		this.thinqServices.getDeviceService().stopPolling();
-		this.thinqServices.getDeviceService().stopKeepAlive();
-		this.thinqServices.getMqttListener().stop();
-		this.thinqServices.getFilterMonitoringService().stopPolling();
+		if (this.thinqConnectServices) {
+			await this.thinqConnectServices.stopPush();
+			this.thinqConnectServices.shutdown();
+		} else {
+			this.thinqServices.getDeviceService().stopPolling();
+			this.thinqServices.getDeviceService().stopKeepAlive();
+			this.thinqServices.getMqttListener().stop();
+			this.thinqServices.getFilterMonitoringService().stopPolling();
+		}
 
 		if (this.configManager.unregisterOnShutdown) {
 			await this.unregisterAllDevices(UNREGISTER_DEVICES_DELAY_MS);
@@ -217,25 +322,143 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 	}
 
 	/**
+	 * Discovers ThinQ Connect (PAT) washers and air conditioners and registers each as a Matter endpoint
+	 * (LaundryWasher / room air conditioner).
+	 */
+	private async startThinqConnectDevices(): Promise<void> {
+		this.identityMapping = this.loadIdentityMapping();
+		const container = this.thinqConnectServices;
+		if (!container) {
+			throw new Error('ThinQ Connect services not initialized');
+		}
+		await syncThinqConnectDeviceConfigEntries({
+			listDevices: () => container.getConnectApiClient().getDevices(),
+			thinqConfig: this.config.thinq,
+			saveConfig: () => this.saveConfig(this.config),
+			logger: this.log,
+		});
+		const service = container.getWasherService();
+
+		this.thinqConnectWashers = await registerThinqConnectWashers({
+			service,
+			logger: this.log,
+			isIgnored: (id) => this.configManager.isDeviceIgnored(id),
+			resolveIdentity: (id) => this.resolveThinqConnectMatterIdentity(id),
+			registerDevice: (endpoint) => this.registerDevice(endpoint),
+			unregisterIgnoredDevice: (id, endpoint) => this.unregisterIgnoredDevice(id, endpoint),
+			remember: (id, endpoint) => this.registry.register(id, endpoint),
+		});
+
+		this.log.notice(`ThinQ Connect (PAT): registered ${this.thinqConnectWashers.length} washer(s).`);
+
+		let airConditionerDiscoveryFailed = false;
+		try {
+			this.thinqConnectAirConditioners = await registerThinqConnectAirConditioners({
+				service: container.getAirConditionerService(),
+				logger: this.log,
+				isIgnored: (id) => this.configManager.isDeviceIgnored(id),
+				resolveIdentity: (id) => this.resolveThinqConnectMatterIdentity(id),
+				registerDevice: (endpoint) => this.registerDevice(endpoint),
+				unregisterIgnoredDevice: (id, endpoint) => this.unregisterIgnoredDevice(id, endpoint),
+				remember: (id, endpoint) => this.registry.register(id, endpoint),
+			});
+		} catch (error) {
+			airConditionerDiscoveryFailed = true;
+			this.log.error(
+				`ThinQ Connect (PAT): air conditioner discovery failed: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+		this.log.notice(`ThinQ Connect (PAT): registered ${this.thinqConnectAirConditioners.length} air conditioner(s).`);
+		if (!airConditionerDiscoveryFailed) {
+			for (const id of this.identityMapping?.unmatchedConnectIds() ?? []) {
+				this.log.warn(
+					`ThinQ Connect: ${IDENTITY_MAPPING_FILE_NAME} entry ${id} matches no supported washer or air conditioner.`,
+				);
+			}
+		}
+
+		if (this.thinqConnectWashers.length === 0 && this.thinqConnectAirConditioners.length === 0) {
+			this.log.notice(
+				'ThinQ Connect (PAT): no washer or air conditioner found. Only washers and air conditioners are supported with a Personal Access Token in this version.',
+			);
+		}
+	}
+
+	/**
+	 * Resolves the per-device Matter identity (V1-equivalent overrides plus any `serial-number-mapping` legacy id)
+	 * as plain data. Undefined fields fall back to the ThinQ Connect builder defaults.
+	 */
+	private resolveThinqConnectMatterIdentity(deviceId: string): ThinqConnectMatterIdentityOverride {
+		return buildThinqConnectMatterIdentity(deviceId, {
+			overrideMatterConfiguration: this.configManager.overrideMatterConfiguration,
+			vendor: this.configManager.matterOverrideSettings,
+			getProductId: (id) => this.configManager.getProductIdForDevice(id),
+			getProductName: (id) => this.configManager.getProductNameForDevice(id),
+			legacyIdFor: (id) => this.identityMapping?.legacyIdFor(id),
+		});
+	}
+
+	private startThinqConnectPolling(): void {
+		const container = this.thinqConnectServices;
+		if (!container) {
+			throw new Error('ThinQ Connect services not initialized');
+		}
+
+		container.getWasherService().startPolling(container.pollIntervalMs, this.thinqConnectWashers, (deviceId, state) => {
+			const endpoint = this.registry.getDevice(deviceId) as MatterbridgeEndpoint | undefined;
+			if (!endpoint) {
+				this.log.debug(`ThinQ Connect state update received for unregistered device ${deviceId}, skipping.`);
+				return;
+			}
+			void applyThinqConnectWasherState(endpoint, state, this.log).catch((error: unknown) => {
+				this.log.error(
+					`Failed to apply ThinQ Connect state update for ${deviceId}: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			});
+		});
+		const airConditionersById = new Map(this.thinqConnectAirConditioners.map((ac) => [ac.deviceId, ac]));
+		container
+			.getAirConditionerService()
+			.startPolling(container.pollIntervalMs, this.thinqConnectAirConditioners, (deviceId, state) => {
+				const endpoint = this.registry.getDevice(deviceId) as MatterbridgeEndpoint | undefined;
+				const ac = airConditionersById.get(deviceId);
+				if (!endpoint || !ac) {
+					this.log.debug(`ThinQ Connect state update received for unregistered device ${deviceId}, skipping.`);
+					return;
+				}
+				void applyThinqConnectAirConditionerState(endpoint, ac, state, this.log).catch((error: unknown) => {
+					this.log.error(
+						`Failed to apply ThinQ Connect state update for ${deviceId}: ${error instanceof Error ? error.message : String(error)}`,
+					);
+				});
+			});
+		this.log.debug(`ThinQ Connect polling started at ${container.pollIntervalMs}ms interval`);
+		container.startPush({ washers: this.thinqConnectWashers, airConditioners: this.thinqConnectAirConditioners });
+	}
+
+	/**
 	 * Authenticates against LG ThinQ (account or token strategy), discovers AirConditioner devices,
 	 * and registers each of them with Matterbridge. Ports the sibling plugin's discovery/configure split.
 	 */
 	private async startThinqDevices(): Promise<void> {
+		const loginType = this.configManager.thinqLoginType;
+		if (loginType === 'pat') {
+			throw new Error('startThinqDevices called with a Personal Access Token login (EMP login required).');
+		}
+
 		const userDataRepository = this.thinqServices.getUserDataRepository();
 		let userData = this.configManager.isForceAuthenticationEnabled
 			? undefined
 			: await userDataRepository.loadUserData();
 
 		if (!userData) {
-			userData = await this.thinqServices
-				.getAuthenticationCoordinator()
-				.authenticate(this.configManager.thinqLoginType, {
-					username: this.configManager.thinqUsername,
-					password: this.configManager.thinqPassword,
-					refreshToken: this.configManager.thinqRefreshToken,
-					country: this.configManager.country,
-					language: this.configManager.language,
-				});
+			userData = await this.thinqServices.getAuthenticationCoordinator().authenticate(loginType, {
+				username: this.configManager.thinqUsername,
+				password: this.configManager.thinqPassword,
+				refreshToken: this.configManager.thinqRefreshToken,
+				country: this.configManager.country,
+				language: this.configManager.language,
+			});
 		}
 
 		if (!userData) {
@@ -271,6 +494,10 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 		for (const device of devices) {
 			if (isAirConditionerDevice(device)) {
 				const airConditioner = await configurator.registerAirConditioner(device);
+				if (this.configManager.isDeviceIgnored(device.id)) {
+					await this.unregisterIgnoredDevice(device.id, airConditioner);
+					continue;
+				}
 				await this.registerDevice(airConditioner);
 				this.registry.register(device.id, airConditioner);
 				this.thinqDeviceKindById.set(device.id, 'AC');
@@ -282,12 +509,38 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 
 			if (isWasherDevice(device)) {
 				const washer = await configurator.registerWasher(device);
+				if (this.configManager.isDeviceIgnored(device.id)) {
+					await this.unregisterIgnoredDevice(device.id, washer);
+					continue;
+				}
 				await this.registerDevice(washer);
 				this.registry.register(device.id, washer);
 				this.thinqDeviceKindById.set(device.id, 'WASHER');
+				const washerPlan = configurator.getWasherMatterPlan(device.id);
+				if (washerPlan) {
+					this.washerMatterPlanById.set(device.id, washerPlan);
+				} else {
+					this.washerMatterPlanById.delete(device.id);
+				}
 				continue;
 			}
 		}
+
+		if (configurator.consumeCourseConfigChanged()) {
+			try {
+				this.saveConfig(this.config);
+			} catch (error) {
+				this.log.error(
+					`Failed to persist auto-populated ThinQ washer course config: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			}
+		}
+	}
+
+	private async unregisterIgnoredDevice(deviceId: string, endpoint: MatterbridgeEndpoint): Promise<void> {
+		this.log.notice(`Unregistering ignored device: ${deviceId}`);
+		await this.registerDevice(endpoint);
+		await this.unregisterDevice(endpoint);
 	}
 
 	public override async onChangeLoggerLevel(logLevel: LogLevel): Promise<void> {

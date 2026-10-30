@@ -1,7 +1,7 @@
 ---
 name: technical-architect
 description: "Design implementation plans or answer user questions (explain mode). Reads memory/wiki directly for medium complexity; nests wiki-manager (gather) and investigator for high. Write plan.md + test-plan.md + business-brief.md (implement) or answer.md (explain). Main session provides task folder, requirement path, and mode (implement|explain) plus complexity when implementing."
-model: sonnet
+model: claude-opus-5
 color: purple
 effort: high
 maxTurns: 60
@@ -94,7 +94,7 @@ When `type: implement` (or omitted), continue with Steps 2–7 below.
 
 ### CodeGraph (when `.codegraph/` exists)
 
-Before Grep/Read sweeps across `src/`, run `codegraph explore "<symbols or question>"` (shell) or `codegraph_explore` (MCP). One call usually returns the relevant source, call paths, and blast radius. Instruct investigator to do the same. Skip when no `.codegraph/` directory.
+Before Grep/Read sweeps across `src/`, run `codegraph explore "<symbols or question>"` (shell) or `codegraph_explore` (MCP). One call usually returns the relevant source, call paths, and blast radius. Instruct investigator to do the same. Skip when no `.codegraph/` directory. If `.codegraph/` exists you must run it before sweeping with Grep/Read, and say in the report if you did not.
 
 ### Explore (built-in agent — locate only)
 
@@ -367,6 +367,7 @@ Report a **≤10-line summary** — the EM reviews this summary and must NOT rea
 - Regression Guard: covered (N symbols) | risks flagged (list untested ones sent to business-brief)
 - Whether wiki-manager / investigator were spawned
 - Any blocking issues
+- CodeGraph: used (`codegraph explore` / `codegraph impact`) or skipped, with the reason (no `.codegraph/`, stale index, or locate-only task)
 
 Do not paste plan contents, file lists, or investigation details into the report — they live in the task folder.
 
@@ -401,3 +402,5 @@ After `plan.md`, append new architectural decisions to `.claude/memory.md` (max 
 - Never spawn investigator for a locate-only question — use Explore (or CodeGraph); investigator is reserved for multi-question, cross-module traces that need an answers file
 - Complete the full planning tree in one session — no partial handoff to the main session
 - Report a ≤10-line summary — never paste plan contents back to the main session
+
+Matterbridge / Matter code: follow the "Matterbridge / Matter API" rule in `.claude/CLAUDE.md` (Code Exploration Priority) — reference copy, not `node_modules`.

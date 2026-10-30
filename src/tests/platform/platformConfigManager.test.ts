@@ -13,7 +13,7 @@ describe('PlatformConfigManager', () => {
 	});
 
 	describe('create', () => {
-		it('should apply defaults when thinq/webos/advancedFeature are undefined', () => {
+		it('should apply defaults when thinq/advancedFeature are undefined', () => {
 			const config = asPartial<LgThinqPluginPlatformConfig>({});
 			const manager = PlatformConfigManager.create(config, mockLogger);
 
@@ -23,7 +23,6 @@ describe('PlatformConfigManager', () => {
 				language: 'en-US',
 				devices: [],
 			});
-			expect(manager.rawConfig.webos).toEqual({ devices: [] });
 			expect(manager.rawConfig.advancedFeature).toEqual({
 				settings: {
 					debug: false,
@@ -48,7 +47,6 @@ describe('PlatformConfigManager', () => {
 					refreshToken: 'test-token',
 					devices: [],
 				},
-				webos: { devices: ['device1'] as unknown as unknown[] },
 				advancedFeature: {
 					settings: {
 						debug: true,
@@ -606,7 +604,7 @@ describe('PlatformConfigManager', () => {
 					devices: [
 						{
 							deviceId: 'washer-123',
-							washerControl: { allowRemoteStop: true },
+							washerControl: { selectedCourse: 'express' },
 						},
 					],
 				},
@@ -615,7 +613,7 @@ describe('PlatformConfigManager', () => {
 
 			const result = manager.getWasherControlConfig('washer-123');
 
-			expect(result).toEqual({ allowRemoteStop: true });
+			expect(result).toEqual({ selectedCourse: 'express' });
 		});
 
 		it('should return empty object when device found but washerControl not set', () => {
@@ -670,7 +668,7 @@ describe('PlatformConfigManager', () => {
 			expect(result).toEqual({});
 		});
 
-		it('should return allowRemoteStop false when explicitly set', () => {
+		it('should return availableCourseIds unchanged when explicitly set', () => {
 			const config = asPartial<LgThinqPluginPlatformConfig>({
 				thinq: {
 					loginType: 'account',
@@ -679,7 +677,7 @@ describe('PlatformConfigManager', () => {
 					devices: [
 						{
 							deviceId: 'washer-123',
-							washerControl: { allowRemoteStop: false },
+							washerControl: { availableCourseIds: ['express'] },
 						},
 					],
 				},
@@ -688,7 +686,7 @@ describe('PlatformConfigManager', () => {
 
 			const result = manager.getWasherControlConfig('washer-123');
 
-			expect(result).toEqual({ allowRemoteStop: false });
+			expect(result).toEqual({ availableCourseIds: ['express'] });
 		});
 	});
 
@@ -785,6 +783,479 @@ describe('PlatformConfigManager', () => {
 			const result = manager.getAcFilterControlConfig('ac-123');
 
 			expect(result).toEqual({ allowFilterReset: false });
+		});
+	});
+
+	describe('isDeviceIgnored', () => {
+		it('should return true when device found with ignore set to true', () => {
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'device-1',
+							ignore: true,
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			expect(manager.isDeviceIgnored('device-1')).toBe(true);
+		});
+
+		it('should return false when device found with ignore set to false', () => {
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'device-1',
+							ignore: false,
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			expect(manager.isDeviceIgnored('device-1')).toBe(false);
+		});
+
+		it('should return false when device found but ignore field is absent', () => {
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'device-1',
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			expect(manager.isDeviceIgnored('device-1')).toBe(false);
+		});
+
+		it('should return false when device not found in thinq.devices', () => {
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'other-device',
+							ignore: true,
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			expect(manager.isDeviceIgnored('device-1')).toBe(false);
+		});
+
+		it('should return false when thinq.devices is empty', () => {
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			expect(manager.isDeviceIgnored('device-1')).toBe(false);
+		});
+	});
+
+	describe('ensureWasherControlEntry', () => {
+		it('should return a new empty object when device entry has no washerControl', () => {
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'washer-123',
+							// No washerControl property
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const result = manager.ensureWasherControlEntry('washer-123');
+
+			expect(result).toBeDefined();
+			expect(result).toEqual({});
+		});
+
+		it('should attach washerControl to device entry when missing', () => {
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'washer-123',
+							// No washerControl property
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const result = manager.ensureWasherControlEntry('washer-123');
+
+			// Mutate the returned object
+			result.selectedCourse = 'express';
+
+			// Re-read the device entry to verify mutation persists
+			const reread = manager.getWasherControlConfig('washer-123');
+			expect(reread.selectedCourse).toBe('express');
+		});
+
+		it('should return existing washerControl when device entry already has one', () => {
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'washer-123',
+							washerControl: { selectedCourse: 'express', availableCourseIds: ['express'] },
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const result = manager.ensureWasherControlEntry('washer-123');
+
+			expect(result).toEqual({ selectedCourse: 'express', availableCourseIds: ['express'] });
+		});
+
+		it('should return same object reference for existing washerControl', () => {
+			const washerControl = { selectedCourse: 'express' };
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'washer-123',
+							washerControl,
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const result = manager.ensureWasherControlEntry('washer-123');
+
+			expect(result).toBe(washerControl); // Same reference
+		});
+
+		it('should return empty object when device not found', () => {
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const result = manager.ensureWasherControlEntry('unknown-washer');
+
+			expect(result).toEqual({});
+		});
+
+		it('should not mutate config.thinq.devices when device not found', () => {
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			manager.ensureWasherControlEntry('unknown-washer');
+
+			expect(config.thinq?.devices).toHaveLength(0);
+		});
+
+		it('should preserve existing washerControl fields when ensuring entry', () => {
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'washer-123',
+							washerControl: {
+								selectedCourse: 'express',
+								courses: [
+									{
+										id: 'express',
+										parameters: {},
+									},
+								],
+							},
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const result = manager.ensureWasherControlEntry('washer-123');
+
+			expect(result.selectedCourse).toBe('express');
+			expect(result.courses).toHaveLength(1);
+		});
+
+		it('should not affect getWasherControlConfig existing tests', () => {
+			// Regression test: existing getWasherControlConfig behavior unchanged
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'washer-123',
+							washerControl: { selectedCourse: 'express' },
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const getResult = manager.getWasherControlConfig('washer-123');
+
+			expect(getResult).toEqual({ selectedCourse: 'express' });
+		});
+
+		it('should not affect getWasherControlConfig when device has no washerControl', () => {
+			// Regression test: getWasherControlConfig returns fresh {} when washerControl absent
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					devices: [
+						{
+							deviceId: 'washer-123',
+							// No washerControl
+						},
+					],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			const getResult = manager.getWasherControlConfig('washer-123');
+
+			expect(getResult).toEqual({});
+		});
+	});
+
+	describe('pat login type', () => {
+		it('should return "pat" from thinqLoginType when loginType is pat', () => {
+			// Arrange
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					devices: [],
+					loginType: 'pat',
+					country: 'US',
+					language: 'en-US',
+					personalAccessToken: 'pat-secret-1234567890',
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			// Act
+			const loginType = manager.thinqLoginType;
+
+			// Assert
+			expect(loginType).toBe('pat');
+		});
+
+		it('should return the stored value from thinqPersonalAccessToken when present', () => {
+			// Arrange
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					devices: [],
+					loginType: 'pat',
+					country: 'US',
+					language: 'en-US',
+					personalAccessToken: 'pat-secret-1234567890',
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			// Act
+			const token = manager.thinqPersonalAccessToken;
+
+			// Assert
+			expect(token).toBe('pat-secret-1234567890');
+		});
+
+		it('should return undefined from thinqPersonalAccessToken when absent', () => {
+			// Arrange
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					devices: [],
+					loginType: 'pat',
+					country: 'US',
+					language: 'en-US',
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			// Act
+			const token = manager.thinqPersonalAccessToken;
+
+			// Assert
+			expect(token).toBeUndefined();
+		});
+
+		it('should return true from validateConfig when pat has token and country', () => {
+			// Arrange
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					devices: [],
+					loginType: 'pat',
+					country: 'US',
+					language: 'en-US',
+					personalAccessToken: 'pat-secret-1234567890',
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			// Act
+			const result = manager.validateConfig();
+
+			// Assert
+			expect(result).toBe(true);
+		});
+
+		it('should return false from validateConfig when pat has no token', () => {
+			// Arrange
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					devices: [],
+					loginType: 'pat',
+					country: 'US',
+					language: 'en-US',
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			// Act
+			const result = manager.validateConfig();
+
+			// Assert
+			expect(result).toBe(false);
+		});
+
+		it('should return false from validateConfig when pat has token but empty country', () => {
+			// Arrange
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					devices: [],
+					loginType: 'pat',
+					country: '',
+					language: 'en-US',
+					personalAccessToken: 'pat-secret-1234567890',
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			// Act
+			const result = manager.validateConfig();
+
+			// Assert
+			expect(result).toBe(false);
+		});
+
+		it('should validate token login by refresh token only when a stray personalAccessToken is present', () => {
+			// Arrange
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					devices: [],
+					loginType: 'token',
+					country: 'US',
+					language: 'en-US',
+					refreshToken: 'refresh-123',
+					personalAccessToken: 'pat-secret-1234567890',
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			// Act
+			const result = manager.validateConfig();
+
+			// Assert
+			expect(result).toBe(true);
+		});
+
+		it('should validate account login by username and password only when a stray personalAccessToken is present', () => {
+			// Arrange
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					devices: [],
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					username: 'user@example.com',
+					password: 'secret',
+					personalAccessToken: 'pat-secret-1234567890',
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			// Act
+			const result = manager.validateConfig();
+
+			// Assert
+			expect(result).toBe(true);
+		});
+
+		it('should return false from validateConfig when account login has only a stray personalAccessToken', () => {
+			// Arrange
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				thinq: {
+					devices: [],
+					loginType: 'account',
+					country: 'US',
+					language: 'en-US',
+					personalAccessToken: 'pat-secret-1234567890',
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			// Act
+			const result = manager.validateConfig();
+
+			// Assert
+			expect(result).toBe(false);
 		});
 	});
 });

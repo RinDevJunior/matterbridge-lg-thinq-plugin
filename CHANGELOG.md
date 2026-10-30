@@ -1,5 +1,150 @@
 # Changelog
 
+## [Unreleased]
+
+## [0.1.1-rc07] - 2026-10-29
+
+### Changed
+
+- **Washer message without course** — a V1 washer message that only changes one setting can now be sent without the wash course, so other settings are never touched by that change.
+
+### Fixed
+
+- **Unrelated washer setting no longer changed** — changing one washer setting in Home (course, temperature, spin or number of rinses) could silently change a different setting you did not touch, such as a Cold wash temperature being replaced by the course default. Now an unrelated setting the washer refuses is left alone and not sent, and Home shows "the washer will not keep <value>, change it first" instead of a silent change.
+- **Home no longer rolls back accepted changes** — changing one washer setting in Home could show an error and put the old value back even though the washer accepted the change. Home now checks only the setting you asked to change.
+
+<a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
+
+---
+
+## [0.1.1-rc06] - 2026-10-27
+
+### Added
+
+- **Warning: no off switch for Home controls** — there is no setting to turn the Home controls below off; the only way back is an older version. They are not yet tested on a real washer through Home.
+- **V1 washer wash steps in Matter** — the washer reports one of 8 steps (Detecting, Pre-Wash, Washing, Rinsing, Softening, Spinning, Drying, Cooling), grouped from the 26 LG states. It is empty when the washer is off, paused, finished or in error.
+- **Cycle finished message** — a one-time OperationCompletion event with the measured total run time and paused time. It is never sent at start-up or after a restart, not when the washer is switched off mid-wash, and not on error.
+- **Real courses and settings in Home** — Home shows the washer's own course list and the current temperature, spin and rinse settings.
+- **Home controls for the washer** — changing the course, temperature, spin speed or number of rinses in Home now reaches the washer. The changes are sent as one message with the course and all four settings; changes made within 1.2 s are merged. A change is accepted only when the washer is on and waiting, Remote Control is off, child lock is off, there is no error, and the washer is online. These changes never carry a start, pause or resume command. Each one is tried once with a 10 s limit and is not retried. Refused spin or rinse changes snap back in Home. Start uses the course picked in Home. Rinse pairs are None = no rinse, Normal = 2, Extra = 3, Max = 4, and Home offers only the rinse choices the selected course allows. This applies to V1 washers with `uniProtocol` and `vtCtrl` only.
+
+### Changed
+
+- **PAT login under development** — PAT login is marked under development and removed from the supported login types in the README; Matterbridge 3.11.0 is the expected version.
+- **Course or temperature change from Home** — a course or temperature change from Home used to do nothing on the washer; it now sends to the washer. The old refusal "course is chosen in settings" is removed.
+
+<a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
+
+---
+
+## [0.1.1-rc05] - 2026-10-23
+
+### Fixed
+
+- **V1 washer wake-up from Off** — Matter On on a powered-off washer (uniProtocol + vtCtrl) now sends the model's own `ospWakeup` command (WAKEUP_AND_PWR_ON) instead of the vtCtrl power-on, which the washer answered with HTTP 400 (0111); if the model has no wake command, Home refuses with a clear message and sends nothing. The CLI `vt-power-on` stays but does not wake a washer that is off; use `osp-wake`.
+
+<a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
+
+---
+
+## [0.1.1-rc04] - 2026-10-21
+
+### Added
+
+- **V1 washer control through the LG app's vtCtrl command (models with uniProtocol)** — with account or token login, supported washers can be turned on and off, started, paused, resumed and stopped from Home. Start takes two taps: the first selects the `Selected Wash Course` and asks you to press Remote Control on the washer, the second starts the wash. Every command re-reads the washer first and refuses when the state does not fit. Power on has not been tested on a real washer yet.
+- **`allowCancelCycle` setting (washer)** — `Allow cancelling a running wash` (off by default). Stop and Off are refused during a wash unless it is on; then the washer is paused and powered off.
+- **Personal Access Token (PAT) login type** — a new `pat` login type for the official ThinQ Connect API, in the plugin config and the CLI (`login --type pat`).
+- **Air conditioners with PAT login** — ThinQ Connect air conditioners are registered with power, target temperature (Celsius), fan speed, swing, room temperature, humidity (where reported) and read-only filter life. Home shows Cool and Off.
+- **ThinQ Connect container with Google Home washer on/off** — with PAT login, the washer on/off can be controlled from Google Home; state is polled every `refreshIntervalSeconds` (minimum 15 s).
+- **Washer state in Matter (ThinQ Connect)** — the washer shows Running, Paused, Stopped or Error, plus time left and errors. It is read-only, and unknown states show Stopped.
+- **Washer Start/Stop from Matter (ThinQ Connect)** — Start works only when the washer is idle with Remote Start on, and Stop sends STOP. Pause and Resume are refused, and if LG refuses a command the real state is shown again. START is not yet tested on hardware.
+- **`ignore` setting for ThinQ Connect washers** — the `ignore` setting now works for ThinQ Connect washers.
+- **ThinQ Connect devices in the settings device list** — devices get entries in the plugin settings device list automatically (new ids only, existing values are never changed), and the settings page shows the device list for the PAT login.
+- **Air conditioner room temperature sensor (ThinQ Connect)** — a room temperature sensor is added when the air conditioner reports it.
+- **`connect-probe` and `connect-control` CLI commands** — `connect-probe` is a read-only check of the device profile and state; `connect-control` sends one guarded washer command (POWER_ON, POWER_OFF or START) and is a dry run unless `--yes` is given.
+- **CLI device-list dump** — `devices --dump-device` and `connect-probe --raw` print the read-only device list; serial and MAC are masked unless `--show-secrets` is used, and tokens are never printed.
+- **`connect-probe --energy`** — a read-only call to the Energy API.
+- **`connect-settings` CLI command** — a read-only list of every ThinQ Connect profile property with its current value and allowed values.
+- **Global `--out <file>` option** — saves the output of any command except `login` to a private file.
+- **Push updates (ThinQ Connect)** — PAT login now receives device events over MQTT and re-reads the state on each event. Polling stays as a fallback and slows to a 5 minute safety net while push is healthy; there is no new setting. Not yet tested against the real LG service.
+- **Finer air conditioner fan steps (ThinQ Connect)** — the fan slider uses the unit's `windStep` levels (20/40/60/80/100 %) when it reports them.
+- **Air conditioner error warning (ThinQ Connect)** — an air conditioner that reports ERROR logs one warning per change, and one message when it recovers.
+- **Keep your Matter pairing when switching to PAT login** — an optional `serial-number-mapping` file in the plugin storage folder maps a ThinQ Connect device id to its old account-login device id so the PAT device keeps the same Matter identity. Not yet tested on hardware.
+- **`washer-status` and `washer-control` CLI commands (legacy V1 login)** — `washer-status` is a read-only view of the washer snapshot and model controls; `washer-control` sends one guarded command (wake, osp-wake, download-off, download-on) and is a dry run unless `--yes` is given. Used to test whether the legacy API can send a course to the washer. Not used by the plugin runtime; no behavior change.
+- **`washer-control` vtCtrl sends (legacy V1 login)** — new `--send vt-course`, `vt-start`, `vt-pause`, `vt-power-on`, `vt-resume` and `vt-power-off` use the LG app's own `vtCtrl` command, with `--rinse`, `--soil`, `--variant` and `--allow-interrupt` (vt-power-off only) options. Same safety rules as before: dry run unless `--yes`, state guards, and `vt-start` and `vt-resume` also need `--allow-start`. After a send it polls the status like the app and prints a verdict. Used to test whether the legacy API can send a course to the washer; not used by the plugin runtime; no behavior change.
+
+### Changed
+
+- **Washers that support vtCtrl no longer use the older WMStart/WMControl commands** — other V1 washer models and ThinQ Connect washers are unchanged.
+- **PAT devices run in server mode** — with PAT login, washers and air conditioners are now standalone Matter nodes, each paired on its own, like the account login. They get new device IDs: remove the old PAT devices from your controller and pair them again.
+- **Real LG serial number for V1 devices** — V1 (account and token login) washers and air conditioners now use the real LG serial number (`manufacture.serialNo`) as the Matter serial, falling back to the device id. Devices already paired keep their stored serial.
+- **ThinQ Connect log messages renamed** — the internal "V2" naming is now "ThinQ Connect" in log output (`ThinQ V2` is now `ThinQ Connect`); no behavior change.
+- **Washer registration failure no longer stops start-up** — a ThinQ Connect washer that fails to register is logged and skipped instead of stopping the start-up.
+
+### Fixed
+
+- **Washer state read as empty** — the ThinQ Connect state response is an array; it is now read correctly instead of being treated as empty.
+- **Fahrenheit air conditioners (ThinQ Connect)** — units that report Fahrenheit now get correct limits, rounding and unit on temperature writes. Not tested on hardware.
+- **Air conditioner and washer on/off stuck (ThinQ Connect)** — turning a PAT air conditioner or washer on or off from Matter could hang, so Apple Home showed OFF a few seconds after turning it on and later taps did nothing. The on/off and Start/Stop commands no longer wait on their own state update. Not yet tested on a real Apple Home.
+
+<a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
+
+---
+
+## [0.1.1-rc03] - 2026-10-20
+
+### Changed
+
+- **Washer Start/Pause/Stop wired directly to OperationalState** — Pause sends LG's PAUSE control (`WMStop`), Stop sends LG's POWEROFF control (`WMOff`).
+- **BREAKING: washer Stop now sends POWEROFF (`WMOff`)** — Matterbridge Stop previously sent LG's PAUSE control (`WMStop`); it now powers the washer off, so automations relying on Stop to pause must use Pause instead.
+- **Washer Resume not supported** — LG has no resume control; via Matter, Pause sends PAUSE only when the washer is Running.
+- **BREAKING: "Allow Remote Start/Stop (Washer)" settings removed** — the `allowRemoteStart` and `allowRemoteStop` options are gone; old keys are cleaned from existing configs automatically.
+
+### Removed
+
+- **Washer `RemoteStartStopSwitch` child endpoint removed** — the extra Start/Stop switch is gone. The washer is its own Matter node, so it just disappears; if a controller (Apple/Google Home) keeps a stale tile, remove the washer and add it again.
+
+### Fixed
+
+- **Start from Google Home / Matter apps** — Start now actually sends the command to LG instead of only updating the displayed state.
+- **ThinQ keep-alive failure logging** — a failed AC keep-alive now logs a single line including LG's resultCode instead of two debug lines; no retry or back-off was added.
+
+<a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
+
+---
+
+## [0.1.1-rc02] - 2026-10-19
+
+### Added
+
+- **Washer wash-program config selection** — users can choose which washer courses are exposed via plugin config, with the course list trimmed to the selected programs (PR #4).
+- **Device-ignore checkbox** — a per-device config checkbox to exclude a device from the plugin (PR #4).
+
+### Changed
+
+- **AC onOffPlugInUnit experiment documented** — docs now record the negative result of the AC onOffPlugInUnit experiment.
+
+### Fixed
+
+- **Washer RemoteStartStopSwitch visibility** — the switch is now hidden when remote start and remote stop are both off.
+
+<a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
+
+---
+
+## [0.1.1-rc01] - 2026-09-25
+
+### Added
+
+- **Washer remote Start/Stop switch** — an opt-in child on/off switch endpoint on the washer, the only Apple-Home-visible control surface for Start/Stop since the native LaundryWasher device type renders no UI in Apple Home; ON sends a real Start command built from the device's own model-declared default course, OFF reuses the existing Stop path, and switch state syncs from real washer running status on every poll tick. Gated by `allowRemoteStart` (new) and `allowRemoteStop` (existing), both off by default (PR #3).
+
+### Changed
+
+- **BREAKING: webOS TV config section removed** — the never-built webOS placeholder (config UI section, schema property, config model type) has been removed entirely; any existing config with a `webos` property will have it dropped, since Apple Home does not support Matter TV/video-player device types at all, and LG's own native AirPlay 2/HomeKit integration on webOS TVs already covers this (PR #3).
+
+<a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
+
+---
+
 ## [0.1.0-rc13] - 2026-09-24
 
 ### Added

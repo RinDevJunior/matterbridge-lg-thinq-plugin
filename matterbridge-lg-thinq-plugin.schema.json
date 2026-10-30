@@ -1,6 +1,6 @@
 {
 	"title": "Matterbridge LG ThinQ Plugin",
-	"description": "matterbridge-lg-thinq-plugin v. 0.1.0 by https://github.com/RinDevJunior",
+	"description": "matterbridge-lg-thinq-plugin v. 0.1.1-rc07 by https://github.com/RinDevJunior",
 	"type": "object",
 	"properties": {
 		"name": {
@@ -21,9 +21,9 @@
 			"properties": {
 				"loginType": {
 					"title": "Login Type",
-					"description": "Authenticate with a ThinQ account (username/password) or a pre-issued refresh token.",
+					"description": "account = username/password, token = refresh token, pat = Personal Access Token (official ThinQ Connect API: registers washers only and lets Google Home turn them on/off; air conditioners are not supported with PAT yet).",
 					"type": "string",
-					"enum": ["account", "token"],
+					"enum": ["account", "token", "pat"],
 					"default": "account"
 				},
 				"country": {
@@ -95,6 +95,11 @@
 											"type": "string",
 											"enum": ["AC", "WASHER"],
 											"readOnly": true
+										},
+										"ignore": {
+											"title": "Ignore This Device",
+											"description": "Skip this device entirely — it will not be registered as a Matter accessory. If it was previously registered, its existing Matter accessory will be removed.",
+											"type": "boolean"
 										},
 										"productName": {
 											"title": "Product Name Override",
@@ -186,11 +191,54 @@
 																"title": "Washer Control",
 																"type": "object",
 																"properties": {
-																	"allowRemoteStop": {
-																		"title": "Allow Remote Stop (Washer)",
-																		"description": "Turning this on lets Apple Home send a real stop/cancel command to the physical washer. Off by default.",
+																	"availableCourseIds": {
+																		"title": "Available Wash Course IDs (read-only)",
+																		"description": "Every wash course ID this washer reports, refreshed on each plugin restart, shown together in one box below (not one row per ID). Copy one of these exact IDs into \"Selected Wash Course\" below to change which course Start uses.",
+																		"type": "array",
+																		"items": {
+																			"type": "string"
+																		},
+																		"readOnly": true,
+																		"ui:widget": "textarea",
+																		"ui:options": {
+																			"rows": 4
+																		}
+																	},
+																	"selectedCourse": {
+																		"title": "Selected Wash Course",
+																		"description": "The wash course used when Start is triggered. Auto-filled with the washer's own default course on first discovery. Type one of the exact Course IDs listed in \"Available Wash Course IDs\" above to change it \u2014 this field is plain text and does not validate against the list.",
+																		"type": "string"
+																	},
+																	"allowCancelCycle": {
+																		"title": "Allow cancelling a running wash",
+																		"description": "Off by default. When on, Stop and Off from Home during a wash first pause the washer and then power it off, which abandons the cycle (water may stay in the drum and the door may stay locked). When off, Stop and Off are refused during a wash.",
 																		"type": "boolean",
 																		"default": false
+																	},
+																	"courses": {
+																		"title": "Selected Course Parameters (auto-populated)",
+																		"description": "Auto-populated with ONLY the currently selected course's own parameters (temperature, spin, rinse, etc.) \u2014 not every course, to keep this settings page short. Each parameter appears as its own field, labeled with the parameter's name \u2014 edit its text box to override what Start sends. If you change \"Selected Wash Course\" above to a different course, this list is replaced with that new course's own defaults on the next plugin restart. Values are stored as text; number/boolean parameters are converted back automatically when Start is sent.",
+																		"type": "array",
+																		"items": {
+																			"type": "object",
+																			"properties": {
+																				"id": {
+																					"title": "Course ID",
+																					"type": "string",
+																					"readOnly": true
+																				},
+																				"parameters": {
+																					"title": "Parameters",
+																					"type": "object",
+																					"description": "One field per parameter. The field's own label is the parameter's name \u2014 edit its text box to override the value Start sends for that parameter.",
+																					"additionalProperties": {
+																						"title": "Value",
+																						"type": "string"
+																					}
+																				}
+																			},
+																			"required": ["id"]
+																		}
 																	}
 																}
 															}
@@ -222,7 +270,7 @@
 																"properties": {
 																	"allowFilterReset": {
 																		"title": "Allow Filter Reset (AC)",
-																		"description": "Turning this on lets Apple Home send a real filter-counter reset command to the physical air conditioner, after you've replaced/cleaned the filter. Off by default. This command has not been live-tested yet — enable only when you are ready to verify it yourself.",
+																		"description": "Turning this on lets Apple Home send a real filter-counter reset command to the physical air conditioner, after you've replaced/cleaned the filter. Off by default. This command has not been live-tested yet \u2014 enable only when you are ready to verify it yourself.",
 																		"type": "boolean",
 																		"default": false
 																	}
@@ -271,6 +319,11 @@
 												"type": "string",
 												"enum": ["AC", "WASHER"],
 												"readOnly": true
+											},
+											"ignore": {
+												"title": "Ignore This Device",
+												"description": "Skip this device entirely — it will not be registered as a Matter accessory. If it was previously registered, its existing Matter accessory will be removed.",
+												"type": "boolean"
 											},
 											"productName": {
 												"title": "Product Name Override",
@@ -362,11 +415,54 @@
 																	"title": "Washer Control",
 																	"type": "object",
 																	"properties": {
-																		"allowRemoteStop": {
-																			"title": "Allow Remote Stop (Washer)",
-																			"description": "Turning this on lets Apple Home send a real stop/cancel command to the physical washer. Off by default.",
+																		"availableCourseIds": {
+																			"title": "Available Wash Course IDs (read-only)",
+																			"description": "Every wash course ID this washer reports, refreshed on each plugin restart, shown together in one box below (not one row per ID). Copy one of these exact IDs into \"Selected Wash Course\" below to change which course Start uses.",
+																			"type": "array",
+																			"items": {
+																				"type": "string"
+																			},
+																			"readOnly": true,
+																			"ui:widget": "textarea",
+																			"ui:options": {
+																				"rows": 4
+																			}
+																		},
+																		"selectedCourse": {
+																			"title": "Selected Wash Course",
+																			"description": "The wash course used when Start is triggered. Auto-filled with the washer's own default course on first discovery. Type one of the exact Course IDs listed in \"Available Wash Course IDs\" above to change it \u2014 this field is plain text and does not validate against the list.",
+																			"type": "string"
+																		},
+																		"allowCancelCycle": {
+																			"title": "Allow cancelling a running wash",
+																			"description": "Off by default. When on, Stop and Off from Home during a wash first pause the washer and then power it off, which abandons the cycle (water may stay in the drum and the door may stay locked). When off, Stop and Off are refused during a wash.",
 																			"type": "boolean",
 																			"default": false
+																		},
+																		"courses": {
+																			"title": "Selected Course Parameters (auto-populated)",
+																			"description": "Auto-populated with ONLY the currently selected course's own parameters (temperature, spin, rinse, etc.) \u2014 not every course, to keep this settings page short. Each parameter appears as its own field, labeled with the parameter's name \u2014 edit its text box to override what Start sends. If you change \"Selected Wash Course\" above to a different course, this list is replaced with that new course's own defaults on the next plugin restart. Values are stored as text; number/boolean parameters are converted back automatically when Start is sent.",
+																			"type": "array",
+																			"items": {
+																				"type": "object",
+																				"properties": {
+																					"id": {
+																						"title": "Course ID",
+																						"type": "string",
+																						"readOnly": true
+																					},
+																					"parameters": {
+																						"title": "Parameters",
+																						"type": "object",
+																						"description": "One field per parameter. The field's own label is the parameter's name \u2014 edit its text box to override the value Start sends for that parameter.",
+																						"additionalProperties": {
+																							"title": "Value",
+																							"type": "string"
+																						}
+																					}
+																				},
+																				"required": ["id"]
+																			}
 																		}
 																	}
 																}
@@ -398,7 +494,7 @@
 																	"properties": {
 																		"allowFilterReset": {
 																			"title": "Allow Filter Reset (AC)",
-																			"description": "Turning this on lets Apple Home send a real filter-counter reset command to the physical air conditioner, after you've replaced/cleaned the filter. Off by default. This command has not been live-tested yet — enable only when you are ready to verify it yourself.",
+																			"description": "Turning this on lets Apple Home send a real filter-counter reset command to the physical air conditioner, after you've replaced/cleaned the filter. Off by default. This command has not been live-tested yet \u2014 enable only when you are ready to verify it yourself.",
 																			"type": "boolean",
 																			"default": false
 																		}
@@ -414,21 +510,63 @@
 								}
 							},
 							"required": ["refreshToken"]
+						},
+						"else": {
+							"if": {
+								"properties": {
+									"loginType": {
+										"const": "pat"
+									}
+								}
+							},
+							"then": {
+								"properties": {
+									"personalAccessToken": {
+										"title": "Personal Access Token",
+										"description": "Create at https://connect-pat.lgthinq.com. Used with the Country above.",
+										"type": "string",
+										"ui:widget": "password"
+									},
+									"devices": {
+										"title": "ThinQ Devices",
+										"description": "Auto-populated on discovery. Set Ignore or product overrides per washer or air conditioner.",
+										"type": "array",
+										"items": {
+											"type": "object",
+											"properties": {
+												"deviceId": {
+													"title": "Device ID",
+													"type": "string"
+												},
+												"deviceType": {
+													"title": "Device Type",
+													"type": "string",
+													"enum": ["AC", "WASHER"],
+													"readOnly": true
+												},
+												"ignore": {
+													"title": "Ignore This Device",
+													"description": "Skip this device entirely — it will not be registered as a Matter accessory. If it was previously registered, its existing Matter accessory will be removed.",
+													"type": "boolean"
+												},
+												"productName": {
+													"title": "Product Name Override",
+													"description": "Override the Matter product name shown for this device. Only applied when Override Matter Configuration is enabled in Advanced Features.",
+													"type": "string"
+												},
+												"productId": {
+													"title": "Product ID Override",
+													"description": "Override the Matter product id shown for this device. Only applied when Override Matter Configuration is enabled in Advanced Features.",
+													"type": "number"
+												}
+											},
+											"required": ["deviceId"]
+										}
+									}
+								},
+								"required": ["personalAccessToken"]
+							}
 						}
-					}
-				}
-			}
-		},
-		"webos": {
-			"title": "LG webOS TV (local network)",
-			"type": "object",
-			"properties": {
-				"devices": {
-					"title": "webOS TV Devices",
-					"description": "Populated once webOS pairing/control lands (Phase 3+).",
-					"type": "array",
-					"items": {
-						"type": "object"
 					}
 				}
 			}
@@ -516,5 +654,5 @@
 			}
 		}
 	},
-	"required": ["thinq", "webos", "advancedFeature"]
+	"required": ["thinq", "advancedFeature"]
 }

@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { AnsiLogger } from 'matterbridge/logger';
 
 import {
@@ -78,9 +79,9 @@ export class ThinqDeviceService {
 			try {
 				await this.apiClient.sendKeepAlive(deviceId);
 			} catch (error) {
-				this.logger.debug(
-					`ThinQ keep-alive failed for ${deviceId}: ${error instanceof Error ? error.message : String(error)}`,
-				);
+				const resultCode = axios.isAxiosError(error) ? error.response?.data?.resultCode : undefined;
+				const reason = resultCode ? `resultCode=${resultCode}` : error instanceof Error ? error.message : String(error);
+				this.logger.debug(`ThinQ keep-alive failed for ${deviceId}: ${reason}`);
 			}
 		}
 	}

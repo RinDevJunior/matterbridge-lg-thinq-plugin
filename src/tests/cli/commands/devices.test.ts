@@ -1,3 +1,4 @@
+import type { MockInstance } from 'vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 let mockApiClient: any;
@@ -36,9 +37,11 @@ import type { CliSession } from '../../../cli/types.js';
 import { toThinqDevice } from '../../../core/domain/entities/ThinqDevice.js';
 import { ThinqSession } from '../../../services/thinq/session.js';
 import { ThinqApiClient } from '../../../services/thinq/thinqApiClient.js';
+import { asPartial, createMockLogger } from '../../helpers/testUtils.js';
 
 describe('cmdDevices', () => {
 	let consoleLogSpy: any;
+	let consoleErrorSpy: MockInstance<typeof console.error>;
 
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -47,11 +50,14 @@ describe('cmdDevices', () => {
 			setUserNumber: vi.fn(),
 		};
 		consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+		consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 	});
 
 	afterEach(() => {
 		vi.clearAllMocks();
 		consoleLogSpy.mockRestore();
+		consoleErrorSpy.mockRestore();
+		process.exitCode = undefined;
 	});
 
 	it('should call setUserNumber when userData.userNumber is set', async () => {
@@ -289,5 +295,149 @@ describe('cmdDevices', () => {
 		expect(consoleLogSpy).toHaveBeenCalledWith('1. Device1');
 		expect(consoleLogSpy).toHaveBeenCalledWith('2. Device2');
 		expect(consoleLogSpy).toHaveBeenCalledWith('3. Device3');
+	});
+
+	describe('--dump-device', () => {
+		let mockLogger: ReturnType<typeof createMockLogger>;
+		beforeEach(() => {
+			mockLogger = createMockLogger();
+		});
+		const SESSION_ACCESS_TOKEN = 'session-access-token-xyz';
+		const SESSION_REFRESH_TOKEN = 'session-refresh-token-xyz';
+		const session: CliSession = {
+			loginType: 'account',
+			country: 'US',
+			language: 'en-US',
+			userData: {
+				accessToken: SESSION_ACCESS_TOKEN,
+				refreshToken: SESSION_REFRESH_TOKEN,
+				expiresAtEpochSeconds: 123,
+				country: 'US',
+				language: 'en-US',
+			},
+		};
+		const RAW_ENTRY = {
+			deviceId: 'dev-1',
+			alias: 'Washer',
+			deviceType: 201,
+			modelName: 'WM-1',
+			online: true,
+			extraField: 'extra-value',
+			serialNo: 'SN1234567890AB12',
+			macAddress: 'AABBCCDDEEFF',
+			accessToken: 'fake-entry-token-value',
+		};
+
+		it('should print the raw entry as JSON with serial and MAC masked when showSecrets is false', async () => {
+			// Arrange
+			mockApiClient.getListDevices.mockResolvedValue([RAW_ENTRY]);
+
+			// Act
+			await cmdDevices(session, mockLogger, undefined, undefined, { dumpDeviceId: 'dev-1' });
+
+			// Assert
+			const printed = JSON.parse(consoleLogSpy.mock.calls[0][0]);
+			expect(printed).toEqual({
+				...RAW_ENTRY,
+				serialNo: '************AB12',
+				macAddress: '********EEFF',
+				accessToken: '[REDACTED]',
+			});
+			expect(printed.extraField).toBe('extra-value');
+		});
+
+		it('should print serial and MAC in full but redact the token when showSecrets is true', async () => {
+			// Arrange
+			mockApiClient.getListDevices.mockResolvedValue([RAW_ENTRY]);
+
+			// Act
+			await cmdDevices(session, mockLogger, undefined, undefined, { dumpDeviceId: 'dev-1', showSecrets: true });
+
+			// Assert
+			const printed = JSON.parse(consoleLogSpy.mock.calls[0][0]);
+			expect(printed.serialNo).toBe('SN1234567890AB12');
+			expect(printed.macAddress).toBe('AABBCCDDEEFF');
+			expect(printed.accessToken).toBe('[REDACTED]');
+		});
+
+		it('should print Device not found and set exitCode 1 without printing when the id is not in the list', async () => {
+			// Arrange
+			mockApiClient.getListDevices.mockResolvedValue([RAW_ENTRY]);
+
+			// Act
+			await cmdDevices(session, mockLogger, undefined, undefined, { dumpDeviceId: 'missing-id' });
+
+			// Assert
+			expect(consoleErrorSpy).toHaveBeenCalledWith('Device not found: missing-id');
+			expect(process.exitCode).toBe(1);
+			expect(consoleLogSpy).not.toHaveBeenCalled();
+		});
+
+		it('should call getListDevices once and never call toThinqDevice when dumping a device', async () => {
+			// Arrange
+			mockApiClient.getListDevices.mockResolvedValue([RAW_ENTRY]);
+
+			// Act
+			await cmdDevices(session, mockLogger, undefined, undefined, { dumpDeviceId: 'dev-1' });
+
+			// Assert
+			expect(mockApiClient.getListDevices).toHaveBeenCalledTimes(1);
+			expect(toThinqDevice).not.toHaveBeenCalled();
+		});
+
+		it('should print the dumped raw entry instead of the snapshot when both dump ids are given', async () => {
+			// Arrange
+			mockApiClient.getListDevices.mockResolvedValue([RAW_ENTRY]);
+
+			// Act
+			await cmdDevices(session, mockLogger, 'dev-1', undefined, { dumpDeviceId: 'dev-1' });
+
+			// Assert
+			const printed = JSON.parse(consoleLogSpy.mock.calls[0][0]);
+			expect(printed.extraField).toBe('extra-value');
+			expect(toThinqDevice).not.toHaveBeenCalled();
+		});
+
+		it('should print the device list unchanged when no dump options are given', async () => {
+			// Arrange
+			mockApiClient.getListDevices.mockResolvedValue([RAW_ENTRY]);
+
+			// Act
+			await cmdDevices(session, mockLogger);
+
+			// Assert
+			expect(consoleLogSpy).toHaveBeenCalledWith('Found 1 device(s):\n');
+			expect(consoleLogSpy).toHaveBeenCalledWith('1. Washer');
+		});
+
+		it('should print the snapshot raw JSON when only dumpSnapshotDeviceId is given', async () => {
+			// Arrange
+			mockApiClient.getListDevices.mockResolvedValue([RAW_ENTRY]);
+			vi.mocked(toThinqDevice).mockReturnValueOnce(
+				asPartial<ReturnType<typeof toThinqDevice>>({
+					id: 'dev-1',
+					snapshot: asPartial<ReturnType<typeof toThinqDevice>['snapshot']>({ raw: { state: 'on' } }),
+				}),
+			);
+
+			// Act
+			await cmdDevices(session, mockLogger, 'dev-1');
+
+			// Assert
+			expect(consoleLogSpy).toHaveBeenCalledWith(JSON.stringify({ state: 'on' }, null, 2));
+		});
+
+		it('should never print the session access or refresh token when dumping a device', async () => {
+			// Arrange
+			mockApiClient.getListDevices.mockResolvedValue([RAW_ENTRY]);
+
+			// Act
+			await cmdDevices(session, mockLogger, undefined, undefined, { dumpDeviceId: 'dev-1', showSecrets: true });
+
+			// Assert
+			const output = JSON.stringify([...consoleLogSpy.mock.calls, ...consoleErrorSpy.mock.calls]);
+			expect(output).not.toContain(SESSION_ACCESS_TOKEN);
+			expect(output).not.toContain(SESSION_REFRESH_TOKEN);
+		});
 	});
 });

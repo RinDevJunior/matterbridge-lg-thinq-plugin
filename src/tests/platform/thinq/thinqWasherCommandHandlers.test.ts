@@ -3,11 +3,38 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ThinqWasherDevice } from '../../../core/domain/entities/ThinqDevice.js';
 import { ThinqSnapshot } from '../../../core/domain/value-objects/ThinqSnapshot.js';
-import type { ThinqWasherControlConfig } from '../../../model/LgThinqPluginPlatformConfig.js';
-import { registerWasherCommandHandlers } from '../../../platform/thinq/thinqWasherCommandHandlers.js';
-import type { WasherStopCommandPayload } from '../../../platform/thinq/thinqWasherStopCommandResolver.js';
+import {
+	registerWasherCommandHandlers,
+	type WasherCommandPayloads,
+} from '../../../platform/thinq/thinqWasherCommandHandlers.js';
+import type { WasherStartCommandPayload } from '../../../platform/thinq/thinqWasherStartCommandResolver.js';
+import type {
+	WasherPauseCommandPayload,
+	WasherStopCommandPayload,
+} from '../../../platform/thinq/thinqWasherStopCommandResolver.js';
 import type { ThinqApiClient } from '../../../services/thinq/thinqApiClient.js';
 import { asPartial, createMockLogger } from '../../helpers/testUtils.js';
+
+const PAUSE_PAYLOAD: WasherPauseCommandPayload = {
+	command: 'Set',
+	dataSetList: {
+		washerDryer: { controlDataType: 'PAUSE', controlDataValueLength: 1, controlDataValue: 0 },
+	},
+};
+
+const POWEROFF_PAYLOAD: WasherStopCommandPayload = {
+	command: 'Set',
+	dataSetList: {
+		washerDryer: { controlDataType: 'POWEROFF', controlDataValueLength: 1, controlDataValue: 0 },
+	},
+};
+
+const START_PAYLOAD: WasherStartCommandPayload = {
+	command: 'Set',
+	dataSetList: { washerDryer: { course: 'express' } },
+};
+
+const NO_PAYLOADS: WasherCommandPayloads = { pause: undefined, stop: undefined, start: undefined };
 
 function createMockWasherDevice(): ThinqWasherDevice {
 	return asPartial<ThinqWasherDevice>({
@@ -68,158 +95,66 @@ describe('registerWasherCommandHandlers', () => {
 		vi.clearAllMocks();
 	});
 
-	describe('v1 read-only commands rejection', () => {
-		it('should register exactly 6 read-only command handlers (v1)', () => {
+	function register(payloads: WasherCommandPayloads = NO_PAYLOADS): void {
+		registerWasherCommandHandlers(mockEndpoint, mockDevice, mockApiClient, mockLogger, payloads);
+	}
+
+	function getHandler(commandName: string): () => Promise<void> {
+		const call = vi.mocked(mockEndpoint.addCommandHandler).mock.calls.find((c: any[]) => c[0] === commandName);
+		return call?.[1] as () => Promise<void>;
+	}
+
+	function setOperationalState(state: number | undefined): void {
+		mockEndpoint.getAttribute.mockReturnValue(state);
+	}
+
+	describe('read-only command rejection', () => {
+		it('should register exactly 4 read-only command handlers (on, off, resume, changeToMode)', () => {
 			// Arrange
-			const washerControl: ThinqWasherControlConfig = {};
-			const stopCommandPayload: WasherStopCommandPayload | undefined = undefined;
+			const readOnlyNames = ['on', 'off', 'pause', 'resume', 'changeToMode', 'stop', 'start'];
 
 			// Act
-			registerWasherCommandHandlers(
-				mockEndpoint,
-				mockDevice,
-				mockApiClient,
-				mockLogger,
-				washerControl,
-				stopCommandPayload,
-			);
+			register();
 
 			// Assert
 			const calls = vi.mocked(mockEndpoint.addCommandHandler).mock.calls;
 			const readOnlyCommandCalls = calls.filter((call: any[]) =>
-				['on', 'off', 'pause', 'start', 'resume', 'changeToMode'].includes(call[0] as string),
+				['on', 'off', 'resume', 'changeToMode'].includes(call[0] as string),
 			);
-			expect(readOnlyCommandCalls).toHaveLength(6);
+			expect(readOnlyCommandCalls).toHaveLength(4);
+			expect(calls.map((call: any[]) => call[0])).toEqual(expect.arrayContaining(readOnlyNames));
 		});
 
-		it('should register on command handler', () => {
+		it('should register pause, stop and start command handlers exactly once each', () => {
 			// Arrange
-			const washerControl: ThinqWasherControlConfig = {};
-			const stopCommandPayload: WasherStopCommandPayload | undefined = undefined;
+			const names = ['pause', 'stop', 'start'];
 
 			// Act
-			registerWasherCommandHandlers(
-				mockEndpoint,
-				mockDevice,
-				mockApiClient,
-				mockLogger,
-				washerControl,
-				stopCommandPayload,
-			);
+			register();
 
 			// Assert
-			expect(mockEndpoint.addCommandHandler).toHaveBeenCalledWith('on', expect.any(Function));
+			const registeredNames = vi.mocked(mockEndpoint.addCommandHandler).mock.calls.map((call: any[]) => call[0]);
+			expect(registeredNames).toHaveLength(7);
+			for (const name of names) {
+				expect(registeredNames.filter((registered: string) => registered === name)).toHaveLength(1);
+			}
 		});
 
-		it('should register off command handler', () => {
+		it.each(['on', 'off', 'resume', 'changeToMode'])('should register %s command handler', (commandName) => {
 			// Arrange
-			const washerControl: ThinqWasherControlConfig = {};
-			const stopCommandPayload: WasherStopCommandPayload | undefined = undefined;
+			// (no setup needed)
 
 			// Act
-			registerWasherCommandHandlers(
-				mockEndpoint,
-				mockDevice,
-				mockApiClient,
-				mockLogger,
-				washerControl,
-				stopCommandPayload,
-			);
+			register();
 
 			// Assert
-			expect(mockEndpoint.addCommandHandler).toHaveBeenCalledWith('off', expect.any(Function));
-		});
-
-		it('should register pause command handler', () => {
-			// Arrange
-			const washerControl: ThinqWasherControlConfig = {};
-			const stopCommandPayload: WasherStopCommandPayload | undefined = undefined;
-
-			// Act
-			registerWasherCommandHandlers(
-				mockEndpoint,
-				mockDevice,
-				mockApiClient,
-				mockLogger,
-				washerControl,
-				stopCommandPayload,
-			);
-
-			// Assert
-			expect(mockEndpoint.addCommandHandler).toHaveBeenCalledWith('pause', expect.any(Function));
-		});
-
-		it('should register start command handler', () => {
-			// Arrange
-			const washerControl: ThinqWasherControlConfig = {};
-			const stopCommandPayload: WasherStopCommandPayload | undefined = undefined;
-
-			// Act
-			registerWasherCommandHandlers(
-				mockEndpoint,
-				mockDevice,
-				mockApiClient,
-				mockLogger,
-				washerControl,
-				stopCommandPayload,
-			);
-
-			// Assert
-			expect(mockEndpoint.addCommandHandler).toHaveBeenCalledWith('start', expect.any(Function));
-		});
-
-		it('should register resume command handler', () => {
-			// Arrange
-			const washerControl: ThinqWasherControlConfig = {};
-			const stopCommandPayload: WasherStopCommandPayload | undefined = undefined;
-
-			// Act
-			registerWasherCommandHandlers(
-				mockEndpoint,
-				mockDevice,
-				mockApiClient,
-				mockLogger,
-				washerControl,
-				stopCommandPayload,
-			);
-
-			// Assert
-			expect(mockEndpoint.addCommandHandler).toHaveBeenCalledWith('resume', expect.any(Function));
-		});
-
-		it('should register changeToMode command handler', () => {
-			// Arrange
-			const washerControl: ThinqWasherControlConfig = {};
-			const stopCommandPayload: WasherStopCommandPayload | undefined = undefined;
-
-			// Act
-			registerWasherCommandHandlers(
-				mockEndpoint,
-				mockDevice,
-				mockApiClient,
-				mockLogger,
-				washerControl,
-				stopCommandPayload,
-			);
-
-			// Assert
-			expect(mockEndpoint.addCommandHandler).toHaveBeenCalledWith('changeToMode', expect.any(Function));
+			expect(mockEndpoint.addCommandHandler).toHaveBeenCalledWith(commandName, expect.any(Function));
 		});
 
 		it('on command should throw with unsupported error', async () => {
 			// Arrange
-			const washerControl: ThinqWasherControlConfig = {};
-			const stopCommandPayload: WasherStopCommandPayload | undefined = undefined;
-			registerWasherCommandHandlers(
-				mockEndpoint,
-				mockDevice,
-				mockApiClient,
-				mockLogger,
-				washerControl,
-				stopCommandPayload,
-			);
-			const onCall = vi.mocked(mockEndpoint.addCommandHandler).mock.calls.find((call: any[]) => call[0] === 'on');
-			const onHandler = onCall?.[1] as () => Promise<void>;
+			register();
+			const onHandler = getHandler('on');
 
 			// Act & Assert
 			await expect(onHandler()).rejects.toThrow('not supported yet');
@@ -228,112 +163,56 @@ describe('registerWasherCommandHandlers', () => {
 
 		it('off command should throw with unsupported error', async () => {
 			// Arrange
-			const washerControl: ThinqWasherControlConfig = {};
-			const stopCommandPayload: WasherStopCommandPayload | undefined = undefined;
-			registerWasherCommandHandlers(
-				mockEndpoint,
-				mockDevice,
-				mockApiClient,
-				mockLogger,
-				washerControl,
-				stopCommandPayload,
-			);
-			const offCall = vi.mocked(mockEndpoint.addCommandHandler).mock.calls.find((call: any[]) => call[0] === 'off');
-			const offHandler = offCall?.[1] as () => Promise<void>;
+			register();
+			const offHandler = getHandler('off');
 
 			// Act & Assert
 			await expect(offHandler()).rejects.toThrow('not supported yet');
 		});
 
-		it('pause command should throw with unsupported error', async () => {
+		it('resume command should throw with unsupported error', async () => {
 			// Arrange
-			const washerControl: ThinqWasherControlConfig = {};
-			const stopCommandPayload: WasherStopCommandPayload | undefined = undefined;
-			registerWasherCommandHandlers(
-				mockEndpoint,
-				mockDevice,
-				mockApiClient,
-				mockLogger,
-				washerControl,
-				stopCommandPayload,
-			);
-			const pauseCall = vi.mocked(mockEndpoint.addCommandHandler).mock.calls.find((call: any[]) => call[0] === 'pause');
-			const pauseHandler = pauseCall?.[1] as () => Promise<void>;
+			register();
+			const resumeHandler = getHandler('resume');
 
 			// Act & Assert
-			await expect(pauseHandler()).rejects.toThrow('not supported yet');
+			await expect(resumeHandler()).rejects.toThrow('not supported yet');
+			expect(mockApiClient.sendCommand).not.toHaveBeenCalled();
 		});
 
 		it('on/off commands should revert OnOff.onOff to prior value on failure', async () => {
 			// Arrange
-			const washerControl: ThinqWasherControlConfig = {};
-			const stopCommandPayload: WasherStopCommandPayload | undefined = undefined;
-			registerWasherCommandHandlers(
-				mockEndpoint,
-				mockDevice,
-				mockApiClient,
-				mockLogger,
-				washerControl,
-				stopCommandPayload,
-			);
-			const offCall = vi.mocked(mockEndpoint.addCommandHandler).mock.calls.find((call: any[]) => call[0] === 'off');
-			const offHandler = offCall?.[1] as () => Promise<void>;
+			register();
+			const offHandler = getHandler('off');
 
 			// Act
 			await expect(offHandler()).rejects.toThrow();
 
 			// Assert
-			expect(mockEndpoint.updateAttribute).toHaveBeenCalledWith(
-				OnOff.id,
-				'onOff',
-				true, // Should revert to prior value (true)
-				mockEndpoint.log,
-			);
+			expect(mockEndpoint.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', true, mockEndpoint.log);
 		});
 
-		it('non-on/off commands should revert OperationalState.operationalState on failure', async () => {
+		it('resume should revert OperationalState.operationalState on failure', async () => {
 			// Arrange
-			const washerControl: ThinqWasherControlConfig = {};
-			const stopCommandPayload: WasherStopCommandPayload | undefined = undefined;
-			registerWasherCommandHandlers(
-				mockEndpoint,
-				mockDevice,
-				mockApiClient,
-				mockLogger,
-				washerControl,
-				stopCommandPayload,
-			);
-			const pauseCall = vi.mocked(mockEndpoint.addCommandHandler).mock.calls.find((call: any[]) => call[0] === 'pause');
-			const pauseHandler = pauseCall?.[1] as () => Promise<void>;
+			register();
+			const resumeHandler = getHandler('resume');
 
 			// Act
-			await expect(pauseHandler()).rejects.toThrow();
+			await expect(resumeHandler()).rejects.toThrow();
 
 			// Assert
 			expect(mockEndpoint.updateAttribute).toHaveBeenCalledWith(
 				OperationalState.id,
 				'operationalState',
-				OperationalState.OperationalStateEnum.Running, // Should revert to prior value
+				OperationalState.OperationalStateEnum.Running,
 				mockEndpoint.log,
 			);
 		});
 
 		it('changeToMode should revert both operationalState and currentMode on failure', async () => {
 			// Arrange
-			const washerControl: ThinqWasherControlConfig = {};
-			const stopCommandPayload: WasherStopCommandPayload | undefined = undefined;
-			registerWasherCommandHandlers(
-				mockEndpoint,
-				mockDevice,
-				mockApiClient,
-				mockLogger,
-				washerControl,
-				stopCommandPayload,
-			);
-			const changeModeCall = vi
-				.mocked(mockEndpoint.addCommandHandler)
-				.mock.calls.find((call: any[]) => call[0] === 'changeToMode');
-			const changeModeHandler = changeModeCall?.[1] as () => Promise<void>;
+			register();
+			const changeModeHandler = getHandler('changeToMode');
 
 			// Act
 			await expect(changeModeHandler()).rejects.toThrow();
@@ -348,247 +227,379 @@ describe('registerWasherCommandHandlers', () => {
 			expect(mockEndpoint.updateAttribute).toHaveBeenCalledWith(
 				LaundryWasherMode.id,
 				'currentMode',
-				0, // Should revert to prior value
+				0,
 				mockEndpoint.log,
 			);
 		});
 	});
 
-	describe('v2 real stop command', () => {
-		it('should register stop command handler', () => {
+	describe('pause command', () => {
+		it('should send WMControl with the pause payload once and not revert when Running', async () => {
 			// Arrange
-			const washerControl: ThinqWasherControlConfig = { allowRemoteStop: true };
-			const stopCommandPayload: WasherStopCommandPayload = {
-				dataKey: 'washerDryer.state',
-				dataValue: 'STOP',
-			};
+			setOperationalState(OperationalState.OperationalStateEnum.Running);
+			register({ ...NO_PAYLOADS, pause: PAUSE_PAYLOAD });
+			const pauseHandler = getHandler('pause');
 
 			// Act
-			registerWasherCommandHandlers(
-				mockEndpoint,
-				mockDevice,
-				mockApiClient,
-				mockLogger,
-				washerControl,
-				stopCommandPayload,
-			);
+			await pauseHandler();
 
 			// Assert
-			expect(mockEndpoint.addCommandHandler).toHaveBeenCalledWith('stop', expect.any(Function));
+			expect(mockApiClient.sendCommand).toHaveBeenCalledTimes(1);
+			expect(mockApiClient.sendCommand).toHaveBeenCalledWith('washer-123', { ctrlKey: 'WMControl', ...PAUSE_PAYLOAD });
+			expect(mockEndpoint.updateAttribute).not.toHaveBeenCalled();
+			expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('pause-command payload'));
 		});
 
-		it('stop command should throw when allowRemoteStop is false', async () => {
+		it('should read operationalState before awaiting sendCommand', async () => {
 			// Arrange
-			const washerControl: ThinqWasherControlConfig = { allowRemoteStop: false };
-			const stopCommandPayload: WasherStopCommandPayload = {
-				dataKey: 'washerDryer.state',
-				dataValue: 'STOP',
-			};
-			registerWasherCommandHandlers(
-				mockEndpoint,
-				mockDevice,
-				mockApiClient,
-				mockLogger,
-				washerControl,
-				stopCommandPayload,
-			);
-			const stopCall1 = vi.mocked(mockEndpoint.addCommandHandler).mock.calls.find((call: any[]) => call[0] === 'stop');
-			const stopHandler = stopCall1?.[1] as () => Promise<void>;
+			setOperationalState(OperationalState.OperationalStateEnum.Running);
+			register({ ...NO_PAYLOADS, pause: PAUSE_PAYLOAD });
+			const pauseHandler = getHandler('pause');
+
+			// Act
+			await pauseHandler();
+
+			// Assert
+			const readOrder = mockEndpoint.getAttribute.mock.invocationCallOrder[0];
+			const sendOrder = vi.mocked(mockApiClient.sendCommand).mock.invocationCallOrder[0];
+			expect(readOrder).toBeLessThan(sendOrder ?? 0);
+		});
+
+		it('should resolve without sendCommand and log debug when already Paused', async () => {
+			// Arrange
+			setOperationalState(OperationalState.OperationalStateEnum.Paused);
+			register({ ...NO_PAYLOADS, pause: PAUSE_PAYLOAD });
+			const pauseHandler = getHandler('pause');
 
 			// Act & Assert
-			await expect(stopHandler()).rejects.toThrow('disabled by configuration');
-			expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining("'stop') is disabled by configuration"));
+			await expect(pauseHandler()).resolves.toBeUndefined();
 			expect(mockApiClient.sendCommand).not.toHaveBeenCalled();
+			expect(mockLogger.debug).toHaveBeenCalledWith(expect.stringContaining('already paused'));
 		});
 
-		it('stop command should throw when allowRemoteStop is undefined (falsy)', async () => {
+		it.each([
+			['Stopped', OperationalState.OperationalStateEnum.Stopped],
+			['Error', OperationalState.OperationalStateEnum.Error],
+			['undefined', undefined],
+		])('should resolve without sendCommand and warn when state is %s', async (_label, state) => {
 			// Arrange
-			const washerControl: ThinqWasherControlConfig = { allowRemoteStop: undefined };
-			const stopCommandPayload: WasherStopCommandPayload = {
-				dataKey: 'washerDryer.state',
-				dataValue: 'STOP',
-			};
-			registerWasherCommandHandlers(
-				mockEndpoint,
-				mockDevice,
-				mockApiClient,
-				mockLogger,
-				washerControl,
-				stopCommandPayload,
-			);
-			const stopCall3 = vi.mocked(mockEndpoint.addCommandHandler).mock.calls.find((call: any[]) => call[0] === 'stop');
-			const stopHandler = stopCall3?.[1] as () => Promise<void>;
+			setOperationalState(state);
+			register({ ...NO_PAYLOADS, pause: PAUSE_PAYLOAD });
+			const pauseHandler = getHandler('pause');
 
 			// Act & Assert
-			await expect(stopHandler()).rejects.toThrow('disabled by configuration');
+			await expect(pauseHandler()).resolves.toBeUndefined();
 			expect(mockApiClient.sendCommand).not.toHaveBeenCalled();
+			expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('not running'));
 		});
 
-		it('stop command should throw when stopCommandPayload is undefined', async () => {
+		it('should reject, warn and revert to Running when pause payload is undefined', async () => {
 			// Arrange
-			const washerControl: ThinqWasherControlConfig = { allowRemoteStop: true };
-			const stopCommandPayload: WasherStopCommandPayload | undefined = undefined;
-			registerWasherCommandHandlers(
-				mockEndpoint,
-				mockDevice,
-				mockApiClient,
-				mockLogger,
-				washerControl,
-				stopCommandPayload,
-			);
-			const stopCall4 = vi.mocked(mockEndpoint.addCommandHandler).mock.calls.find((call: any[]) => call[0] === 'stop');
-			const stopHandler = stopCall4?.[1] as () => Promise<void>;
+			setOperationalState(OperationalState.OperationalStateEnum.Running);
+			register(NO_PAYLOADS);
+			const pauseHandler = getHandler('pause');
 
 			// Act & Assert
-			if (!stopHandler) throw new Error('stop handler not found');
-			await expect(stopHandler()).rejects.toThrow('not available for this device model yet');
+			await expect(pauseHandler()).rejects.toThrow('not available for this device model yet');
+			expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('not available for this device model yet'));
 			expect(mockApiClient.sendCommand).not.toHaveBeenCalled();
+			expect(mockEndpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalState',
+				OperationalState.OperationalStateEnum.Running,
+				mockEndpoint.log,
+			);
 		});
 
-		it('stop command should send command when both gates are open and payload resolves', async () => {
+		it('should rethrow, log with deviceId and revert to Running when sendCommand rejects', async () => {
 			// Arrange
-			const washerControl: ThinqWasherControlConfig = { allowRemoteStop: true };
-			const stopCommandPayload: WasherStopCommandPayload = {
-				dataKey: 'washerDryer.state',
-				dataValue: 'STOP',
-			};
-			registerWasherCommandHandlers(
-				mockEndpoint,
-				mockDevice,
-				mockApiClient,
-				mockLogger,
-				washerControl,
-				stopCommandPayload,
+			setOperationalState(OperationalState.OperationalStateEnum.Running);
+			vi.mocked(mockApiClient.sendCommand).mockRejectedValueOnce(new Error('Network error'));
+			register({ ...NO_PAYLOADS, pause: PAUSE_PAYLOAD });
+			const pauseHandler = getHandler('pause');
+
+			// Act & Assert
+			await expect(pauseHandler()).rejects.toThrow('Network error');
+			expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining("'pause' failed"));
+			expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining('washer-123'));
+			expect(mockEndpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalState',
+				OperationalState.OperationalStateEnum.Running,
+				mockEndpoint.log,
 			);
-			const stopCall5 = vi.mocked(mockEndpoint.addCommandHandler).mock.calls.find((call: any[]) => call[0] === 'stop');
-			const stopHandler = stopCall5?.[1] as () => Promise<void>;
+		});
+
+		it('should not throw a second error when the revert updateAttribute fails', async () => {
+			// Arrange
+			setOperationalState(OperationalState.OperationalStateEnum.Running);
+			vi.mocked(mockApiClient.sendCommand).mockRejectedValueOnce(new Error('Network error'));
+			mockEndpoint.updateAttribute.mockRejectedValueOnce(new Error('Revert failed'));
+			register({ ...NO_PAYLOADS, pause: PAUSE_PAYLOAD });
+			const pauseHandler = getHandler('pause');
+
+			// Act & Assert
+			await expect(pauseHandler()).rejects.toThrow('Network error');
+		});
+	});
+
+	describe('stop command', () => {
+		it.each([
+			['Running', OperationalState.OperationalStateEnum.Running],
+			['Paused', OperationalState.OperationalStateEnum.Paused],
+			['Error', OperationalState.OperationalStateEnum.Error],
+		])('should send WMControl with the POWEROFF payload once when state is %s', async (_label, state) => {
+			// Arrange
+			setOperationalState(state);
+			register({ ...NO_PAYLOADS, pause: PAUSE_PAYLOAD, stop: POWEROFF_PAYLOAD });
+			const stopHandler = getHandler('stop');
 
 			// Act
 			await stopHandler();
 
 			// Assert
+			expect(mockApiClient.sendCommand).toHaveBeenCalledTimes(1);
 			expect(mockApiClient.sendCommand).toHaveBeenCalledWith('washer-123', {
 				ctrlKey: 'WMControl',
-				dataKey: 'washerDryer.state',
-				dataValue: 'STOP',
+				...POWEROFF_PAYLOAD,
 			});
+			expect(mockApiClient.sendCommand).not.toHaveBeenCalledWith('washer-123', expect.objectContaining(PAUSE_PAYLOAD));
 		});
 
-		it('stop command should include full payload in sendCommand call', async () => {
+		it.each([
+			['Stopped', OperationalState.OperationalStateEnum.Stopped],
+			['undefined', undefined],
+		])('should resolve without sendCommand and log debug when state is %s', async (_label, state) => {
 			// Arrange
-			const washerControl: ThinqWasherControlConfig = { allowRemoteStop: true };
-			const stopCommandPayload: WasherStopCommandPayload = {
-				command: 'Set',
-				dataKey: 'washerDryer.state',
-				dataValue: 'STOP',
-			};
-			registerWasherCommandHandlers(
-				mockEndpoint,
-				mockDevice,
-				mockApiClient,
-				mockLogger,
-				washerControl,
-				stopCommandPayload,
-			);
-			const stopCall6 = vi.mocked(mockEndpoint.addCommandHandler).mock.calls.find((call: any[]) => call[0] === 'stop');
-			const stopHandler = stopCall6?.[1] as () => Promise<void>;
+			setOperationalState(state);
+			register({ ...NO_PAYLOADS, stop: POWEROFF_PAYLOAD });
+			const stopHandler = getHandler('stop');
 
-			// Act
-			if (!stopHandler) throw new Error('stop handler not found');
-			await stopHandler();
-
-			// Assert
-			expect(mockApiClient.sendCommand).toHaveBeenCalledWith('washer-123', {
-				ctrlKey: 'WMControl',
-				command: 'Set',
-				dataKey: 'washerDryer.state',
-				dataValue: 'STOP',
-			});
+			// Act & Assert
+			await expect(stopHandler()).resolves.toBeUndefined();
+			expect(mockApiClient.sendCommand).not.toHaveBeenCalled();
+			expect(mockLogger.debug).toHaveBeenCalledWith(expect.stringContaining('already stopped'));
 		});
 
-		it('stop command should revert operationalState if sendCommand fails', async () => {
+		it('should reject, warn and revert when stop payload is undefined while Running', async () => {
 			// Arrange
-			const washerControl: ThinqWasherControlConfig = { allowRemoteStop: true };
-			const stopCommandPayload: WasherStopCommandPayload = {
-				dataKey: 'washerDryer.state',
-				dataValue: 'STOP',
-			};
-			mockApiClient.sendCommand = vi.fn().mockRejectedValueOnce(new Error('Network error'));
-			registerWasherCommandHandlers(
-				mockEndpoint,
-				mockDevice,
-				mockApiClient,
-				mockLogger,
-				washerControl,
-				stopCommandPayload,
-			);
-			const stopCall7 = vi.mocked(mockEndpoint.addCommandHandler).mock.calls.find((call: any[]) => call[0] === 'stop');
-			const stopHandler = stopCall7?.[1] as () => Promise<void>;
+			setOperationalState(OperationalState.OperationalStateEnum.Running);
+			register({ ...NO_PAYLOADS, pause: PAUSE_PAYLOAD });
+			const stopHandler = getHandler('stop');
 
-			// Act
-			if (!stopHandler) throw new Error('stop handler not found');
+			// Act & Assert
+			await expect(stopHandler()).rejects.toThrow("('stop') is not available");
+			expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining("('stop') is not available"));
+			expect(mockApiClient.sendCommand).not.toHaveBeenCalled();
+			expect(mockEndpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalState',
+				OperationalState.OperationalStateEnum.Running,
+				mockEndpoint.log,
+			);
+		});
+
+		it('should rethrow, log and revert to the previous state when sendCommand rejects', async () => {
+			// Arrange
+			setOperationalState(OperationalState.OperationalStateEnum.Paused);
+			vi.mocked(mockApiClient.sendCommand).mockRejectedValueOnce(new Error('Network error'));
+			register({ ...NO_PAYLOADS, stop: POWEROFF_PAYLOAD });
+			const stopHandler = getHandler('stop');
+
+			// Act & Assert
 			await expect(stopHandler()).rejects.toThrow('Network error');
+			expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining("'stop' failed"));
+			expect(mockEndpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalState',
+				OperationalState.OperationalStateEnum.Paused,
+				mockEndpoint.log,
+			);
+		});
+
+		it('should not throw a second error when the revert updateAttribute fails', async () => {
+			// Arrange
+			setOperationalState(OperationalState.OperationalStateEnum.Running);
+			vi.mocked(mockApiClient.sendCommand).mockRejectedValueOnce(new Error('Network error'));
+			mockEndpoint.updateAttribute.mockRejectedValueOnce(new Error('Revert failed'));
+			register({ ...NO_PAYLOADS, stop: POWEROFF_PAYLOAD });
+			const stopHandler = getHandler('stop');
+
+			// Act & Assert
+			await expect(stopHandler()).rejects.toThrow('Network error');
+		});
+	});
+
+	describe('OperationalState start (direct wiring)', () => {
+		it('should register a start command handler on the washer', () => {
+			// Arrange
+			// (no setup needed)
+
+			// Act
+			register({ ...NO_PAYLOADS, start: START_PAYLOAD });
+
+			// Assert
+			expect(mockEndpoint.addCommandHandler).toHaveBeenCalledWith('start', expect.any(Function));
+		});
+
+		it('should send WMStart and not revert when state is Stopped and payload resolves', async () => {
+			// Arrange
+			setOperationalState(OperationalState.OperationalStateEnum.Stopped);
+			register({ ...NO_PAYLOADS, start: START_PAYLOAD });
+			const startHandler = getHandler('start');
+
+			// Act
+			await startHandler();
+
+			// Assert
+			expect(mockApiClient.sendCommand).toHaveBeenCalledTimes(1);
+			expect(mockApiClient.sendCommand).toHaveBeenCalledWith('washer-123', {
+				ctrlKey: 'WMStart',
+				command: 'Set',
+				dataSetList: { washerDryer: { course: 'express' } },
+			});
+			expect(mockEndpoint.updateAttribute).not.toHaveBeenCalled();
+		});
+
+		it('should resolve without calling sendCommand when state is Running', async () => {
+			// Arrange
+			setOperationalState(OperationalState.OperationalStateEnum.Running);
+			register({ ...NO_PAYLOADS, start: START_PAYLOAD });
+			const startHandler = getHandler('start');
+
+			// Act & Assert
+			await expect(startHandler()).resolves.toBeUndefined();
+			expect(mockApiClient.sendCommand).not.toHaveBeenCalled();
+		});
+
+		it('should reject and not call sendCommand when state is Paused', async () => {
+			// Arrange
+			setOperationalState(OperationalState.OperationalStateEnum.Paused);
+			register({ ...NO_PAYLOADS, start: START_PAYLOAD });
+			const startHandler = getHandler('start');
+
+			// Act & Assert
+			await expect(startHandler()).rejects.toThrow('while paused is not supported');
+			expect(mockApiClient.sendCommand).not.toHaveBeenCalled();
+			expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining("'start' while paused"));
+		});
+
+		it('should reject and not call sendCommand when state is Error', async () => {
+			// Arrange
+			setOperationalState(OperationalState.OperationalStateEnum.Error);
+			register({ ...NO_PAYLOADS, start: START_PAYLOAD });
+			const startHandler = getHandler('start');
+
+			// Act & Assert
+			await expect(startHandler()).rejects.toThrow('error state');
+			expect(mockApiClient.sendCommand).not.toHaveBeenCalled();
+			expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining("'start' rejected"));
+		});
+
+		it('should reject, warn and revert state when start payload is undefined', async () => {
+			// Arrange
+			setOperationalState(OperationalState.OperationalStateEnum.Stopped);
+			register(NO_PAYLOADS);
+			const startHandler = getHandler('start');
+
+			// Act & Assert
+			await expect(startHandler()).rejects.toThrow('not available for this device model yet');
+			expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('not available for this device model yet'));
+			expect(mockApiClient.sendCommand).not.toHaveBeenCalled();
+			expect(mockEndpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalState',
+				OperationalState.OperationalStateEnum.Stopped,
+				mockEndpoint.log,
+			);
+		});
+
+		it('should rethrow the same error and log when sendCommand rejects', async () => {
+			// Arrange
+			setOperationalState(OperationalState.OperationalStateEnum.Stopped);
+			vi.mocked(mockApiClient.sendCommand).mockRejectedValueOnce(new Error('Network error'));
+			register({ ...NO_PAYLOADS, start: START_PAYLOAD });
+			const startHandler = getHandler('start');
+
+			// Act & Assert
+			await expect(startHandler()).rejects.toThrow('Network error');
+			expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining("ThinQ Washer command 'start' failed"));
+		});
+
+		it('should revert operationalState to Stopped when sendCommand rejects', async () => {
+			// Arrange
+			setOperationalState(OperationalState.OperationalStateEnum.Stopped);
+			vi.mocked(mockApiClient.sendCommand).mockRejectedValueOnce(new Error('Network error'));
+			register({ ...NO_PAYLOADS, start: START_PAYLOAD });
+			const startHandler = getHandler('start');
+
+			// Act
+			await expect(startHandler()).rejects.toThrow('Network error');
 
 			// Assert
 			expect(mockEndpoint.updateAttribute).toHaveBeenCalledWith(
 				OperationalState.id,
 				'operationalState',
-				OperationalState.OperationalStateEnum.Running, // Should revert to prior value
+				OperationalState.OperationalStateEnum.Stopped,
 				mockEndpoint.log,
 			);
 		});
 
-		it('stop command should log error when sendCommand fails', async () => {
+		it('should not throw a second error when the revert updateAttribute fails', async () => {
 			// Arrange
-			const washerControl: ThinqWasherControlConfig = { allowRemoteStop: true };
-			const stopCommandPayload: WasherStopCommandPayload = {
-				dataKey: 'washerDryer.state',
-				dataValue: 'STOP',
-			};
-			mockApiClient.sendCommand = vi.fn().mockRejectedValueOnce(new Error('Network error'));
-			registerWasherCommandHandlers(
-				mockEndpoint,
-				mockDevice,
-				mockApiClient,
-				mockLogger,
-				washerControl,
-				stopCommandPayload,
-			);
-			const stopCall8 = vi.mocked(mockEndpoint.addCommandHandler).mock.calls.find((call: any[]) => call[0] === 'stop');
-			const stopHandler = stopCall8?.[1] as () => Promise<void>;
-
-			// Act
-			if (!stopHandler) throw new Error('stop handler not found');
-			await expect(stopHandler()).rejects.toThrow();
-
-			// Assert
-			expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining("ThinQ Washer command 'stop' failed"));
-		});
-
-		it('stop command should not crash if updateAttribute revert fails', async () => {
-			// Arrange
-			const washerControl: ThinqWasherControlConfig = { allowRemoteStop: true };
-			const stopCommandPayload: WasherStopCommandPayload = {
-				dataKey: 'washerDryer.state',
-				dataValue: 'STOP',
-			};
-			mockApiClient.sendCommand = vi.fn().mockRejectedValueOnce(new Error('Network error'));
+			setOperationalState(OperationalState.OperationalStateEnum.Stopped);
+			vi.mocked(mockApiClient.sendCommand).mockRejectedValueOnce(new Error('Network error'));
 			mockEndpoint.updateAttribute.mockRejectedValueOnce(new Error('Revert failed'));
-			registerWasherCommandHandlers(
-				mockEndpoint,
-				mockDevice,
-				mockApiClient,
-				mockLogger,
-				washerControl,
-				stopCommandPayload,
-			);
-			const stopCall9 = vi.mocked(mockEndpoint.addCommandHandler).mock.calls.find((call: any[]) => call[0] === 'stop');
-			const stopHandler = stopCall9?.[1] as () => Promise<void>;
+			register({ ...NO_PAYLOADS, start: START_PAYLOAD });
+			const startHandler = getHandler('start');
 
 			// Act & Assert
-			if (!stopHandler) throw new Error('stop handler not found');
-			await expect(stopHandler()).rejects.toThrow('Network error');
-			// Should still throw the original error, not the revert error
+			await expect(startHandler()).rejects.toThrow('Network error');
+		});
+
+		it('should treat undefined operationalState as not running and revert to Stopped on failure', async () => {
+			// Arrange
+			setOperationalState(undefined);
+			vi.mocked(mockApiClient.sendCommand).mockRejectedValueOnce(new Error('Network error'));
+			register({ ...NO_PAYLOADS, start: START_PAYLOAD });
+			const startHandler = getHandler('start');
+
+			// Act
+			await expect(startHandler()).rejects.toThrow('Network error');
+
+			// Assert
+			expect(mockApiClient.sendCommand).toHaveBeenCalledTimes(1);
+			expect(mockEndpoint.updateAttribute).toHaveBeenCalledWith(
+				OperationalState.id,
+				'operationalState',
+				OperationalState.OperationalStateEnum.Stopped,
+				mockEndpoint.log,
+			);
+		});
+
+		it('should send WMStart and WMControl stop without any washer config present', async () => {
+			// Arrange
+			setOperationalState(OperationalState.OperationalStateEnum.Stopped);
+			register({ ...NO_PAYLOADS, start: START_PAYLOAD, stop: POWEROFF_PAYLOAD });
+			const startHandler = getHandler('start');
+			const stopHandler = getHandler('stop');
+
+			// Act
+			await startHandler();
+			setOperationalState(OperationalState.OperationalStateEnum.Running);
+			await stopHandler();
+
+			// Assert
+			expect(mockApiClient.sendCommand).toHaveBeenNthCalledWith(
+				1,
+				'washer-123',
+				expect.objectContaining({ ctrlKey: 'WMStart' }),
+			);
+			expect(mockApiClient.sendCommand).toHaveBeenNthCalledWith(
+				2,
+				'washer-123',
+				expect.objectContaining({ ctrlKey: 'WMControl' }),
+			);
 		});
 	});
 });

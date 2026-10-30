@@ -84,7 +84,7 @@ After `release-manager` reports the **GitHub release was published successfully*
 
 ## Model policy
 
-Frontmatter is source of truth — never pass `model:` except `implementer` on high (`"sonnet"`). Haiku: compiler, documenter, finalizer, wiki-manager, test-writer, implementer(default). Sonnet: technical-architect, investigator, reviewer, direct-executor, release-manager. Never upgrade unless user asks or subagent reports blocked.
+Frontmatter is source of truth — never pass `model:` except `implementer` on high (`"sonnet"`). Haiku: compiler, documenter, finalizer, wiki-manager, test-writer, release-manager, implementer(default). Sonnet: investigator, direct-executor, reviewer (`claude-sonnet-5`). Opus 5 (`claude-opus-5`): technical-architect. Never upgrade unless user asks or subagent reports blocked.
 
 ## Progress checklist
 
