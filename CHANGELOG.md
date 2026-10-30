@@ -2,6 +2,49 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-31
+
+First stable release after the 0.1.1 release candidates (rc01 to rc07). It adds personal access token (PAT) login for the official ThinQ Connect API, washer control from Home and Matter, and air conditioner support for PAT login. Several features are not yet tested on real hardware; each is marked below.
+
+### Added
+
+- **Personal Access Token (PAT) login** — a new `pat` login type for the official ThinQ Connect API, available in the plugin config and the CLI (`login --type pat`). Devices arrive through push updates over MQTT, with polling as a fallback (not yet tested against the real LG service).
+- **ThinQ Connect air conditioners** — with PAT login, air conditioners show power, target temperature (Celsius), fan speed, swing, room temperature, humidity where reported, and read-only filter life. Home shows Cool and Off. A room temperature sensor is added when the unit reports one.
+- **ThinQ Connect washers** — with PAT login, the washer shows Running, Paused, Stopped or Error in Matter, with time left and errors. Start and Stop work from Matter and Google Home when the washer is idle with Remote Start on (START is not yet tested on hardware).
+- **V1 washer control through the LG app's vtCtrl command** — for models with `uniProtocol`, the washer can be turned on and off, started, paused, resumed and stopped from Home. Start takes two taps, and every command re-reads the washer first and refuses when the state does not fit. Power on from Home is not yet tested on a real washer.
+- **Washer course and settings in Home** — Home lists the washer's own courses and shows the current temperature, spin and rinse settings. Changes to course, temperature, spin or rinses are sent to the washer; a refused change is shown in Home and the old value is restored. Only V1 washers with `uniProtocol` and `vtCtrl` are supported.
+- **Washer wash-step and cycle-finished messages in Matter** — the V1 washer reports one of 8 wash steps, and sends a one-time cycle finished event with total run time and paused time. The event is not sent at start-up, when the washer is switched off mid-wash, or on error.
+- **Washer course selection in config** — choose which washer courses are offered, so the course list is trimmed to the programs you use.
+- **Per-device ignore checkbox** — exclude a device from the plugin in its config entry. This now also works for ThinQ Connect washers.
+- **`allowCancelCycle` washer setting** — `Allow cancelling a running wash`, off by default. When it is off, Stop and Off are refused during a wash.
+- **Push updates for ThinQ Connect** — devices update when LG sends an event; polling is a 5 minute safety net while push is healthy.
+- **Command line tools** — `connect-probe`, `connect-control`, `connect-settings`, `washer-status` and `washer-control` commands for diagnostics and guarded test sends (dry run unless `--yes` is given). The global `--out <file>` option saves output to a private file. These do not change plugin behavior.
+
+### Changed
+
+- **BREAKING: washer Stop now powers the washer off** — Matter Stop sends LG's POWEROFF control; Pause sends LG's PAUSE control. Automations that relied on Stop to pause must use Pause instead.
+- **BREAKING: washer Resume is not supported** — LG has no resume control. Pause is sent only while the washer is running.
+- **BREAKING: washer remote Start/Stop settings removed** — the `allowRemoteStart` and `allowRemoteStop` options are gone; old keys are cleaned from existing configs automatically.
+- **BREAKING: washer remote Start/Stop child switch removed** — the extra switch endpoint is gone. If your controller keeps a stale tile, remove the washer and add it again.
+- **BREAKING: webOS TV section removed** — the never-built webOS placeholder is removed from the config; any `webos` property is dropped.
+- **PAT devices run as standalone Matter nodes** — each washer and air conditioner pairs on its own, like account login. PAT devices get new device IDs, so remove the old ones from your controller and pair them again.
+- **Real LG serial number for V1 devices** — V1 washers and air conditioners use the LG serial number as the Matter serial, falling back to the device id. Devices already paired keep their stored serial.
+- **Washer registration failure no longer stops start-up** — a ThinQ Connect washer that fails to register is logged and skipped.
+- **Matter On for a powered-off V1 washer** — the washer is woken with its model's own wake command. If the model has none, Home refuses with a clear message.
+
+### Fixed
+
+- **Washer settings no longer overwritten silently** — changing one washer setting in Home no longer changes a different setting you did not touch. A setting the washer refuses is left alone and Home says so.
+- **Home no longer rolls back accepted washer changes** — Home now checks only the setting you changed, so an accepted change is no longer shown as an error.
+- **Washer state read as empty (ThinQ Connect)** — the state response is now read correctly.
+- **Air conditioner and washer on/off stuck (ThinQ Connect)** — Apple Home no longer shows OFF after turning a PAT device on, and later taps work again. Not yet tested on a real Apple Home.
+- **Fahrenheit air conditioners (ThinQ Connect)** — units that report Fahrenheit get the correct limits, rounding and unit. Not tested on hardware.
+- **Keep Matter pairing when switching to PAT login** — an optional `serial-number-mapping` file maps a ThinQ Connect device id to its account-login id so the device keeps its Matter identity. Not yet tested on hardware.
+
+<a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
+
+---
+
 ## [0.1.1-rc07] - 2026-10-29
 
 ### Changed
