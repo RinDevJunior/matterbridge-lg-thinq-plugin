@@ -61,7 +61,7 @@ export function buildAirConditionerEndpoint(
 		.createDefaultIdentifyClusterServer()
 		.createDefaultBasicInformationClusterServer(
 			device.name,
-			device.serialNumber ?? device.id,
+			device.id,
 			options?.vendorId ?? 0xfff1,
 			options?.vendorName ?? 'Matterbridge',
 			options?.productId ?? 0x8000,

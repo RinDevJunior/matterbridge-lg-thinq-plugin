@@ -61,8 +61,8 @@ describe('thinqWasherEndpointFactory', () => {
 		vi.clearAllMocks();
 	});
 
-	describe('real serial number on BasicInformation', () => {
-		it('should pass serialNumber as the BasicInformation serial and keep device.id for the LaundryWasher id', () => {
+	describe('BasicInformation serial is device.id', () => {
+		it('should use device.id as the BasicInformation serial and LaundryWasher id when serialNumber is present', () => {
 			// Arrange
 			const device = { ...createMockWasherDevice(), serialNumber: 'FAKESERIAL01' };
 			const laundryWasherSpy = vi.mocked(LaundryWasher);
@@ -75,7 +75,7 @@ describe('thinqWasherEndpointFactory', () => {
 			const mockInstance = laundryWasherSpy.mock.results[0]?.value;
 			expect(mockInstance?.createDefaultBasicInformationClusterServer).toHaveBeenCalledWith(
 				'Living Room Washer',
-				'FAKESERIAL01',
+				'washer-123',
 				0xfff1,
 				'Matterbridge',
 				0x8000,
@@ -103,7 +103,7 @@ describe('thinqWasherEndpointFactory', () => {
 			);
 		});
 
-		it('should pass serialNumber together with all four identity overrides', () => {
+		it('should use device.id as the serial together with all four identity overrides', () => {
 			// Arrange
 			const device = { ...createMockWasherDevice(), serialNumber: 'FAKESERIAL01' };
 			const laundryWasherSpy = vi.mocked(LaundryWasher);
@@ -121,7 +121,7 @@ describe('thinqWasherEndpointFactory', () => {
 			const mockInstance = laundryWasherSpy.mock.results[0]?.value;
 			expect(mockInstance?.createDefaultBasicInformationClusterServer).toHaveBeenCalledWith(
 				'Living Room Washer',
-				'FAKESERIAL01',
+				'washer-123',
 				4996,
 				'LG',
 				1,
@@ -274,7 +274,7 @@ describe('thinqWasherEndpointFactory', () => {
 			const mockInstance = laundryWasherSpy.mock.results[0]?.value;
 			expect(mockInstance?.createDefaultBasicInformationClusterServer).toHaveBeenCalledWith(
 				'Living Room Washer',
-				'FAKESERIAL01',
+				'washer-123',
 				0xfff1,
 				'Matterbridge',
 				0x8000,
