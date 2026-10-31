@@ -869,8 +869,8 @@ describe('buildAirConditionerEndpoint', () => {
 		});
 	});
 
-	describe('real serial number on BasicInformation', () => {
-		it('should pass serialNumber as the BasicInformation serial when present', () => {
+	describe('BasicInformation serial is device.id', () => {
+		it('should use device.id as the BasicInformation serial when serialNumber is present', () => {
 			// Arrange
 			mockDevice = asPartial<ThinqAirConditionerDevice>({
 				name: 'Living Room AC',
@@ -889,7 +889,7 @@ describe('buildAirConditionerEndpoint', () => {
 			// Assert
 			expect(mockEndpoint.createDefaultBasicInformationClusterServer).toHaveBeenCalledWith(
 				mockDevice.name,
-				'FAKESERIAL01',
+				mockDevice.id,
 				0xfff1,
 				'Matterbridge',
 				0x8000,
@@ -922,7 +922,7 @@ describe('buildAirConditionerEndpoint', () => {
 			);
 		});
 
-		it('should pass serialNumber together with all four identity overrides', () => {
+		it('should use device.id as the serial together with all four identity overrides', () => {
 			// Arrange
 			mockDevice = asPartial<ThinqAirConditionerDevice>({
 				name: 'Living Room AC',
@@ -946,7 +946,7 @@ describe('buildAirConditionerEndpoint', () => {
 			// Assert
 			expect(mockEndpoint.createDefaultBasicInformationClusterServer).toHaveBeenCalledWith(
 				mockDevice.name,
-				'FAKESERIAL01',
+				mockDevice.id,
 				4996,
 				'LG',
 				1,
