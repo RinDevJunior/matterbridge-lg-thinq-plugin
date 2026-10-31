@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.1.2-rc01] - 2026-10-31
+
+### Fixed
+
+- **Matter serial number reverted to device id** — the serial number attribute for air conditioner and washer endpoints is back to the GUID-style device id. It was briefly switched to the real LG serial, but matter.js never updates an already-persisted serial for paired nodes, so that change had no effect on existing devices and would have left new and existing devices inconsistent.
+
+<a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
+
+---
+
 ## [0.1.1] - 2026-10-31
 
 First stable release after the 0.1.1 release candidates (rc01 to rc07). It adds personal access token (PAT) login for the official ThinQ Connect API, washer control from Home and Matter, and air conditioner support for PAT login. Several features are not yet tested on real hardware; each is marked below.
