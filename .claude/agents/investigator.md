@@ -1,7 +1,7 @@
 ---
 name: investigator
 description: "Deep, high-effort codebase investigation. Spawned as a nested subagent by technical-architect (leaf — no Agent tool). Reads questions-<topic>.md and wiki-brief.md, writes answers-<topic>.md. Not for trivial lookups."
-model: sonnet
+model: claude-sonnet-5
 color: blue
 effort: medium
 maxTurns: 35
