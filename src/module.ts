@@ -7,6 +7,9 @@ import NodePersist from 'node-persist';
 import { UNREGISTER_DEVICES_DELAY_MS } from './constants/index.js';
 import { isAirConditionerDevice, isWasherDevice } from './core/domain/entities/ThinqDevice.js';
 import { ManualProcessNeededError } from './errors/index.js';
+import { applyLgSoundbarState } from './lgSoundbar/lgSoundbarEndpoint.js';
+import { registerLgSoundbars } from './lgSoundbar/lgSoundbarRegistration.js';
+import { LgSoundbarServiceContainer } from './lgSoundbar/lgSoundbarServiceContainer.js';
 import { LgThinqPluginPlatformConfig } from './model/LgThinqPluginPlatformConfig.js';
 // Platform layer imports
 import { DeviceRegistry } from './platform/deviceRegistry.js';
@@ -19,6 +22,7 @@ import { WasherCycleTracker } from './platform/thinq/thinqWasherCycleTracker.js'
 import type { WasherMatterPlan } from './platform/thinq/thinqWasherMatterPlan.js';
 import { applyThinqSnapshotToWasher } from './platform/thinq/thinqWasherStateSync.js';
 import { resolveThinqGeneration } from './platform/thinqGeneration.js';
+import type { LgSoundbar } from './services/lgSoundbar/lgSoundbarService.js';
 import { ThinqServiceContainer } from './services/thinq/serviceContainer.js';
 import { ThinqSession } from './services/thinq/session.js';
 import { ThinqDeviceUpdateListener } from './services/thinq/thinqDeviceService.js';
@@ -73,6 +77,10 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 	private thinqConnectWashers: ThinqConnectWasher[] = [];
 	private thinqConnectAirConditioners: ThinqConnectAirConditioner[] = [];
 
+	// LG Soundbar (local network) family: independent of both ThinQ generations
+	private readonly lgSoundbarServices: LgSoundbarServiceContainer;
+	private lgSoundbars: LgSoundbar[] = [];
+
 	private thinqPollingIntervalMs: number | undefined;
 	private readonly thinqDeviceKindById = new Map<string, 'AC' | 'WASHER'>();
 	private readonly washerMatterPlanById = new Map<string, WasherMatterPlan>();
@@ -113,6 +121,10 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 						clientId: this.loadThinqConnectClientId(),
 					})
 				: undefined;
+		this.lgSoundbarServices = new LgSoundbarServiceContainer(
+			this.log,
+			this.configManager.lgSoundbarPollIntervalSeconds,
+		);
 		this.ensureIdentityMappingFile();
 	}
 
@@ -173,6 +185,19 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 			return;
 		}
 
+		try {
+			await this.startLgSoundbarDevices();
+		} catch (error) {
+			this.log.error(`LG Soundbar startup failed: ${error instanceof Error ? error.message : String(error)}`);
+		}
+
+		if (this.configManager.thinqLoginType === 'none') {
+			this.log.notice('ThinQ login is set to "none" — skipping ThinQ cloud startup (soundbar-only mode).');
+			this.state.setStartupCompleted(true);
+			this.log.debug('onStart: exit — login=none, ThinQ cloud startup skipped');
+			return;
+		}
+
 		if (!this.configManager.validateConfig()) {
 			this.log.error('Platform configuration is invalid.');
 			this.state.setStartupCompleted(false);
@@ -219,8 +244,15 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 			return;
 		}
 
+		this.startLgSoundbarPolling();
+
 		if (!this.state.isStartupCompleted) {
 			this.log.debug('onConfigure: exit early — startup did not complete, skipping polling setup');
+			return;
+		}
+
+		if (this.configManager.thinqLoginType === 'none') {
+			this.log.debug('onConfigure: exit — login=none, no ThinQ polling to start');
 			return;
 		}
 
@@ -313,12 +345,45 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 			this.thinqServices.getFilterMonitoringService().stopPolling();
 		}
 
+		this.lgSoundbarServices.shutdown();
+
 		if (this.configManager.unregisterOnShutdown) {
 			await this.unregisterAllDevices(UNREGISTER_DEVICES_DELAY_MS);
 		}
 
 		this.state.setStartupCompleted(false);
 		this.log.debug('onShutdown: exit');
+	}
+
+	/** Registers the local-network LG Soundbars from `lgSoundbar.devices`; runs regardless of the ThinQ generation. */
+	private async startLgSoundbarDevices(): Promise<void> {
+		this.lgSoundbars = await registerLgSoundbars({
+			service: this.lgSoundbarServices.getService(),
+			configs: this.configManager.lgSoundbarDevices,
+			logger: this.log,
+			isIgnored: (id) => this.configManager.isLgSoundbarDeviceIgnored(id),
+			registerDevice: (endpoint) => this.registerDevice(endpoint),
+			unregisterIgnoredDevice: (id, endpoint) => this.unregisterIgnoredDevice(id, endpoint),
+			remember: (id, endpoint) => this.registry.register(id, endpoint),
+		});
+		this.log.notice(`LG Soundbar: registered ${this.lgSoundbars.length} soundbar(s).`);
+	}
+
+	private startLgSoundbarPolling(): void {
+		this.lgSoundbarServices
+			.getService()
+			.startPolling(this.lgSoundbarServices.pollIntervalMs, this.lgSoundbars, (deviceId, state) => {
+				const endpoint = this.registry.getDevice(deviceId) as MatterbridgeEndpoint | undefined;
+				if (!endpoint) {
+					this.log.debug(`LG Soundbar state update received for unregistered device ${deviceId}, skipping.`);
+					return;
+				}
+				void applyLgSoundbarState(endpoint, state, this.log).catch((error: unknown) => {
+					this.log.error(
+						`Failed to apply LG Soundbar state update for ${deviceId}: ${error instanceof Error ? error.message : String(error)}`,
+					);
+				});
+			});
 	}
 
 	/**
@@ -442,8 +507,8 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 	 */
 	private async startThinqDevices(): Promise<void> {
 		const loginType = this.configManager.thinqLoginType;
-		if (loginType === 'pat') {
-			throw new Error('startThinqDevices called with a Personal Access Token login (EMP login required).');
+		if (loginType === 'pat' || loginType === 'none') {
+			throw new Error('startThinqDevices called with an unsupported login type for the legacy ThinQ (V1) path.');
 		}
 
 		const userDataRepository = this.thinqServices.getUserDataRepository();

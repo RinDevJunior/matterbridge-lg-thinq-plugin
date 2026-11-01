@@ -9,7 +9,9 @@ import type { AirConditionerCapabilities } from '../core/domain/value-objects/Ai
 import { resolveAirConditionerCapabilities } from '../core/domain/value-objects/AirConditionerCapabilities.js';
 import {
 	createDefaultAdvancedFeature,
+	createDefaultLgSoundbarConfig,
 	createDefaultThinqConfig,
+	type LgSoundbarDeviceConfig,
 	LgThinqPluginPlatformConfig,
 	type MatterOverrideSettings,
 	type ThinqAcFilterControlConfig,
@@ -19,6 +21,7 @@ import {
 
 const DEFAULT_THINQ_REFRESH_INTERVAL_SECONDS = 60;
 const DEFAULT_FILTER_MONITORING_INTERVAL_SECONDS = 3600;
+const DEFAULT_LG_SOUNDBAR_POLL_INTERVAL_SECONDS = 30;
 
 /**
  * Manages platform configuration with validation and defaults.
@@ -30,6 +33,7 @@ export class PlatformConfigManager {
 	) {
 		this.config.thinq ??= createDefaultThinqConfig();
 		this.config.advancedFeature ??= createDefaultAdvancedFeature();
+		this.config.lgSoundbar ??= createDefaultLgSoundbarConfig();
 	}
 
 	/**
@@ -95,6 +99,18 @@ export class PlatformConfigManager {
 		return this.config.thinq.filterMonitoringIntervalSeconds ?? DEFAULT_FILTER_MONITORING_INTERVAL_SECONDS;
 	}
 
+	public get lgSoundbarDevices(): LgSoundbarDeviceConfig[] {
+		return this.config.lgSoundbar?.devices ?? [];
+	}
+
+	public get lgSoundbarPollIntervalSeconds(): number {
+		return this.config.lgSoundbar?.pollIntervalSeconds ?? DEFAULT_LG_SOUNDBAR_POLL_INTERVAL_SECONDS;
+	}
+
+	public isLgSoundbarDeviceIgnored(deviceId: string): boolean {
+		return this.lgSoundbarDevices.find((d) => d.id === deviceId)?.ignore ?? false;
+	}
+
 	public getDeviceCapabilities(deviceId: string): AirConditionerCapabilities {
 		return resolveAirConditionerCapabilities(this.config.thinq.devices, deviceId);
 	}
@@ -146,6 +162,10 @@ export class PlatformConfigManager {
 
 	public validateConfig(): boolean {
 		this.log.debug('Validating platform config');
+
+		if (this.thinqLoginType === 'none') {
+			return true;
+		}
 
 		if (this.thinqLoginType === 'pat') {
 			return Boolean(this.thinqPersonalAccessToken && this.country);
