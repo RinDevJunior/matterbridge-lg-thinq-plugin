@@ -23,6 +23,7 @@ interface MockService {
 	discoverSoundbars: Mock<LgSoundbarService['discoverSoundbars']>;
 	setPower: Mock<LgSoundbarService['setPower']>;
 	setVolume: Mock<LgSoundbarService['setVolume']>;
+	setSoundMode: Mock<LgSoundbarService['setSoundMode']>;
 }
 
 function createMockService(soundbars: LgSoundbar[]): MockService {
@@ -30,6 +31,7 @@ function createMockService(soundbars: LgSoundbar[]): MockService {
 		discoverSoundbars: vi.fn().mockReturnValue(soundbars),
 		setPower: vi.fn(),
 		setVolume: vi.fn(),
+		setSoundMode: vi.fn(),
 	};
 }
 

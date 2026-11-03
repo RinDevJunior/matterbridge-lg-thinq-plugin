@@ -91,8 +91,8 @@ function createMockSoundbarLogger(): LgSoundbarLogger {
 	return { debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
 
-function replyFrame(data: Record<string, unknown>): Buffer {
-	return encodeLgSoundbarFrame({ msg: 'SPK_LIST_VIEW_INFO', data });
+function replyFrame(data: Record<string, unknown>, msg = 'SPK_LIST_VIEW_INFO'): Buffer {
+	return encodeLgSoundbarFrame({ msg, data });
 }
 
 describe('LgSoundbarClient', () => {
@@ -179,6 +179,83 @@ describe('LgSoundbarClient', () => {
 				data: { i_vol: 12 },
 				msg: 'SPK_LIST_VIEW_INFO',
 			});
+		});
+	});
+
+	describe('getSoundMode', () => {
+		it('should resolve with i_curr_eq when the socket replies with EQ_VIEW_INFO', async () => {
+			// Arrange
+			const client = new LgSoundbarClient({ host: '10.0.0.5' }, logger);
+
+			// Act
+			const promise = client.getSoundMode();
+			await vi.waitFor(() => expect(currentSocket().writes.length).toBe(1));
+			currentSocket().emit('data', replyFrame({ i_curr_eq: 3 }, 'EQ_VIEW_INFO'));
+			const soundMode = await promise;
+
+			// Assert
+			expect(soundMode).toBe(3);
+		});
+
+		it('should resolve undefined when the reply has no numeric i_curr_eq', async () => {
+			// Arrange
+			const client = new LgSoundbarClient({ host: '10.0.0.5' }, logger);
+
+			// Act
+			const promise = client.getSoundMode();
+			await vi.waitFor(() => expect(currentSocket().writes.length).toBe(1));
+			currentSocket().emit('data', replyFrame({ i_curr_eq: 'not-a-number' }, 'EQ_VIEW_INFO'));
+			const soundMode = await promise;
+
+			// Assert
+			expect(soundMode).toBeUndefined();
+		});
+	});
+
+	describe('setSoundMode', () => {
+		it('should send a frame whose decrypted JSON sets i_curr_eq to the requested value', async () => {
+			// Arrange
+			const client = new LgSoundbarClient({ host: '10.0.0.5' }, logger);
+
+			// Act
+			await client.setSoundMode(5);
+
+			// Assert
+			expect(decryptWrittenFrame(currentSocket().writes[0])).toEqual({
+				cmd: 'set',
+				data: { i_curr_eq: 5 },
+				msg: 'EQ_VIEW_INFO',
+			});
+		});
+	});
+
+	describe('message-category-aware reply matching', () => {
+		it('should not settle a pending getSoundMode() from a stale SPK_LIST_VIEW_INFO frame, and resolve once EQ_VIEW_INFO arrives', async () => {
+			// Arrange
+			const client = new LgSoundbarClient({ host: '10.0.0.5' }, logger);
+			const promise = client.getSoundMode();
+			await vi.waitFor(() => expect(currentSocket().writes.length).toBe(1));
+			let settled = false;
+			promise.then(
+				() => (settled = true),
+				() => (settled = true),
+			);
+
+			// Act
+			currentSocket().emit(
+				'data',
+				replyFrame({ b_powerstatus: true, i_vol: 1, i_vol_min: 0, i_vol_max: 10 }, 'SPK_LIST_VIEW_INFO'),
+			);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			// Assert
+			expect(settled).toBe(false);
+
+			// Act
+			currentSocket().emit('data', replyFrame({ i_curr_eq: 7 }, 'EQ_VIEW_INFO'));
+
+			// Assert
+			await expect(promise).resolves.toBe(7);
 		});
 	});
 

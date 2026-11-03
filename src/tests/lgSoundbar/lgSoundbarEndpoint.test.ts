@@ -1,11 +1,12 @@
 import { Speaker } from 'matterbridge/devices';
-import { LevelControl, OnOff } from 'matterbridge/matter/clusters';
+import { LevelControl, ModeSelect, OnOff } from 'matterbridge/matter/clusters';
 import type { Mock } from 'vitest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
 	applyLgSoundbarState,
 	buildLgSoundbarEndpoint,
+	LG_SOUNDBAR_SOUND_MODES,
 	mapDeviceVolumeToMatterLevel,
 	mapMatterLevelToDeviceVolume,
 } from '../../lgSoundbar/lgSoundbarEndpoint.js';
@@ -16,6 +17,7 @@ const mocks = vi.hoisted(() => ({
 	endpoint: {
 		mode: undefined as string | undefined,
 		createDefaultBasicInformationClusterServer: vi.fn(),
+		createDefaultModeSelectClusterServer: vi.fn(),
 		addCommandHandler: vi.fn(),
 		updateAttribute: vi.fn(),
 	},
@@ -27,11 +29,12 @@ vi.mock('matterbridge/devices', () => ({
 	}),
 }));
 
-type CommandName = 'on' | 'off' | 'moveToLevel' | 'moveToLevelWithOnOff';
+type CommandName = 'on' | 'off' | 'moveToLevel' | 'moveToLevelWithOnOff' | 'changeToMode';
 
 interface MockService {
 	setPower: Mock<LgSoundbarService['setPower']>;
 	setVolume: Mock<LgSoundbarService['setVolume']>;
+	setSoundMode: Mock<LgSoundbarService['setSoundMode']>;
 }
 
 const SOUNDBAR: LgSoundbar = { deviceId: 'sb1', name: 'Soundbar', host: '10.0.0.5', port: 9741 };
@@ -40,6 +43,7 @@ function createMockService(): MockService {
 	return {
 		setPower: vi.fn<LgSoundbarService['setPower']>(),
 		setVolume: vi.fn<LgSoundbarService['setVolume']>(),
+		setSoundMode: vi.fn<LgSoundbarService['setSoundMode']>(),
 	};
 }
 
@@ -198,13 +202,51 @@ describe('lgSoundbarEndpoint', () => {
 			);
 		});
 
-		it('should register exactly the on, off, moveToLevel and moveToLevelWithOnOff command handlers', () => {
+		it('should register exactly the on, off, moveToLevel, moveToLevelWithOnOff and changeToMode command handlers', () => {
 			// Arrange & Act
 			buildLgSoundbarEndpoint(SOUNDBAR, service, logger);
 
 			// Assert
 			const names = mocks.endpoint.addCommandHandler.mock.calls.map((entry: unknown[]) => entry[0]);
-			expect(names).toEqual(['on', 'off', 'moveToLevel', 'moveToLevelWithOnOff']);
+			expect(names).toEqual(['on', 'off', 'moveToLevel', 'moveToLevelWithOnOff', 'changeToMode']);
+		});
+
+		it('should create the ModeSelect cluster server with the Sound Mode label and preset list', () => {
+			// Arrange & Act
+			buildLgSoundbarEndpoint(SOUNDBAR, service, logger);
+
+			// Assert
+			expect(mocks.endpoint.createDefaultModeSelectClusterServer).toHaveBeenCalledWith(
+				'Sound Mode',
+				LG_SOUNDBAR_SOUND_MODES,
+				0,
+				0,
+			);
+		});
+	});
+
+	describe('changeToMode handler', () => {
+		beforeEach(() => {
+			buildLgSoundbarEndpoint(SOUNDBAR, service, logger);
+		});
+
+		it('should call service.setSoundMode(soundbar, newMode) with the request.newMode value', async () => {
+			// Arrange
+			service.setSoundMode.mockResolvedValue(undefined);
+
+			// Act
+			await getHandler('changeToMode')({ request: { newMode: 9 } });
+
+			// Assert
+			expect(service.setSoundMode).toHaveBeenCalledWith(SOUNDBAR, 9);
+		});
+
+		it('should rethrow when service.setSoundMode rejects', async () => {
+			// Arrange
+			service.setSoundMode.mockRejectedValue(new Error('unreachable'));
+
+			// Act & Assert
+			await expect(getHandler('changeToMode')({ request: { newMode: 9 } })).rejects.toThrow('unreachable');
 		});
 	});
 
@@ -387,6 +429,64 @@ describe('lgSoundbarEndpoint', () => {
 			// Assert
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledTimes(2);
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(OnOff.id, 'onOff', false, logger);
+		});
+
+		it('should write ModeSelect currentMode once when soundMode is defined', async () => {
+			// Arrange
+			const state: LgSoundbarState = {
+				powerOn: undefined,
+				volume: undefined,
+				volumeMin: undefined,
+				volumeMax: undefined,
+				soundMode: 4,
+			};
+			const endpoint = buildLgSoundbarEndpoint(SOUNDBAR, service, logger);
+
+			// Act
+			await applyLgSoundbarState(endpoint, state, logger);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(ModeSelect.id, 'currentMode', 4, logger);
+		});
+
+		it('should not write ModeSelect currentMode when soundMode is omitted', async () => {
+			// Arrange
+			const state: LgSoundbarState = {
+				powerOn: undefined,
+				volume: undefined,
+				volumeMin: undefined,
+				volumeMax: undefined,
+			};
+			const endpoint = buildLgSoundbarEndpoint(SOUNDBAR, service, logger);
+
+			// Act
+			await applyLgSoundbarState(endpoint, state, logger);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalledWith(
+				ModeSelect.id,
+				'currentMode',
+				expect.anything(),
+				logger,
+			);
+		});
+
+		it('should still write ModeSelect currentMode when soundMode is defined but volume/volumeMin/volumeMax are all undefined', async () => {
+			// Arrange: the exact shape the old early-return would have short-circuited on.
+			const state: LgSoundbarState = {
+				powerOn: undefined,
+				volume: undefined,
+				volumeMin: undefined,
+				volumeMax: undefined,
+				soundMode: 6,
+			};
+			const endpoint = buildLgSoundbarEndpoint(SOUNDBAR, service, logger);
+
+			// Act
+			await applyLgSoundbarState(endpoint, state, logger);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(ModeSelect.id, 'currentMode', 6, logger);
 		});
 	});
 });
