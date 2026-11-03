@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.1.2-rc02] - 2026-11-03
+
+### Added
+
+- **LG Soundbar support** — a new local-network device family. Power and volume are exposed as a Matter Speaker device. Known limitation: Apple Home does not support the Matter Speaker device type; this is a Matterbridge/ecosystem limitation, not a plugin bug.
+- **Soundbar sound-mode selection** — sound modes are exposed through the Matter ModeSelect cluster, so they can be chosen from Matter controllers.
+- **Per-model sound-mode narrowing** — each soundbar model offers only the sound modes it supports.
+- **Best-effort soundbar IP discovery** — soundbars on the local network are found automatically, without entering an IP address by hand.
+- **Soundbar-only mode (`login: "none"`)** — a new config option that runs the plugin for soundbars alone, without ThinQ cloud login.
+
+<a href="https://www.buymeacoffee.com/rinnvspktr" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
+
+---
+
 ## [0.1.2-rc01] - 2026-10-31
 
 ### Fixed
