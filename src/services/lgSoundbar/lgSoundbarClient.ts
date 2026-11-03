@@ -9,6 +9,7 @@ import {
 } from './lgSoundbarProtocol.js';
 
 const SOUNDBAR_MSG = 'SPK_LIST_VIEW_INFO';
+const SOUND_MODE_MSG = 'EQ_VIEW_INFO';
 const DEFAULT_CONNECT_TIMEOUT_MS = 5000;
 const DEFAULT_SEND_TIMEOUT_MS = 5000;
 const DEFAULT_IDLE_DISCONNECT_MS = 5000;
@@ -26,9 +27,11 @@ export interface LgSoundbarState {
 	readonly volume: number | undefined;
 	readonly volumeMin: number | undefined;
 	readonly volumeMax: number | undefined;
+	readonly soundMode?: number;
 }
 
 interface ReplyWaiter {
+	expectedMsg: string;
 	resolve: (data: Record<string, unknown>) => void;
 	reject: (error: Error) => void;
 }
@@ -71,7 +74,7 @@ export class LgSoundbarClient {
 	}
 
 	public async getState(): Promise<LgSoundbarState> {
-		const data = await this.sendGet();
+		const data = await this.sendGet(SOUNDBAR_MSG);
 		return {
 			powerOn: typeof data.b_powerstatus === 'boolean' ? data.b_powerstatus : undefined,
 			volume: numberOrUndefined(data.i_vol),
@@ -81,15 +84,24 @@ export class LgSoundbarClient {
 	}
 
 	public async setPower(on: boolean): Promise<void> {
-		await this.sendSet({ b_powerkey: on });
+		await this.sendSet(SOUNDBAR_MSG, { b_powerkey: on });
 	}
 
 	public async setVolume(volume: number): Promise<void> {
-		await this.sendSet({ i_vol: Math.round(volume) });
+		await this.sendSet(SOUNDBAR_MSG, { i_vol: Math.round(volume) });
 	}
 
 	public async setMute(muted: boolean): Promise<void> {
-		await this.sendSet({ b_mute: muted });
+		await this.sendSet(SOUNDBAR_MSG, { b_mute: muted });
+	}
+
+	public async getSoundMode(): Promise<number | undefined> {
+		const data = await this.sendGet(SOUND_MODE_MSG);
+		return numberOrUndefined(data.i_curr_eq);
+	}
+
+	public async setSoundMode(eq: number): Promise<void> {
+		await this.sendSet(SOUND_MODE_MSG, { i_curr_eq: Math.round(eq) });
 	}
 
 	public destroy(): void {
@@ -104,12 +116,12 @@ export class LgSoundbarClient {
 		return run;
 	}
 
-	private sendGet(): Promise<Record<string, unknown>> {
+	private sendGet(msg: string): Promise<Record<string, unknown>> {
 		return this.enqueue(async () => {
 			const socket = await this.acquireSocket();
 			try {
-				const reply = this.awaitReply();
-				socket.write(encodeLgSoundbarFrame({ cmd: 'get', msg: SOUNDBAR_MSG }));
+				const reply = this.awaitReply(msg);
+				socket.write(encodeLgSoundbarFrame({ cmd: 'get', msg }));
 				return await reply;
 			} finally {
 				this.scheduleIdleDisconnect();
@@ -117,11 +129,11 @@ export class LgSoundbarClient {
 		});
 	}
 
-	private sendSet(data: Record<string, unknown>): Promise<void> {
+	private sendSet(msg: string, data: Record<string, unknown>): Promise<void> {
 		return this.enqueue(async () => {
 			const socket = await this.acquireSocket();
 			try {
-				socket.write(encodeLgSoundbarFrame({ cmd: 'set', data, msg: SOUNDBAR_MSG }));
+				socket.write(encodeLgSoundbarFrame({ cmd: 'set', data, msg }));
 			} finally {
 				this.scheduleIdleDisconnect();
 			}
@@ -178,7 +190,7 @@ export class LgSoundbarClient {
 		}
 	}
 
-	private awaitReply(): Promise<Record<string, unknown>> {
+	private awaitReply(expectedMsg: string): Promise<Record<string, unknown>> {
 		return new Promise((resolve, reject) => {
 			const timer = setTimeout(() => {
 				this.replyWaiter = undefined;
@@ -186,6 +198,7 @@ export class LgSoundbarClient {
 				reject(new LgSoundbarError(`no reply from ${this.host} within ${this.sendTimeoutMs} ms`));
 			}, this.sendTimeoutMs);
 			this.replyWaiter = {
+				expectedMsg,
 				resolve: (data) => {
 					clearTimeout(timer);
 					resolve(data);
@@ -203,7 +216,12 @@ export class LgSoundbarClient {
 			return;
 		}
 		for (const message of this.parser.push(chunk)) {
-			if (!isRecord(message) || message.msg !== SOUNDBAR_MSG || !isRecord(message.data)) {
+			if (
+				!isRecord(message) ||
+				!this.replyWaiter ||
+				message.msg !== this.replyWaiter.expectedMsg ||
+				!isRecord(message.data)
+			) {
 				this.logger.debug('LG Soundbar: ignored unsolicited message');
 				continue;
 			}

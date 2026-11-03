@@ -41,6 +41,14 @@ export class LgSoundbarService {
 		return this.clientFor(soundbar).setVolume(deviceVolume);
 	}
 
+	public getSoundMode(soundbar: LgSoundbar): Promise<number | undefined> {
+		return this.clientFor(soundbar).getSoundMode();
+	}
+
+	public setSoundMode(soundbar: LgSoundbar, eq: number): Promise<void> {
+		return this.clientFor(soundbar).setSoundMode(eq);
+	}
+
 	public startPolling(
 		intervalMs: number,
 		soundbars: readonly LgSoundbar[],
@@ -66,7 +74,8 @@ export class LgSoundbarService {
 		for (const soundbar of soundbars) {
 			try {
 				const state = await this.getState(soundbar);
-				onUpdate(soundbar.deviceId, state);
+				const soundMode = await this.getSoundMode(soundbar);
+				onUpdate(soundbar.deviceId, { ...state, soundMode });
 			} catch (error) {
 				this.logger.warn(
 					`LG Soundbar ${soundbar.deviceId}: poll failed: ${error instanceof Error ? error.message : String(error)}`,

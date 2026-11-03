@@ -6,7 +6,7 @@ import type { LgSoundbar, LgSoundbarService } from '../services/lgSoundbar/lgSou
 import { buildLgSoundbarEndpoint, type LgSoundbarMatterIdentityOverride } from './lgSoundbarEndpoint.js';
 
 export interface LgSoundbarRegistrationDeps {
-	service: Pick<LgSoundbarService, 'discoverSoundbars' | 'setPower' | 'setVolume'>;
+	service: Pick<LgSoundbarService, 'discoverSoundbars' | 'setPower' | 'setVolume' | 'setSoundMode'>;
 	configs: readonly LgSoundbarDeviceConfig[];
 	logger: AnsiLogger;
 	isIgnored: (deviceId: string) => boolean;

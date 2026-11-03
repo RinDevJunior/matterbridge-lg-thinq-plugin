@@ -1,7 +1,7 @@
 import { MatterbridgeEndpoint } from 'matterbridge';
 import { Speaker } from 'matterbridge/devices';
 import type { AnsiLogger } from 'matterbridge/logger';
-import { LevelControl, OnOff } from 'matterbridge/matter/clusters';
+import { LevelControl, ModeSelect, OnOff } from 'matterbridge/matter/clusters';
 
 import type { LgSoundbar, LgSoundbarService, LgSoundbarState } from '../services/lgSoundbar/lgSoundbarService.js';
 
@@ -20,6 +20,38 @@ interface VolumeRange {
 const MATTER_LEVEL_MIN = 1;
 const MATTER_LEVEL_MAX = 254;
 const DEFAULT_VOLUME_RANGE: VolumeRange = { min: 0, max: MATTER_LEVEL_MAX };
+
+export const LG_SOUNDBAR_SOUND_MODE_LABELS: readonly string[] = [
+	'Standard',
+	'Bass',
+	'Flat',
+	'Boost',
+	'Treble and Bass',
+	'User',
+	'Music',
+	'Cinema',
+	'Night',
+	'News',
+	'Voice',
+	'ia_sound',
+	'Adaptive Sound Control',
+	'Movie',
+	'Bass Blast',
+	'Dolby Atmos',
+	'DTS Virtual X',
+	'Bass Boost Plus',
+	'DTS X',
+	'AI Sound Pro',
+	'Clear Voice',
+	'Sports',
+	'Game',
+];
+
+export const LG_SOUNDBAR_SOUND_MODES: ModeSelect.ModeOption[] = LG_SOUNDBAR_SOUND_MODE_LABELS.map((label, mode) => ({
+	label,
+	mode,
+	semanticTags: [],
+}));
 
 // Device volume range is read from the soundbar on each poll; kept per endpoint for the level-to-volume mapping.
 const volumeRangeByEndpoint = new WeakMap<MatterbridgeEndpoint, VolumeRange>();
@@ -53,7 +85,7 @@ export function mapMatterLevelToDeviceVolume(level: number, min: number, max: nu
  */
 export function buildLgSoundbarEndpoint(
 	soundbar: LgSoundbar,
-	service: Pick<LgSoundbarService, 'setPower' | 'setVolume'>,
+	service: Pick<LgSoundbarService, 'setPower' | 'setVolume' | 'setSoundMode'>,
 	logger: AnsiLogger,
 	identity: LgSoundbarMatterIdentityOverride = {},
 ): MatterbridgeEndpoint {
@@ -69,6 +101,7 @@ export function buildLgSoundbarEndpoint(
 
 	// Standalone Matter node (own pairing code), matching the AC/Washer families.
 	endpoint.mode = 'server';
+	endpoint.createDefaultModeSelectClusterServer('Sound Mode', LG_SOUNDBAR_SOUND_MODES, 0, 0);
 
 	const handlePower = async (on: boolean): Promise<void> => {
 		try {
@@ -96,6 +129,18 @@ export function buildLgSoundbarEndpoint(
 		logger.debug(`LG Soundbar ${soundbar.deviceId} volume ${deviceVolume}`);
 	};
 
+	const handleSoundMode = async (newMode: number): Promise<void> => {
+		try {
+			await service.setSoundMode(soundbar, newMode);
+		} catch (error) {
+			logger.error(
+				`LG Soundbar ${soundbar.deviceId} sound mode handler failed: ${error instanceof Error ? error.message : String(error)}`,
+			);
+			throw error;
+		}
+		logger.debug(`LG Soundbar ${soundbar.deviceId} sound mode ${newMode}`);
+	};
+
 	endpoint.addCommandHandler('on', async () => handlePower(true));
 	endpoint.addCommandHandler('off', async () => handlePower(false));
 	endpoint.addCommandHandler('moveToLevel', async ({ request }) => handleVolume(request.level));
@@ -103,6 +148,7 @@ export function buildLgSoundbarEndpoint(
 		await handlePower(true);
 		await handleVolume(request.level);
 	});
+	endpoint.addCommandHandler('changeToMode', async ({ request }) => handleSoundMode(request.newMode));
 
 	return endpoint;
 }
@@ -117,14 +163,17 @@ export async function applyLgSoundbarState(
 	}
 
 	const { volume, volumeMin, volumeMax } = state;
-	if (volume === undefined || volumeMin === undefined || volumeMax === undefined) {
-		return;
+	if (volume !== undefined && volumeMin !== undefined && volumeMax !== undefined) {
+		volumeRangeByEndpoint.set(endpoint, { min: volumeMin, max: volumeMax });
+		await endpoint.updateAttribute(
+			LevelControl.id,
+			'currentLevel',
+			mapDeviceVolumeToMatterLevel(volume, volumeMin, volumeMax),
+			logger,
+		);
 	}
-	volumeRangeByEndpoint.set(endpoint, { min: volumeMin, max: volumeMax });
-	await endpoint.updateAttribute(
-		LevelControl.id,
-		'currentLevel',
-		mapDeviceVolumeToMatterLevel(volume, volumeMin, volumeMax),
-		logger,
-	);
+
+	if (state.soundMode !== undefined) {
+		await endpoint.updateAttribute(ModeSelect.id, 'currentMode', state.soundMode, logger);
+	}
 }
