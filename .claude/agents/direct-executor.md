@@ -1,7 +1,7 @@
 ---
 name: direct-executor
 description: "Execute a request directly — no task folder, no architect, no approval cycle. Default agent for LOW-complexity tasks (lite path), and for any ad-hoc request where the user opts out of the full flow. Can touch code, docs, or both in one pass."
-model: sonnet
+model: claude-sonnet-5
 color: cyan
 effort: medium
 maxTurns: 40

@@ -25,3 +25,6 @@ export {
 
 // ThinQ Connect API errors
 export { ThinqConnectApiError } from './ThinqConnectApiError.js';
+
+// LG Soundbar (local network) errors
+export { LgSoundbarError } from './LgSoundbarError.js';

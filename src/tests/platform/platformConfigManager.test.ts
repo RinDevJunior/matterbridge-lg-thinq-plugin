@@ -1257,5 +1257,97 @@ describe('PlatformConfigManager', () => {
 			// Assert
 			expect(result).toBe(false);
 		});
+
+		describe('none login type', () => {
+			it('should return "none" from thinqLoginType when loginType is none', () => {
+				// Arrange
+				const config = asPartial<LgThinqPluginPlatformConfig>({
+					thinq: { loginType: 'none', country: 'US', language: 'en-US', devices: [] },
+				});
+				const manager = PlatformConfigManager.create(config, mockLogger);
+
+				// Act
+				const loginType = manager.thinqLoginType;
+
+				// Assert
+				expect(loginType).toBe('none');
+			});
+
+			it('should return true from validateConfig when loginType is none, with no username, password, refreshToken or personalAccessToken set', () => {
+				// Arrange
+				const config = asPartial<LgThinqPluginPlatformConfig>({
+					thinq: { loginType: 'none', country: 'US', language: 'en-US', devices: [] },
+				});
+				const manager = PlatformConfigManager.create(config, mockLogger);
+
+				// Act
+				const result = manager.validateConfig();
+
+				// Assert
+				expect(result).toBe(true);
+			});
+		});
+	});
+
+	describe('lgSoundbar defaulting and getters', () => {
+		it('should default lgSoundbarDevices to [] and lgSoundbarPollIntervalSeconds to the default when lgSoundbar is absent', () => {
+			// Arrange
+			const config = asPartial<LgThinqPluginPlatformConfig>({});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			// Act & Assert
+			expect(manager.lgSoundbarDevices).toEqual([]);
+			expect(manager.lgSoundbarPollIntervalSeconds).toBe(30);
+		});
+
+		it('should return the configured devices and pollIntervalSeconds when lgSoundbar is set', () => {
+			// Arrange
+			const config = asPartial<LgThinqPluginPlatformConfig>({
+				lgSoundbar: {
+					pollIntervalSeconds: 45,
+					devices: [{ id: 'sb1', host: '10.0.0.5' }],
+				},
+			});
+			const manager = PlatformConfigManager.create(config, mockLogger);
+
+			// Act & Assert
+			expect(manager.lgSoundbarDevices).toEqual([{ id: 'sb1', host: '10.0.0.5' }]);
+			expect(manager.lgSoundbarPollIntervalSeconds).toBe(45);
+		});
+
+		describe('isLgSoundbarDeviceIgnored', () => {
+			it('should return true when a lgSoundbar.devices entry with the id has ignore true', () => {
+				// Arrange
+				const config = asPartial<LgThinqPluginPlatformConfig>({
+					lgSoundbar: { devices: [{ id: 'sb1', host: '10.0.0.5', ignore: true }] },
+				});
+				const manager = PlatformConfigManager.create(config, mockLogger);
+
+				// Act & Assert
+				expect(manager.isLgSoundbarDeviceIgnored('sb1')).toBe(true);
+			});
+
+			it('should return false for an unknown id', () => {
+				// Arrange
+				const config = asPartial<LgThinqPluginPlatformConfig>({
+					lgSoundbar: { devices: [{ id: 'sb1', host: '10.0.0.5', ignore: true }] },
+				});
+				const manager = PlatformConfigManager.create(config, mockLogger);
+
+				// Act & Assert
+				expect(manager.isLgSoundbarDeviceIgnored('unknown')).toBe(false);
+			});
+
+			it('should return false when ignore is omitted', () => {
+				// Arrange
+				const config = asPartial<LgThinqPluginPlatformConfig>({
+					lgSoundbar: { devices: [{ id: 'sb1', host: '10.0.0.5' }] },
+				});
+				const manager = PlatformConfigManager.create(config, mockLogger);
+
+				// Act & Assert
+				expect(manager.isLgSoundbarDeviceIgnored('sb1')).toBe(false);
+			});
+		});
 	});
 });

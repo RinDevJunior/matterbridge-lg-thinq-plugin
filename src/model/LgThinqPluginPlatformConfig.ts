@@ -42,7 +42,7 @@ export interface ThinqDeviceConfigEntry {
 	acFilterControl?: ThinqAcFilterControlConfig;
 }
 
-export type ThinqLoginType = 'account' | 'token' | 'pat';
+export type ThinqLoginType = 'account' | 'token' | 'pat' | 'none';
 
 export interface ThinqAuthConfig {
 	loginType: ThinqLoginType;
@@ -70,9 +70,23 @@ export interface AdvancedFeatureConfiguration {
 	settings: AdvancedFeatureSetting;
 }
 
+export interface LgSoundbarDeviceConfig {
+	id: string;
+	name?: string;
+	host?: string;
+	port?: number;
+	ignore?: boolean;
+}
+
+export interface LgSoundbarConfig {
+	pollIntervalSeconds?: number;
+	devices: LgSoundbarDeviceConfig[];
+}
+
 export interface LgThinqPluginPlatformConfig extends PlatformConfig {
 	thinq: ThinqAuthConfig;
 	advancedFeature: AdvancedFeatureConfiguration;
+	lgSoundbar?: LgSoundbarConfig;
 }
 
 export function createDefaultAdvancedFeature(): AdvancedFeatureConfiguration {
@@ -98,4 +112,8 @@ export function createDefaultThinqConfig(): ThinqAuthConfig {
 		language: 'en-US',
 		devices: [],
 	};
+}
+
+export function createDefaultLgSoundbarConfig(): LgSoundbarConfig {
+	return { devices: [] };
 }

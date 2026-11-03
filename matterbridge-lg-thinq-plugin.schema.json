@@ -21,9 +21,9 @@
 			"properties": {
 				"loginType": {
 					"title": "Login Type",
-					"description": "account = username/password, token = refresh token, pat = Personal Access Token (official ThinQ Connect API: registers washers only and lets Google Home turn them on/off; air conditioners are not supported with PAT yet).",
+					"description": "account = username/password, token = refresh token, pat = Personal Access Token (official ThinQ Connect API: registers washers only and lets Google Home turn them on/off; air conditioners are not supported with PAT yet), none = skip ThinQ cloud entirely and run in soundbar-only mode.",
 					"type": "string",
-					"enum": ["account", "token", "pat"],
+					"enum": ["account", "token", "pat", "none"],
 					"default": "account"
 				},
 				"country": {
@@ -567,6 +567,58 @@
 								"required": ["personalAccessToken"]
 							}
 						}
+					}
+				}
+			}
+		},
+		"lgSoundbar": {
+			"title": "LG Soundbar (local network)",
+			"type": "object",
+			"properties": {
+				"pollIntervalSeconds": {
+					"title": "Poll Interval",
+					"description": "How often each soundbar's power and volume are read from the device, in seconds.",
+					"type": "number",
+					"default": 30,
+					"minimum": 10,
+					"maximum": 3600
+				},
+				"devices": {
+					"title": "LG Soundbars",
+					"description": "Soundbars on your local network, added by IP address. Each entry is exposed to Matter as a Speaker (power and volume).",
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"title": "Device ID",
+								"description": "Unique id for this soundbar. Changing it creates a new Matter accessory.",
+								"type": "string"
+							},
+							"name": {
+								"title": "Name",
+								"description": "Name shown in Matter controllers.",
+								"type": "string"
+							},
+							"host": {
+								"title": "IP Address",
+								"description": "Local IP address of the soundbar. Leaving this blank triggers a best-effort, one-time auto-discovery attempt on startup (mDNS + port probe); not guaranteed to find the device — set the IP manually if it doesn't.",
+								"type": "string"
+							},
+							"port": {
+								"title": "Port",
+								"description": "TCP port of the soundbar's control service.",
+								"type": "number",
+								"default": 9741
+							},
+							"ignore": {
+								"title": "Ignore This Device",
+								"description": "Skip this soundbar entirely. If it was previously registered, its existing Matter accessory will be removed.",
+								"type": "boolean",
+								"default": false
+							}
+						},
+						"required": ["id"]
 					}
 				}
 			}
