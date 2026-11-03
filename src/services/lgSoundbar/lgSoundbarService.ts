@@ -1,5 +1,5 @@
 import type { LgSoundbarDeviceConfig } from '../../model/LgThinqPluginPlatformConfig.js';
-import { LgSoundbarClient, type LgSoundbarState } from './lgSoundbarClient.js';
+import { LgSoundbarClient, type LgSoundbarSoundModeInfo, type LgSoundbarState } from './lgSoundbarClient.js';
 import { LG_SOUNDBAR_PORT, type LgSoundbarLogger } from './lgSoundbarProtocol.js';
 
 export type { LgSoundbarDeviceConfig } from '../../model/LgThinqPluginPlatformConfig.js';
@@ -21,7 +21,12 @@ export class LgSoundbarService {
 
 	/** Pure config mapping; performs no network I/O. */
 	public discoverSoundbars(configs: readonly LgSoundbarDeviceConfig[]): LgSoundbar[] {
-		return configs.map((config) => ({
+		const withHost = configs.filter((c): c is LgSoundbarDeviceConfig & { host: string } => {
+			if (typeof c.host === 'string' && c.host.trim().length > 0) return true;
+			this.logger.warn(`LG Soundbar ${c.id}: no host configured and not resolved by discovery, skipping.`);
+			return false;
+		});
+		return withHost.map((config) => ({
 			deviceId: config.id,
 			name: config.name ?? `LG Soundbar ${config.host}`,
 			host: config.host,
@@ -43,6 +48,10 @@ export class LgSoundbarService {
 
 	public getSoundMode(soundbar: LgSoundbar): Promise<number | undefined> {
 		return this.clientFor(soundbar).getSoundMode();
+	}
+
+	public getSoundModeInfo(soundbar: LgSoundbar): Promise<LgSoundbarSoundModeInfo> {
+		return this.clientFor(soundbar).getSoundModeInfo();
 	}
 
 	public setSoundMode(soundbar: LgSoundbar, eq: number): Promise<void> {
@@ -74,8 +83,12 @@ export class LgSoundbarService {
 		for (const soundbar of soundbars) {
 			try {
 				const state = await this.getState(soundbar);
-				const soundMode = await this.getSoundMode(soundbar);
-				onUpdate(soundbar.deviceId, { ...state, soundMode });
+				const soundModeInfo = await this.getSoundModeInfo(soundbar);
+				onUpdate(soundbar.deviceId, {
+					...state,
+					soundMode: soundModeInfo.mode,
+					supportedSoundModes: soundModeInfo.supportedModes,
+				});
 			} catch (error) {
 				this.logger.warn(
 					`LG Soundbar ${soundbar.deviceId}: poll failed: ${error instanceof Error ? error.message : String(error)}`,

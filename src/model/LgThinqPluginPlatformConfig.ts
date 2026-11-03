@@ -73,7 +73,7 @@ export interface AdvancedFeatureConfiguration {
 export interface LgSoundbarDeviceConfig {
 	id: string;
 	name?: string;
-	host: string;
+	host?: string;
 	port?: number;
 	ignore?: boolean;
 }

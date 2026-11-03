@@ -22,6 +22,7 @@ import { WasherCycleTracker } from './platform/thinq/thinqWasherCycleTracker.js'
 import type { WasherMatterPlan } from './platform/thinq/thinqWasherMatterPlan.js';
 import { applyThinqSnapshotToWasher } from './platform/thinq/thinqWasherStateSync.js';
 import { resolveThinqGeneration } from './platform/thinqGeneration.js';
+import { resolveLgSoundbarDeviceConfigs } from './services/lgSoundbar/lgSoundbarDiscovery.js';
 import type { LgSoundbar } from './services/lgSoundbar/lgSoundbarService.js';
 import { ThinqServiceContainer } from './services/thinq/serviceContainer.js';
 import { ThinqSession } from './services/thinq/session.js';
@@ -357,9 +358,10 @@ export class LgThinqMatterbridgePlatform extends MatterbridgeDynamicPlatform {
 
 	/** Registers the local-network LG Soundbars from `lgSoundbar.devices`; runs regardless of the ThinQ generation. */
 	private async startLgSoundbarDevices(): Promise<void> {
+		const resolvedConfigs = await resolveLgSoundbarDeviceConfigs(this.configManager.lgSoundbarDevices, this.log);
 		this.lgSoundbars = await registerLgSoundbars({
 			service: this.lgSoundbarServices.getService(),
-			configs: this.configManager.lgSoundbarDevices,
+			configs: resolvedConfigs,
 			logger: this.log,
 			isIgnored: (id) => this.configManager.isLgSoundbarDeviceIgnored(id),
 			registerDevice: (endpoint) => this.registerDevice(endpoint),

@@ -602,7 +602,7 @@
 							},
 							"host": {
 								"title": "IP Address",
-								"description": "Local IP address of the soundbar.",
+								"description": "Local IP address of the soundbar. Leaving this blank triggers a best-effort, one-time auto-discovery attempt on startup (mDNS + port probe); not guaranteed to find the device — set the IP manually if it doesn't.",
 								"type": "string"
 							},
 							"port": {
@@ -618,7 +618,7 @@
 								"default": false
 							}
 						},
-						"required": ["id", "host"]
+						"required": ["id"]
 					}
 				}
 			}

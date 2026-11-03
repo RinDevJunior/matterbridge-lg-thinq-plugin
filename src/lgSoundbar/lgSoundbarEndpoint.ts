@@ -53,6 +53,21 @@ export const LG_SOUNDBAR_SOUND_MODES: ModeSelect.ModeOption[] = LG_SOUNDBAR_SOUN
 	semanticTags: [],
 }));
 
+/** Narrows `SupportedModes` to the device-reported `ai_eq_list`; falls back to the full static list on any edge case. */
+export function narrowSoundModes(supportedIndices: readonly number[] | undefined): ModeSelect.ModeOption[] {
+	const uniqueValidIndices = [...new Set(supportedIndices ?? [])].filter(
+		(i) => i >= 0 && i < LG_SOUNDBAR_SOUND_MODE_LABELS.length,
+	);
+	if (uniqueValidIndices.length === 0) {
+		return LG_SOUNDBAR_SOUND_MODES;
+	}
+	return uniqueValidIndices.map((mode) => ({
+		label: LG_SOUNDBAR_SOUND_MODE_LABELS[mode],
+		mode,
+		semanticTags: [],
+	}));
+}
+
 // Device volume range is read from the soundbar on each poll; kept per endpoint for the level-to-volume mapping.
 const volumeRangeByEndpoint = new WeakMap<MatterbridgeEndpoint, VolumeRange>();
 
@@ -169,6 +184,15 @@ export async function applyLgSoundbarState(
 			LevelControl.id,
 			'currentLevel',
 			mapDeviceVolumeToMatterLevel(volume, volumeMin, volumeMax),
+			logger,
+		);
+	}
+
+	if (state.supportedSoundModes !== undefined) {
+		await endpoint.updateAttribute(
+			ModeSelect.id,
+			'supportedModes',
+			narrowSoundModes(state.supportedSoundModes),
 			logger,
 		);
 	}

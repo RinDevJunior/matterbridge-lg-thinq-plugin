@@ -28,6 +28,12 @@ export interface LgSoundbarState {
 	readonly volumeMin: number | undefined;
 	readonly volumeMax: number | undefined;
 	readonly soundMode?: number;
+	readonly supportedSoundModes?: readonly number[];
+}
+
+export interface LgSoundbarSoundModeInfo {
+	readonly mode: number | undefined;
+	readonly supportedModes: readonly number[] | undefined;
 }
 
 interface ReplyWaiter {
@@ -42,6 +48,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function numberOrUndefined(value: unknown): number | undefined {
 	return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function toNumberArray(value: unknown): number[] | undefined {
+	return Array.isArray(value)
+		? value.filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
+		: undefined;
 }
 
 /**
@@ -95,9 +107,13 @@ export class LgSoundbarClient {
 		await this.sendSet(SOUNDBAR_MSG, { b_mute: muted });
 	}
 
-	public async getSoundMode(): Promise<number | undefined> {
+	public async getSoundModeInfo(): Promise<LgSoundbarSoundModeInfo> {
 		const data = await this.sendGet(SOUND_MODE_MSG);
-		return numberOrUndefined(data.i_curr_eq);
+		return { mode: numberOrUndefined(data.i_curr_eq), supportedModes: toNumberArray(data.ai_eq_list) };
+	}
+
+	public async getSoundMode(): Promise<number | undefined> {
+		return (await this.getSoundModeInfo()).mode;
 	}
 
 	public async setSoundMode(eq: number): Promise<void> {
