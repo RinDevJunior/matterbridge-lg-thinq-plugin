@@ -9,6 +9,7 @@ import {
 	LG_SOUNDBAR_SOUND_MODES,
 	mapDeviceVolumeToMatterLevel,
 	mapMatterLevelToDeviceVolume,
+	narrowSoundModes,
 } from '../../lgSoundbar/lgSoundbarEndpoint.js';
 import type { LgSoundbar, LgSoundbarService, LgSoundbarState } from '../../services/lgSoundbar/lgSoundbarService.js';
 import { createMockLogger } from '../helpers/testUtils.js';
@@ -147,6 +148,53 @@ describe('lgSoundbarEndpoint', () => {
 
 			// Assert
 			expect(result).toBe(10);
+		});
+	});
+
+	describe('narrowSoundModes', () => {
+		it('should return the mapped subset for a valid, non-empty array of in-range indices', () => {
+			// Act
+			const result = narrowSoundModes([0, 5, 12]);
+
+			// Assert
+			expect(result).toEqual([
+				{ label: LG_SOUNDBAR_SOUND_MODES[0].label, mode: 0, semanticTags: [] },
+				{ label: LG_SOUNDBAR_SOUND_MODES[5].label, mode: 5, semanticTags: [] },
+				{ label: LG_SOUNDBAR_SOUND_MODES[12].label, mode: 12, semanticTags: [] },
+			]);
+		});
+
+		it('should dedupe repeated indices', () => {
+			// Act
+			const result = narrowSoundModes([2, 2, 5]);
+
+			// Assert
+			expect(result).toHaveLength(2);
+			expect(result.map((o) => o.mode)).toEqual([2, 5]);
+		});
+
+		it('should return the full list when given undefined', () => {
+			// Act
+			const result = narrowSoundModes(undefined);
+
+			// Assert
+			expect(result).toEqual(LG_SOUNDBAR_SOUND_MODES);
+		});
+
+		it('should return the full list when given an empty array', () => {
+			// Act
+			const result = narrowSoundModes([]);
+
+			// Assert
+			expect(result).toEqual(LG_SOUNDBAR_SOUND_MODES);
+		});
+
+		it('should return the full list when every index is out of range', () => {
+			// Act
+			const result = narrowSoundModes([99, -1]);
+
+			// Assert
+			expect(result).toEqual(LG_SOUNDBAR_SOUND_MODES);
 		});
 	});
 
@@ -487,6 +535,76 @@ describe('lgSoundbarEndpoint', () => {
 
 			// Assert
 			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(ModeSelect.id, 'currentMode', 6, logger);
+		});
+
+		it('should write ModeSelect supportedModes once when supportedSoundModes is defined', async () => {
+			// Arrange
+			const state: LgSoundbarState = {
+				powerOn: undefined,
+				volume: undefined,
+				volumeMin: undefined,
+				volumeMax: undefined,
+				supportedSoundModes: [1, 3],
+			};
+			const endpoint = buildLgSoundbarEndpoint(SOUNDBAR, service, logger);
+
+			// Act
+			await applyLgSoundbarState(endpoint, state, logger);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledTimes(1);
+			expect(mocks.endpoint.updateAttribute).toHaveBeenCalledWith(
+				ModeSelect.id,
+				'supportedModes',
+				narrowSoundModes([1, 3]),
+				logger,
+			);
+		});
+
+		it('should not write ModeSelect supportedModes when supportedSoundModes is undefined', async () => {
+			// Arrange
+			const state: LgSoundbarState = {
+				powerOn: undefined,
+				volume: undefined,
+				volumeMin: undefined,
+				volumeMax: undefined,
+			};
+			const endpoint = buildLgSoundbarEndpoint(SOUNDBAR, service, logger);
+
+			// Act
+			await applyLgSoundbarState(endpoint, state, logger);
+
+			// Assert
+			expect(mocks.endpoint.updateAttribute).not.toHaveBeenCalledWith(
+				ModeSelect.id,
+				'supportedModes',
+				expect.anything(),
+				logger,
+			);
+		});
+
+		it('should write supportedModes before currentMode when both soundMode and supportedSoundModes are defined in the same tick', async () => {
+			// Arrange
+			const state: LgSoundbarState = {
+				powerOn: undefined,
+				volume: undefined,
+				volumeMin: undefined,
+				volumeMax: undefined,
+				soundMode: 4,
+				supportedSoundModes: [1, 3, 4],
+			};
+			const endpoint = buildLgSoundbarEndpoint(SOUNDBAR, service, logger);
+
+			// Act
+			await applyLgSoundbarState(endpoint, state, logger);
+
+			// Assert
+			const calls = mocks.endpoint.updateAttribute.mock.calls;
+			const supportedModesIndex = calls.findIndex((c: unknown[]) => c[1] === 'supportedModes');
+			const currentModeIndex = calls.findIndex((c: unknown[]) => c[1] === 'currentMode');
+			expect(supportedModesIndex).toBeGreaterThanOrEqual(0);
+			expect(currentModeIndex).toBeGreaterThanOrEqual(0);
+			expect(supportedModesIndex).toBeLessThan(currentModeIndex);
 		});
 	});
 });

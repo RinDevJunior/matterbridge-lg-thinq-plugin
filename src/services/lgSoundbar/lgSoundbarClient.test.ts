@@ -212,6 +212,64 @@ describe('LgSoundbarClient', () => {
 		});
 	});
 
+	describe('getSoundModeInfo', () => {
+		it('should resolve mode and supportedModes from a reply containing i_curr_eq and ai_eq_list', async () => {
+			// Arrange
+			const client = new LgSoundbarClient({ host: '10.0.0.5' }, logger);
+
+			// Act
+			const promise = client.getSoundModeInfo();
+			await vi.waitFor(() => expect(currentSocket().writes.length).toBe(1));
+			currentSocket().emit('data', replyFrame({ i_curr_eq: 3, ai_eq_list: [0, 1, 2] }, 'EQ_VIEW_INFO'));
+			const info = await promise;
+
+			// Assert
+			expect(info).toEqual({ mode: 3, supportedModes: [0, 1, 2] });
+		});
+
+		it('should resolve supportedModes undefined when the reply has no ai_eq_list key', async () => {
+			// Arrange
+			const client = new LgSoundbarClient({ host: '10.0.0.5' }, logger);
+
+			// Act
+			const promise = client.getSoundModeInfo();
+			await vi.waitFor(() => expect(currentSocket().writes.length).toBe(1));
+			currentSocket().emit('data', replyFrame({ i_curr_eq: 3 }, 'EQ_VIEW_INFO'));
+			const info = await promise;
+
+			// Assert
+			expect(info).toEqual({ mode: 3, supportedModes: undefined });
+		});
+
+		it('should resolve supportedModes undefined when ai_eq_list is present but not an array', async () => {
+			// Arrange
+			const client = new LgSoundbarClient({ host: '10.0.0.5' }, logger);
+
+			// Act
+			const promise = client.getSoundModeInfo();
+			await vi.waitFor(() => expect(currentSocket().writes.length).toBe(1));
+			currentSocket().emit('data', replyFrame({ i_curr_eq: 3, ai_eq_list: 'not-an-array' }, 'EQ_VIEW_INFO'));
+			const info = await promise;
+
+			// Assert
+			expect(info).toEqual({ mode: 3, supportedModes: undefined });
+		});
+
+		it('should filter out non-number entries from a mixed ai_eq_list array', async () => {
+			// Arrange
+			const client = new LgSoundbarClient({ host: '10.0.0.5' }, logger);
+
+			// Act
+			const promise = client.getSoundModeInfo();
+			await vi.waitFor(() => expect(currentSocket().writes.length).toBe(1));
+			currentSocket().emit('data', replyFrame({ i_curr_eq: 3, ai_eq_list: [1, 'x', 3] }, 'EQ_VIEW_INFO'));
+			const info = await promise;
+
+			// Assert
+			expect(info.supportedModes).toEqual([1, 3]);
+		});
+	});
+
 	describe('setSoundMode', () => {
 		it('should send a frame whose decrypted JSON sets i_curr_eq to the requested value', async () => {
 			// Arrange

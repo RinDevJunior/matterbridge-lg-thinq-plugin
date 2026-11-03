@@ -12,6 +12,7 @@ const clientHarness = vi.hoisted(() => ({
 		setPower: ReturnType<typeof vi.fn>;
 		setVolume: ReturnType<typeof vi.fn>;
 		getSoundMode: ReturnType<typeof vi.fn>;
+		getSoundModeInfo: ReturnType<typeof vi.fn>;
 		setSoundMode: ReturnType<typeof vi.fn>;
 	}[],
 }));
@@ -25,6 +26,7 @@ vi.mock('./lgSoundbarClient.js', () => ({
 			setPower: vi.fn(),
 			setVolume: vi.fn(),
 			getSoundMode: vi.fn(),
+			getSoundModeInfo: vi.fn(),
 			setSoundMode: vi.fn(),
 		};
 		clientHarness.instances.push(instance);
@@ -91,6 +93,19 @@ describe('LgSoundbarService', () => {
 			// Assert
 			expect(soundbar.port).toBe(9741);
 		});
+
+		it('should skip a config entry with no host and log a warning, returning only the entries that have a host', () => {
+			// Arrange
+			const configs: LgSoundbarDeviceConfig[] = [{ id: 'sb1' }, { id: 'sb2', host: '10.0.0.6' }];
+
+			// Act
+			const soundbars = service.discoverSoundbars(configs);
+
+			// Assert
+			expect(soundbars).toHaveLength(1);
+			expect(soundbars[0].deviceId).toBe('sb2');
+			expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('sb1'));
+		});
 	});
 
 	describe('delegation to the cached client', () => {
@@ -139,6 +154,20 @@ describe('LgSoundbarService', () => {
 			expect(soundMode).toBe(3);
 		});
 
+		it('should delegate getSoundModeInfo to the client for the given deviceId', async () => {
+			// Arrange
+			const [soundbar] = service.discoverSoundbars([{ id: 'sb1', host: '10.0.0.5' }]);
+			warmClient(service, soundbar);
+			const client = clientFor('sb1', [soundbar]);
+			client.getSoundModeInfo.mockResolvedValue({ mode: 3, supportedModes: [0, 1, 2] });
+
+			// Act
+			const soundModeInfo = await service.getSoundModeInfo(soundbar);
+
+			// Assert
+			expect(soundModeInfo).toEqual({ mode: 3, supportedModes: [0, 1, 2] });
+		});
+
 		it('should delegate setSoundMode(soundbar, eq) to the client with the given eq value', async () => {
 			// Arrange
 			const [soundbar] = service.discoverSoundbars([{ id: 'sb1', host: '10.0.0.5' }]);
@@ -184,7 +213,7 @@ describe('LgSoundbarService', () => {
 				volumeMin: 0,
 				volumeMax: 10,
 			});
-			clientFor('sb1', soundbars).getSoundMode.mockResolvedValue(3);
+			clientFor('sb1', soundbars).getSoundModeInfo.mockResolvedValue({ mode: 3, supportedModes: undefined });
 			clientFor('sb2', soundbars).getState.mockRejectedValue(new Error('unreachable'));
 			const onUpdate = vi.fn();
 
@@ -200,11 +229,12 @@ describe('LgSoundbarService', () => {
 				volumeMin: 0,
 				volumeMax: 10,
 				soundMode: 3,
+				supportedSoundModes: undefined,
 			});
 			expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('sb2'));
 		});
 
-		it('should skip onUpdate for a soundbar whose getSoundMode rejects while getState resolves, and log a warning mentioning it', async () => {
+		it('should skip onUpdate for a soundbar whose getSoundModeInfo rejects while getState resolves, and log a warning mentioning it', async () => {
 			// Arrange
 			vi.useFakeTimers();
 			const soundbars = service.discoverSoundbars([
@@ -219,14 +249,14 @@ describe('LgSoundbarService', () => {
 				volumeMin: 0,
 				volumeMax: 10,
 			});
-			clientFor('sb1', soundbars).getSoundMode.mockRejectedValue(new Error('eq unreachable'));
+			clientFor('sb1', soundbars).getSoundModeInfo.mockRejectedValue(new Error('eq unreachable'));
 			clientFor('sb2', soundbars).getState.mockResolvedValue({
 				powerOn: false,
 				volume: 2,
 				volumeMin: 0,
 				volumeMax: 10,
 			});
-			clientFor('sb2', soundbars).getSoundMode.mockResolvedValue(1);
+			clientFor('sb2', soundbars).getSoundModeInfo.mockResolvedValue({ mode: 1, supportedModes: undefined });
 			const onUpdate = vi.fn();
 
 			// Act
@@ -241,8 +271,38 @@ describe('LgSoundbarService', () => {
 				volumeMin: 0,
 				volumeMax: 10,
 				soundMode: 1,
+				supportedSoundModes: undefined,
 			});
 			expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('sb1'));
+		});
+
+		it('should merge a defined supportedSoundModes into the object passed to onUpdate when the device reports ai_eq_list', async () => {
+			// Arrange
+			vi.useFakeTimers();
+			const soundbars = service.discoverSoundbars([{ id: 'sb1', host: '10.0.0.5' }]);
+			warmClient(service, soundbars[0]);
+			clientFor('sb1', soundbars).getState.mockResolvedValue({
+				powerOn: true,
+				volume: 1,
+				volumeMin: 0,
+				volumeMax: 10,
+			});
+			clientFor('sb1', soundbars).getSoundModeInfo.mockResolvedValue({ mode: 2, supportedModes: [0, 1, 2] });
+			const onUpdate = vi.fn();
+
+			// Act
+			service.startPolling(1000, soundbars, onUpdate);
+			await vi.advanceTimersByTimeAsync(1000);
+
+			// Assert
+			expect(onUpdate).toHaveBeenCalledWith('sb1', {
+				powerOn: true,
+				volume: 1,
+				volumeMin: 0,
+				volumeMax: 10,
+				soundMode: 2,
+				supportedSoundModes: [0, 1, 2],
+			});
 		});
 
 		it('should not stop the interval or block other soundbars when one rejects', async () => {
@@ -261,6 +321,7 @@ describe('LgSoundbarService', () => {
 				volumeMin: 0,
 				volumeMax: 10,
 			});
+			clientFor('sb2', soundbars).getSoundModeInfo.mockResolvedValue({ mode: undefined, supportedModes: undefined });
 			const onUpdate = vi.fn();
 
 			// Act
@@ -270,7 +331,14 @@ describe('LgSoundbarService', () => {
 
 			// Assert
 			expect(onUpdate).toHaveBeenCalledTimes(2);
-			expect(onUpdate).toHaveBeenCalledWith('sb2', { powerOn: false, volume: 2, volumeMin: 0, volumeMax: 10 });
+			expect(onUpdate).toHaveBeenCalledWith('sb2', {
+				powerOn: false,
+				volume: 2,
+				volumeMin: 0,
+				volumeMax: 10,
+				soundMode: undefined,
+				supportedSoundModes: undefined,
+			});
 		});
 	});
 
@@ -286,6 +354,7 @@ describe('LgSoundbarService', () => {
 				volumeMin: 0,
 				volumeMax: 10,
 			});
+			clientFor('sb1', soundbars).getSoundModeInfo.mockResolvedValue({ mode: undefined, supportedModes: undefined });
 			const onUpdate = vi.fn();
 			service.startPolling(1000, soundbars, onUpdate);
 			await vi.advanceTimersByTimeAsync(1000);
