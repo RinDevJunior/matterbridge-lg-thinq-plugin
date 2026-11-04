@@ -4,7 +4,7 @@ description: "Deep, high-effort codebase investigation. Spawned as a nested suba
 model: claude-sonnet-5
 color: blue
 effort: medium
-maxTurns: 35
+maxTurns: 50
 tools: Read, Glob, Grep, mcp__glob-grep__Glob, mcp__glob-grep__Grep, mcp__cli-runner__RunCli, mcp__read-log__ReadLog, Bash, Monitor, Write, Edit, AskUserQuestion
 ---
 
