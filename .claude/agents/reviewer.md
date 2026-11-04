@@ -4,7 +4,7 @@ description: "Use this agent to review code changes against the approved workspa
 model: claude-sonnet-5
 color: red
 effort: medium
-maxTurns: 30
+maxTurns: 40
 tools: Read, Glob, Grep, mcp__glob-grep__Glob, mcp__glob-grep__Grep, Bash, AskUserQuestion
 ---
 

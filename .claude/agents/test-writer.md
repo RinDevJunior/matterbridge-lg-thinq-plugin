@@ -4,7 +4,7 @@ description: Use this agent to write vitest unit tests for code implemented by t
 model: claude-sonnet-5
 color: yellow
 effort: medium
-maxTurns: 40
+maxTurns: 50
 tools: Read, Write, Edit, Glob, Grep, mcp__glob-grep__Glob, mcp__glob-grep__Grep, Bash, AskUserQuestion
 ---
 
